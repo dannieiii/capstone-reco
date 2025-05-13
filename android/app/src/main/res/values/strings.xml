@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">farmXpress</string>
+    <string name="title_activity_main">farmXpress</string>
+    <string name="package_name">com.farmXpress.capstone</string>
+    <string name="custom_url_scheme">com.farmXpress.capstone</string>
+</resources>
