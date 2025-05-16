@@ -6,6 +6,7 @@
     />
     
     <div class="main-content" :class="{ 'expanded': sidebarCollapsed }">
+      <NotifProduct ref="notifProduct" />
       <header class="header">
         <div class="page-title">
           <h1>{{ isEditing ? 'Edit Product' : 'Add New Product' }}</h1>
@@ -277,6 +278,7 @@
   </div>
 </template>
 
+
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -284,10 +286,12 @@ import { db } from '@/firebase/firebaseConfig';
 import { collection, addDoc, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import Sidebar from '@/components/Sidebar.vue';
+import NotifProduct from '@/components/NotifProduct.vue';
 
 const route = useRoute();
 const router = useRouter();
 const auth = getAuth();
+const notifProduct = ref(null);
 
 const isEditing = computed(() => route.name === 'EditProduct');
 const isSaving = ref(false);
@@ -315,6 +319,11 @@ const product = ref({
   sellerId: '',
   productId: ''
 });
+
+// Helper function for notifications
+const showNotification = (message, type = 'success') => {
+  notifProduct.value?.showNotification(message, type);
+};
 
 const handleSidebarToggle = (collapsed) => {
   sidebarCollapsed.value = collapsed;
@@ -345,23 +354,23 @@ const calculateProfit = () => {
 
 const validateForm = () => {
   if (!product.value.productName) {
-    alert('Product name is required');
+    showNotification('Product name is required', 'warning');
     return false;
   }
   if (!product.value.category) {
-    alert('Category is required');
+    showNotification('Category is required', 'warning');
     return false;
   }
   if (!product.value.price) {
-    alert('Price is required');
+    showNotification('Price is required', 'warning');
     return false;
   }
   if (!product.value.stock && product.value.stock !== 0) {
-    alert('Stock quantity is required');
+    showNotification('Stock quantity is required', 'warning');
     return false;
   }
   if (!product.value.status) {
-    alert('Status is required');
+    showNotification('Status is required', 'warning');
     return false;
   }
   return true;
@@ -380,12 +389,12 @@ const fetchProduct = async (productId) => {
         productId: productSnap.id
       };
     } else {
-      alert('Product not found');
+      showNotification('Product not found', 'error');
       router.push('/products');
     }
   } catch (error) {
     console.error('Error fetching product:', error);
-    alert('Failed to load product details');
+    showNotification('Failed to load product details', 'error');
   }
 };
 
@@ -394,7 +403,7 @@ const saveProduct = async () => {
 
   const user = auth.currentUser;
   if (!user) {
-    alert('You must be logged in to save a product.');
+    showNotification('You must be logged in to save a product.', 'error');
     return;
   }
 
@@ -411,7 +420,8 @@ const saveProduct = async () => {
 
     if (isEditing.value) {
       await updateDoc(doc(db, 'products', id), dataToSave);
-      alert('Product updated successfully!');
+      showNotification('Product updated successfully!', 'success');
+      setTimeout(() => router.push('/products'), 1500);
     } else {
       const docRef = await addDoc(collection(db, 'products'), {
         ...dataToSave,
@@ -419,33 +429,35 @@ const saveProduct = async () => {
       });
       product.value.productId = docRef.id;
       await updateDoc(docRef, { productId: docRef.id });
-      alert('Product saved successfully!');
+      showNotification('Product saved successfully!', 'success');
+      setTimeout(() => router.push('/products'), 1500);
     }
-
-    router.push('/products');
   } catch (error) {
     console.error('Error saving product:', error);
-    alert('Failed to save product. Please try again.');
+    showNotification('Failed to save product. Please try again.', 'error');
   } finally {
     isSaving.value = false;
   }
 };
 
 const cancelEdit = () => {
-  if (confirm('Are you sure you want to cancel? Any unsaved changes will be lost.')) {
-    router.push('/products');
-  }
+  showNotification('Cancelled editing. Changes were not saved.', 'warning');
+  setTimeout(() => router.push('/products'), 1500);
 };
 
 onMounted(() => {
-  // Check if sidebar was collapsed in localStorage
+  // Test notification to verify component is working
+  setTimeout(() => {
+    showNotification('Product form loaded successfully', 'success');
+  }, 1000);
+
   const savedSidebarState = localStorage.getItem('sidebar-collapsed');
   if (savedSidebarState === 'true') {
     sidebarCollapsed.value = true;
   }
   
-  if (isEditing.value && route.params.productId) {
-    fetchProduct(route.params.productId);
+  if (isEditing.value && route.params.id) {
+    fetchProduct(route.params.id);
   } else {
     const user = auth.currentUser;
     if (user) {
@@ -465,15 +477,13 @@ onMounted(() => {
 .main-content {
   flex: 1;
   padding: 20px;
-  margin-left: 250px;
+  margin-left: 230px;
   transition: margin-left 0.3s ease;
   overflow-y: auto;
-  width: calc(100% - 250px);
 }
 
 .main-content.expanded {
-  margin-left: 80px;
-  width: calc(100% - 80px);
+  margin-left: 60px;
 }
 
 .header {
@@ -730,14 +740,11 @@ onMounted(() => {
 @media (max-width: 768px) {
   .main-content {
     margin-left: 0;
-    width: 100%;
     padding: 15px;
-    margin-top: 60px;
   }
   
   .main-content.expanded {
     margin-left: 0;
-    width: 100%;
   }
   
   .form-grid {
@@ -746,6 +753,10 @@ onMounted(() => {
   
   .form-section {
     padding: 15px;
+  }
+  
+  .sidebar-collapsed .main-content {
+    margin-left: 0;
   }
 }
 

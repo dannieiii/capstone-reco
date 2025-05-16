@@ -1,53 +1,67 @@
 <template>
     <div class="notification-container">
-      <div class="notification-icon" @click="toggleNotificationPanel($event)" ref="notificationIconRef">
-        <Bell size="20" />
-        <span class="notification-badge" v-if="unreadCount > 0">{{ unreadCount > 9 ? '9+' : unreadCount }}</span>
-        
-        <!-- Simple Notification Popup -->
-        <div class="notification-popup" v-if="showNotificationPanel">
-          <div class="notification-header">
-            <h3>Notifications</h3>
+      <!-- Remove the notification icon from here since it's in SellerDashboard -->
+      <div class="notification-panel" v-if="showNotificationPanel" @click.stop>
+        <div class="notification-header">
+          <h3>Notifications</h3>
+          <div class="header-actions">
             <button 
+              v-if="notifications.length > 0 && unreadCount > 0"
               class="mark-all-read" 
               @click.stop="markAllAsRead"
-              v-if="notifications.length > 0 && unreadCount > 0"
             >
               <CheckSquare size="14" />
               Mark all as read
             </button>
+            <button @click.stop="toggleNotificationPanel" class="close-button">
+              <X size="20" />
+            </button>
           </div>
-          
-          <div class="notification-list" v-if="notifications.length > 0">
-            <div 
-              v-for="notification in notifications.slice(0, 5)" 
-              :key="notification.id"
-              class="notification-item"
-              :class="{ unread: !notification.read }"
-              @click.stop="handleNotificationClick(notification)"
-            >
-              <div class="notification-icon-wrapper" :class="getNotificationTypeClass(notification.type)">
-                <ShoppingBag v-if="notification.type === 'order'" size="16" />
-                <AlertCircle v-else-if="notification.type === 'alert'" size="16" />
-                <MessageSquare v-else-if="notification.type === 'message'" size="16" />
-                <Bell v-else size="16" />
+        </div>
+        
+        <div class="notification-list" v-if="notifications.length > 0">
+          <div 
+            v-for="notification in notifications" 
+            :key="notification.id"
+            class="notification-item"
+            :class="{ 
+              unread: !notification.read,
+              'price-alert': notification.type === 'price_alert'
+            }"
+            @click.stop="handleNotificationClick(notification)"
+          >
+            <div class="notification-icon-wrapper" :class="getNotificationTypeClass(notification.type)">
+              <ShoppingBag v-if="notification.type === 'order'" size="16" />
+              <AlertCircle v-else-if="notification.type === 'alert'" size="16" />
+              <MessageSquare v-else-if="notification.type === 'message'" size="16" />
+              <Bell v-else size="16" />
+            </div>
+            <div class="notification-content">
+              <div class="notification-title">
+                {{ notification.title }}
+                <span v-if="notification.type === 'price_alert'" class="notification-attempt">
+                  Attempt {{ notification.attemptNumber }}/3
+                </span>
               </div>
-              <div class="notification-content">
-                <div class="notification-title">{{ notification.title }}</div>
-                <div class="notification-message">{{ notification.message }}</div>
-                <div class="notification-time">{{ formatTime(notification.timestamp) }}</div>
+              <div class="notification-message">{{ notification.message }}</div>
+              <div class="notification-time">{{ formatTime(notification.timestamp) }}</div>
+              <div v-if="notification.type === 'price_alert'" class="notification-details">
+                <span class="notification-type">Price Alert</span>
+                <span class="notification-status" :class="{ 'status-unread': !notification.read }">
+                  {{ notification.read ? 'Read' : 'Unread' }}
+                </span>
               </div>
             </div>
           </div>
-          
-          <div class="empty-notifications" v-else>
-            <Bell size="24" class="empty-icon" />
-            <p>No notifications</p>
-            <button class="refresh-btn" @click="forceRefreshNotifications">
-              <RefreshCw size="16" />
-              Refresh Notifications
-            </button>
-          </div>
+        </div>
+        
+        <div class="empty-notifications" v-else>
+          <Bell size="24" class="empty-icon" />
+          <p>No notifications</p>
+          <button class="refresh-btn" @click.stop="fetchNotifications">
+            <RefreshCw size="16" />
+            Refresh Notifications
+          </button>
         </div>
       </div>
     </div>
@@ -56,21 +70,17 @@
   <script setup>
   import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
   import { useRouter } from 'vue-router';
-  import { Bell, CheckSquare, ShoppingBag, AlertCircle, MessageSquare, RefreshCw } from 'lucide-vue-next';
+  import { Bell, CheckSquare, ShoppingBag, AlertCircle, MessageSquare, RefreshCw, X } from 'lucide-vue-next';
   import { 
     getFirestore, 
     collection, 
     query, 
     where, 
-    orderBy, 
-    onSnapshot, 
-    doc, 
-    updateDoc, 
-    Timestamp, 
-    writeBatch,
-    serverTimestamp,
     getDocs,
-    addDoc,
+    doc,
+    updateDoc,
+    serverTimestamp,
+    orderBy,
     limit
   } from 'firebase/firestore';
   import { getAuth, onAuthStateChanged } from 'firebase/auth';
@@ -82,13 +92,9 @@
   // State
   const notifications = ref([]);
   const showNotificationPanel = ref(false);
-  const notificationIconRef = ref(null);
   const currentUserId = ref(null);
-  const unsubscribeNotifications = ref(null);
-  const unsubscribeOrderListener = ref(null);
-  const isAuthReady = ref(false);
-  const isProcessingOrders = ref(false);
-  const isInitialized = ref(false); // Track if the component is initialized
+  const isLoading = ref(false);
+  const pollInterval = ref(null);
   
   // Props
   const props = defineProps({
@@ -98,32 +104,26 @@
     }
   });
   
+  // Emit definition
+  const emit = defineEmits(['notification-count-update']);
+  
   // Computed properties
   const unreadCount = computed(() => {
     return notifications.value.filter(notification => !notification.read).length;
   });
   
   // Toggle notification panel
-  const toggleNotificationPanel = (event) => {
-    if (event) {
-      event.stopPropagation();
-    }
+  const toggleNotificationPanel = () => {
     showNotificationPanel.value = !showNotificationPanel.value;
-    
-    // If opening the panel, refresh notifications
     if (showNotificationPanel.value) {
-      refreshNotifications();
+      fetchNotifications();
     }
   };
   
   // Format timestamp
   const formatTime = (timestamp) => {
     if (!timestamp) return 'Unknown time';
-    
-    const date = timestamp instanceof Timestamp 
-      ? timestamp.toDate() 
-      : new Date(timestamp);
-    
+    const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
     const now = new Date();
     const diffMs = now - date;
     const diffSec = Math.floor(diffMs / 1000);
@@ -131,41 +131,45 @@
     const diffHour = Math.floor(diffMin / 60);
     const diffDay = Math.floor(diffHour / 24);
     
-    if (diffSec < 60) {
-      return 'Just now';
-    } else if (diffMin < 60) {
-      return `${diffMin} min ago`;
-    } else if (diffHour < 24) {
-      return `${diffHour} hr ago`;
-    } else if (diffDay < 7) {
-      return `${diffDay} days ago`;
-    } else {
-      return date.toLocaleDateString();
-    }
+    if (diffSec < 60) return 'Just now';
+    if (diffMin < 60) return `${diffMin} min ago`;
+    if (diffHour < 24) return `${diffHour} hr ago`;
+    if (diffDay < 7) return `${diffDay} days ago`;
+    return date.toLocaleDateString();
   };
   
   // Get notification type class
   const getNotificationTypeClass = (type) => {
     switch (type) {
-      case 'order':
-        return 'type-order';
-      case 'alert':
-        return 'type-alert';
-      case 'message':
-        return 'type-message';
-      default:
-        return 'type-default';
+      case 'order': return 'type-order';
+      case 'alert': return 'type-alert';
+      case 'message': return 'type-message';
+      case 'price_alert': return 'type-price-alert';
+      default: return 'type-default';
     }
   };
   
   // Handle notification click
-  const handleNotificationClick = (notification) => {
-    // Mark as read
+  const handleNotificationClick = async (notification) => {
     if (!notification.read) {
-      markAsRead(notification.id);
+      try {
+        const notificationRef = doc(db, 'notifications', notification.id);
+        await updateDoc(notificationRef, {
+          read: true,
+          readAt: serverTimestamp()
+        });
+        
+        // Update local state
+        notifications.value = notifications.value.map(n => 
+          n.id === notification.id ? { ...n, read: true } : n
+        );
+        
+        emit('notification-count-update', unreadCount.value);
+      } catch (error) {
+        console.error('Error marking notification as read:', error);
+      }
     }
     
-    // Navigate based on notification type
     if (notification.type === 'order' && notification.orderId) {
       router.push(`/seller/orders/${notification.orderId}`);
       showNotificationPanel.value = false;
@@ -175,315 +179,132 @@
     }
   };
   
-  // Mark notification as read
-  const markAsRead = async (notificationId) => {
-    try {
-      const notificationRef = doc(db, 'notifications', notificationId);
-      await updateDoc(notificationRef, {
-        read: true,
-        readAt: serverTimestamp()
-      });
-      
-      // Update local state
-      notifications.value = notifications.value.map(notification => {
-        if (notification.id === notificationId) {
-          return { ...notification, read: true };
-        }
-        return notification;
-      });
-    } catch (error) {
-      console.error('Error marking notification as read:', error);
-    }
-  };
-  
   // Mark all notifications as read
-  const markAllAsRead = async (event) => {
-    if (event) event.stopPropagation();
-    
+  const markAllAsRead = async () => {
     try {
-      const batch = writeBatch(db);
-      const unreadNotificationsList = notifications.value.filter(notification => !notification.read);
-      
-      unreadNotificationsList.forEach(notification => {
+      const unreadNotifications = notifications.value.filter(n => !n.read);
+      for (const notification of unreadNotifications) {
         const notificationRef = doc(db, 'notifications', notification.id);
-        batch.update(notificationRef, {
+        await updateDoc(notificationRef, {
           read: true,
           readAt: serverTimestamp()
         });
-      });
-      
-      await batch.commit();
+      }
       
       // Update local state
-      notifications.value = notifications.value.map(notification => {
-        return { ...notification, read: true };
-      });
+      notifications.value = notifications.value.map(n => ({ ...n, read: true }));
+      emit('notification-count-update', 0);
     } catch (error) {
       console.error('Error marking all notifications as read:', error);
     }
   };
   
-  // Setup notification listener
-  const setupNotificationListener = (userId) => {
-    if (!userId) return;
+  // Fetch notifications
+  const fetchNotifications = async () => {
+    if (isLoading.value || !currentUserId.value) return;
     
-    // Clear any existing listener
-    if (unsubscribeNotifications.value) {
-      unsubscribeNotifications.value();
-    }
-    
-    const notificationsRef = collection(db, 'notifications');
-    const q = query(
-      notificationsRef,
-      where('userId', '==', userId),
-      orderBy('timestamp', 'desc'),
-      limit(20)
-    );
-    
-    unsubscribeNotifications.value = onSnapshot(q, (snapshot) => {
-      const notificationsList = [];
-      
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        notificationsList.push({
-          id: doc.id,
-          title: data.title || 'Notification',
-          message: data.message || '',
-          type: data.type || 'default',
-          read: data.read || false,
-          timestamp: data.timestamp || new Date(),
-          orderId: data.orderId || null,
-          link: data.link || null
-        });
-      });
-      
-      notifications.value = notificationsList;
-      console.log('Notifications updated:', notificationsList.length);
-    }, (error) => {
-      console.error('Error setting up notification listener:', error);
-    });
-  };
-  
-  // Force refresh notifications
-  const forceRefreshNotifications = () => {
-    refreshNotifications();
-    processExistingOrders();
-  };
-  
-  // Refresh notifications
-  const refreshNotifications = () => {
-    const userId = currentUserId.value || props.userId;
-    if (userId) {
-      setupNotificationListener(userId);
-    }
-  };
-  
-  // Process existing orders
-  const processExistingOrders = async () => {
-    if (isProcessingOrders.value) return;
-    
-    const userId = currentUserId.value || props.userId;
-    if (!userId) return;
-    
-    isProcessingOrders.value = true;
-    console.log('Processing existing orders for user:', userId);
-    
+    isLoading.value = true;
     try {
-      const ordersRef = collection(db, 'orders');
+      const notificationsRef = collection(db, 'notifications');
+      // Simplified query to avoid index requirement
       const q = query(
-        ordersRef,
-        where('sellerId', '==', userId),
-        orderBy('timestamp', 'desc')
+        notificationsRef,
+        where('userId', '==', currentUserId.value),
+        limit(50)
       );
       
       const snapshot = await getDocs(q);
-      console.log(`Found ${snapshot.size} orders to process`);
+      const loadedNotifications = [];
       
-      let processedCount = 0;
-      
-      for (const doc of snapshot.docs) {
-        const orderData = doc.data();
-        await createOrderNotification({
-          id: doc.id,
-          ...orderData,
-          sellerId: userId
-        });
-        processedCount++;
-      }
-      
-      console.log(`Processed ${processedCount} orders`);
-    } catch (error) {
-      console.error('Error processing existing orders:', error);
-    } finally {
-      isProcessingOrders.value = false;
-    }
-  };
-  
-  // Setup order listener
-  const setupOrderListener = (sellerId) => {
-    if (!sellerId) return;
-    
-    // Process existing orders first
-    processExistingOrders();
-    
-    // Clear any existing listener
-    if (unsubscribeOrderListener.value) {
-      unsubscribeOrderListener.value();
-    }
-    
-    const ordersRef = collection(db, 'orders');
-    const q = query(
-      ordersRef,
-      where('sellerId', '==', sellerId),
-      orderBy('timestamp', 'desc')
-    );
-    
-    unsubscribeOrderListener.value = onSnapshot(q, (snapshot) => {
-      snapshot.docChanges().forEach((change) => {
-        if (change.type === 'added') {
-          const orderData = change.doc.data();
-          console.log('New order detected:', change.doc.id);
-          createOrderNotification({
-            id: change.doc.id,
-            ...orderData,
-            sellerId: sellerId
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        // Add specific handling for OverPricing notifications
+        if (data.type === 'price_alert') {
+          loadedNotifications.push({
+            id: doc.id,
+            ...data,
+            title: 'Price Alert',
+            message: `Your product "${data.productName}" is priced ${data.priceDifference}% above the market average. Please review your pricing.`,
+            timestamp: data.timestamp?.toDate() || new Date()
           });
-        } else if (change.type === 'modified') {
-          // Handle status changes if needed
-          const orderData = change.doc.data();
-          console.log('Order modified:', change.doc.id, orderData.status);
+        } else {
+          loadedNotifications.push({
+            id: doc.id,
+            ...data,
+            timestamp: data.timestamp?.toDate() || new Date()
+          });
         }
       });
-    }, (error) => {
-      console.error('Error setting up order listener:', error);
-    });
-  };
-  
-  // Create a notification for a new order
-  const createOrderNotification = async (order) => {
-    try {
-      const sellerId = order.sellerId;
-      if (!sellerId) {
-        console.error('No seller ID found in order:', order.id);
-        return;
-      }
       
-      // Check if a notification for this order already exists
-      const notificationsRef = collection(db, 'notifications');
-      const existingQuery = query(
-        notificationsRef,
-        where('userId', '==', sellerId),
-        where('orderId', '==', order.id)
-      );
-      
-      const existingSnapshot = await getDocs(existingQuery);
-      
-      // Only create a notification if one doesn't already exist
-      if (existingSnapshot.empty) {
-        console.log('Creating new notification for order:', order.id);
-        
-        // Create notification document
-        await addDoc(notificationsRef, {
-          userId: sellerId,
-          title: 'New Order Received',
-          message: `New order #${order.orderCode || order.id.substring(0, 6)} for ${order.productName || 'your product'} has been placed.`,
-          type: 'order',
-          read: false,
-          timestamp: serverTimestamp(),
-          orderId: order.id,
-          link: `/seller/orders/${order.id}`
-        });
-        
-        console.log('Notification created successfully for order:', order.id);
-        
-        // Refresh notifications
-        refreshNotifications();
-      } else {
-        console.log('Notification already exists for order:', order.id);
-      }
+      // Sort notifications by timestamp in memory
+      loadedNotifications.sort((a, b) => b.timestamp - a.timestamp);
+      notifications.value = loadedNotifications;
+      emit('notification-count-update', unreadCount.value);
     } catch (error) {
-      console.error('Error creating order notification:', error);
+      console.error('Error fetching notifications:', error);
+    } finally {
+      isLoading.value = false;
     }
   };
   
-  // Close notification panel when clicking outside
-  const handleClickOutside = (event) => {
-    if (notificationIconRef.value && !notificationIconRef.value.contains(event.target)) {
-      showNotificationPanel.value = false;
+  // Start polling for notifications
+  const startPolling = () => {
+    if (pollInterval.value) return;
+    
+    // Initial fetch
+    fetchNotifications();
+    
+    // Set up polling interval (every 30 seconds)
+    pollInterval.value = setInterval(() => {
+      if (currentUserId.value) {
+        fetchNotifications();
+      }
+    }, 30000);
+  };
+  
+  // Stop polling
+  const stopPolling = () => {
+    if (pollInterval.value) {
+      clearInterval(pollInterval.value);
+      pollInterval.value = null;
     }
   };
   
   // Initialize
-  onMounted(() => {
-    // Initialize only once
-    if (isInitialized.value) return;
-    isInitialized.value = true;
-  
-    // Use provided userId or get from auth
-    if (props.userId) {
-      currentUserId.value = props.userId;
-      setupNotificationListener(props.userId);
-      setupOrderListener(props.userId);
+  onMounted(async () => {
+    const userId = props.userId;
+    if (userId) {
+      currentUserId.value = userId;
+      startPolling();
     } else {
-      onAuthStateChanged(auth, (user) => {
+      onAuthStateChanged(auth, async (user) => {
         if (user) {
           currentUserId.value = user.uid;
-          setupNotificationListener(user.uid);
-          setupOrderListener(user.uid);
+          startPolling();
         }
-        isAuthReady.value = true;
       });
     }
-    
-    document.addEventListener('click', handleClickOutside);
-    
-    // Process existing orders on mount
-    setTimeout(() => {
-      processExistingOrders();
-    }, 1000);
   });
   
+  // Cleanup
   onUnmounted(() => {
-    document.removeEventListener('click', handleClickOutside);
-    
-    if (unsubscribeNotifications.value) {
-      unsubscribeNotifications.value();
-    }
-    if (unsubscribeOrderListener.value) {
-      unsubscribeOrderListener.value();
+    stopPolling();
+  });
+  
+  // Watch for userId changes
+  watch(() => props.userId, (newUserId) => {
+    if (newUserId) {
+      currentUserId.value = newUserId;
+      startPolling();
     }
   });
   
-  // Watch for auth ready and currentUserId
-  watch(
-    () => [isAuthReady.value, currentUserId.value],
-    ([newIsAuthReady, newCurrentUserId]) => {
-      if (newIsAuthReady && newCurrentUserId) {
-        setupNotificationListener(newCurrentUserId);
-        setupOrderListener(newCurrentUserId);
-      }
-    }
-  );
-  
-  // Watch for props.userId changes
-  watch(
-    () => props.userId,
-    (newUserId) => {
-      if (newUserId) {
-        currentUserId.value = newUserId;
-        setupNotificationListener(newUserId);
-        setupOrderListener(newUserId);
-      }
-    }
-  );
-  
-  // Expose for parent component
+  // Expose methods
   defineExpose({
     unreadCount,
     toggleNotificationPanel,
     markAllAsRead,
-    refreshNotifications,
-    processExistingOrders
+    fetchNotifications
   });
   </script>
   
@@ -492,43 +313,7 @@
     position: relative;
   }
   
-  .notification-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background-color: #fff;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #6b7280;
-    cursor: pointer;
-    border: 1px solid #e5e7eb;
-    position: relative;
-    transition: all 0.2s ease;
-  }
-  
-  .notification-icon:hover {
-    background-color: #f9fafb;
-  }
-  
-  .notification-badge {
-    position: absolute;
-    top: -5px;
-    right: -5px;
-    background-color: #ef4444;
-    color: white;
-    border-radius: 50%;
-    min-width: 18px;
-    height: 18px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.6rem;
-    font-weight: bold;
-    padding: 0 4px;
-  }
-  
-  .notification-popup {
+  .notification-panel {
     position: absolute;
     top: 50px;
     right: -10px;
@@ -536,7 +321,7 @@
     background-color: #fff;
     border-radius: 10px;
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-    z-index: 100;
+    z-index: 1000;
     overflow: hidden;
   }
   
@@ -548,11 +333,10 @@
     border-bottom: 1px solid #f3f4f6;
   }
   
-  .notification-header h3 {
-    font-size: 1rem;
-    font-weight: 600;
-    margin: 0;
-    color: #111827;
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
   }
   
   .mark-all-read {
@@ -571,6 +355,20 @@
   
   .mark-all-read:hover {
     background-color: #ecfdf5;
+  }
+  
+  .close-button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 5px;
+    color: #666;
+    border-radius: 4px;
+    transition: background-color 0.2s ease;
+  }
+  
+  .close-button:hover {
+    background-color: #f3f4f6;
   }
   
   .notification-list {
@@ -624,6 +422,11 @@
     color: #7e22ce;
   }
   
+  .type-price-alert {
+    background-color: #fef3c7;
+    color: #a16207;
+  }
+  
   .type-default {
     background-color: #f3f4f6;
     color: #6b7280;
@@ -648,6 +451,7 @@
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
+    line-clamp: 2;
     overflow: hidden;
   }
   
@@ -693,8 +497,7 @@
   }
   
   /* Dark mode styles */
-  :global(.dark) .notification-icon,
-  :global(.dark) .notification-popup {
+  :global(.dark) .notification-panel {
     background-color: #1f2937;
     border-color: #374151;
   }
@@ -740,7 +543,7 @@
   
   /* Responsive styles */
   @media (max-width: 576px) {
-    .notification-popup {
+    .notification-panel {
       position: fixed;
       top: 60px;
       right: 10px;
@@ -749,5 +552,81 @@
       max-width: calc(100% - 20px);
       z-index: 1000;
     }
+  }
+  
+  /* Add these styles in the <style> section */
+  .type-price-alert {
+    background-color: #fef3c7;
+    color: #a16207;
+  }
+  
+  :global(.dark) .type-price-alert {
+    background-color: rgba(251, 191, 36, 0.2);
+    color: #fbbf24;
+  }
+  
+  .notification-item.price-alert {
+    border-left: 3px solid #f59e0b;
+  }
+  
+  :global(.dark) .notification-item.price-alert {
+    border-left-color: #fbbf24;
+  }
+  
+  .notification-attempt {
+    font-size: 0.7rem;
+    color: #92400e;
+    background-color: #fef3c7;
+    padding: 2px 6px;
+    border-radius: 10px;
+    margin-left: 8px;
+  }
+  
+  :global(.dark) .notification-attempt {
+    color: #fbbf24;
+    background-color: rgba(251, 191, 36, 0.2);
+  }
+  
+  .notification-details {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 5px;
+  }
+  
+  .notification-type {
+    font-size: 0.7rem;
+    color: #92400e;
+    background-color: #fef3c7;
+    padding: 2px 6px;
+    border-radius: 10px;
+  }
+  
+  .notification-status {
+    font-size: 0.7rem;
+    color: #6b7280;
+    padding: 2px 6px;
+    border-radius: 10px;
+    background-color: #f3f4f6;
+  }
+  
+  .notification-status.status-unread {
+    color: #ef4444;
+    background-color: #fee2e2;
+  }
+  
+  :global(.dark) .notification-type {
+    color: #fbbf24;
+    background-color: rgba(251, 191, 36, 0.2);
+  }
+  
+  :global(.dark) .notification-status {
+    color: #9ca3af;
+    background-color: #374151;
+  }
+  
+  :global(.dark) .notification-status.status-unread {
+    color: #f87171;
+    background-color: rgba(248, 113, 113, 0.2);
   }
   </style>

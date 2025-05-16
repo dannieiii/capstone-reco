@@ -12,7 +12,17 @@
         </div>
         
         <div class="user-profile" @click="toggleProfileMenu" ref="profileRef">
-          <NotificationSystem ref="notificationSystem" :userId="auth.currentUser?.uid" />
+          <div class="notification-wrapper">
+            <div class="notification-icon" @click.stop="handleNotificationClick">
+              <Bell size="20" />
+              <span v-if="notificationCount > 0" class="notification-badge">{{ notificationCount }}</span>
+            </div>
+            <NotificationSystem 
+              ref="notificationSystem" 
+              :userId="currentUserId"
+              @notification-count-update="updateNotificationCount"
+            />
+          </div>
           <div class="avatar">
             <User v-if="!profilePicture" size="24" class="default-avatar" />
             <img v-else :src="profilePicture" alt="User avatar" />
@@ -181,7 +191,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue';
+import { ref, onMounted, onBeforeUnmount, computed, watch, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { 
   Search, 
@@ -212,25 +222,30 @@ import { getFirestore, doc, getDoc, collection, query, where, getDocs, orderBy, 
 import { getAuth, signOut, onAuthStateChanged } from 'firebase/auth';
 
 const router = useRouter();
-
-// Initialize Firestore and Auth
 const db = getFirestore();
 const auth = getAuth();
 
-// User data
+// State
 const username = ref('Loading...');
 const firstName = ref('');
 const email = ref('Loading...');
 const profilePicture = ref(null);
 const searchQuery = ref('');
+const showProfileMenu = ref(false);
+const activeTab = ref('profile');
+const profileRef = ref(null);
+const notificationSystem = ref(null);
+const notificationCount = ref(0);
+const currentUserId = ref(null);
 
-// Weather data (mock - in real app you'd fetch this from an API)
+// Weather data
 const weatherData = ref({
   temp: 28,
   condition: 'Partly Cloudy',
-  icon: '02d' // OpenWeatherMap icon code
+  icon: '02d'
 });
 
+// Computed properties
 const weatherIcon = computed(() => {
   return `https://openweathermap.org/img/wn/${weatherData.value.icon}@2x.png`;
 });
@@ -242,7 +257,7 @@ const timeOfDay = computed(() => {
   return 'evening';
 });
 
-// Metrics for farm products
+// Metrics
 const metrics = ref([
   { title: 'New Orders', value: '0', change: 0 },
   { title: 'Harvest Ready', value: '0', change: 0 },
@@ -250,18 +265,48 @@ const metrics = ref([
   { title: 'Customer Reviews', value: '0', change: 0 }
 ]);
 
+// Time periods
+const timePeriods = ref([
+  { label: 'Today', value: '1d' },
+  { label: 'This Week', value: '7d' },
+  { label: 'This Month', value: '1m' },
+  { label: 'This Year', value: '1y' }
+]);
+
+// Active time periods
+const revenuePeriod = ref('1m');
+const topProductsPeriod = ref('1m');
+
+// Data
 const totalOrders = ref(0);
 const recentOrders = ref([]);
 const isLoading = ref(true);
 const performanceScore = ref(80);
 const performanceMessage = ref("You're doing great! 👍");
-const monthlyTarget = ref(50000); // ₱50,000 target
-const currentMonthSales = ref(32500); // ₱32,500 current sales
+const monthlyTarget = ref(50000);
+const currentMonthSales = ref(32500);
+const totalRevenue = ref(158700);
 
-// Profile dropdown state
-const showProfileMenu = ref(false);
-const activeTab = ref('profile');
-const profileRef = ref(null);
+// Top products
+const topProducts = ref([
+  { name: 'Organic Rice', percentage: 95, image: '/images/rice.jpg' },
+  { name: 'Fresh Tomatoes', percentage: 85, image: '/images/tomatoes.jpg' },
+  { name: 'Eggplant', percentage: 70, image: '/images/eggplant.jpg' },
+  { name: 'Pumpkin', percentage: 55, image: '/images/pumpkin.jpg' },
+  { name: 'Bananas', percentage: 50, image: '/images/bananas.jpg' }
+]);
+
+// Methods
+const handleNotificationClick = async () => {
+  console.log('Notification clicked in SellerDashboard');
+  await nextTick(); // Wait for component to be mounted
+  if (notificationSystem.value) {
+    console.log('Notification system reference found, toggling panel');
+    notificationSystem.value.toggleNotificationPanel();
+  } else {
+    console.error('Notification system reference not found in SellerDashboard');
+  }
+};
 
 const toggleProfileMenu = () => {
   showProfileMenu.value = !showProfileMenu.value;
@@ -271,7 +316,6 @@ const setActiveTab = (tab) => {
   activeTab.value = tab;
 };
 
-// Navigation functions
 const navigateToEditProfile = () => {
   router.push('/seller/edit-profile');
   showProfileMenu.value = false;
@@ -295,82 +339,180 @@ const handleLogout = async () => {
   }
 };
 
-// Metric information
-const showMetricInfo = (metric) => {
-  let message = '';
-  switch(metric) {
-    case 'New Orders':
-      message = 'Number of new orders received in the last 24 hours';
-      break;
-    case 'Harvest Ready':
-      message = 'Products ready for harvest in the next 7 days';
-      break;
-    case 'Products Low Stock':
-      message = 'Products with less than 10 items in stock';
-      break;
-    case 'Customer Reviews':
-      message = 'New customer reviews received in the last week';
-      break;
-  }
-  alert(`${metric}: ${message}`);
+const handleSearch = () => {
+  console.log('Searching for:', searchQuery.value);
 };
 
-// Close dropdown when clicking outside
 const handleClickOutside = (event) => {
   if (profileRef.value && !profileRef.value.contains(event.target)) {
     showProfileMenu.value = false;
   }
 };
 
-// Search functionality
-const handleSearch = () => {
-  // In a real app, you would implement search logic here
-  console.log('Searching for:', searchQuery.value);
+// Watch for notification count changes
+watch(() => notificationSystem.value?.unreadCount, (newCount) => {
+  console.log('Notification count updated:', newCount);
+  notificationCount.value = newCount || 0;
+}, { immediate: true });
+
+// Add this method to handle notification count updates
+const updateNotificationCount = (count) => {
+  console.log('Notification count updated in SellerDashboard:', count);
+  notificationCount.value = count;
 };
 
-// Fetch user data and orders
-const fetchUserData = async () => {
-  try {
-    const user = auth.currentUser;
+// Lifecycle hooks
+onMounted(async () => {
+  console.log('SellerDashboard mounted');
+  
+  onAuthStateChanged(auth, async (user) => {
     if (user) {
-      // Get user document from users collection
-      const userDocRef = doc(db, 'users', user.uid);
-      const userDocSnap = await getDoc(userDocRef);
+      console.log('User authenticated in SellerDashboard:', user.uid);
+      currentUserId.value = user.uid;
       
-      if (userDocSnap.exists()) {
-        const userData = userDocSnap.data();
-        firstName.value = userData.firstName || 'Farmer';
-        username.value = userData.username || `${userData.firstName || ''} ${userData.lastName || ''}`.trim() || 'Seller';
-        email.value = userData.email || 'No email available';
-        profilePicture.value = userData.profilePicture || null;
+      try {
+        // Set email from auth user immediately
+        email.value = user.email || '';
         
-        // Fetch orders for this seller
-        await fetchSellerOrders(user.uid);
+        // Wait for next tick to ensure notification system is mounted
+        await nextTick();
         
-        // Setup real-time listeners for orders
-        setupOrdersListener(user.uid);
+        // Initialize notification system
+        if (notificationSystem.value) {
+          console.log('Initializing notification system in SellerDashboard');
+          await notificationSystem.value.setupNotificationListener(user.uid);
+          console.log('Notification system initialized');
+        } else {
+          console.error('Notification system reference not found during initialization');
+        }
+
+        // Then fetch user data
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        console.log('User document exists:', userDoc.exists());
         
-        // Fetch products for this seller
-        await fetchSellerProducts(user.uid);
-        
-        // Calculate metrics based on data
-        calculateMetrics();
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          console.log('Raw user data:', userData);
+          
+          // Update user information with full name
+          const firstName = userData.firstName || '';
+          const lastName = userData.lastName || '';
+          console.log('First name:', firstName);
+          console.log('Last name:', lastName);
+          
+          const fullName = `${firstName} ${lastName}`.trim();
+          console.log('Full name:', fullName);
+          
+          if (fullName) {
+            username.value = fullName;
+            firstName.value = firstName;
+          } else if (userData.username) {
+            username.value = userData.username;
+            firstName.value = userData.username;
+          } else if (user.displayName) {
+            username.value = user.displayName;
+            firstName.value = user.displayName;
+          } else {
+            username.value = 'Seller';
+            firstName.value = 'Seller';
+          }
+          
+          console.log('Final username:', username.value);
+          console.log('Final firstname:', firstName.value);
+          
+          profilePicture.value = userData.profilePicture || null;
+          
+          // Fetch orders and products
+          await fetchSellerOrders(user.uid);
+          await fetchSellerProducts(user.uid);
+          calculateMetrics();
+        } else {
+          console.error('User document not found in Firestore');
+          // Try to get name from auth user
+          if (user.displayName) {
+            username.value = user.displayName;
+            firstName.value = user.displayName;
+          } else {
+            username.value = 'Seller';
+            firstName.value = 'Seller';
+          }
+        }
+      } catch (error) {
+        console.error('Error in SellerDashboard initialization:', error);
+        // Set fallback values on error
+        if (user.displayName) {
+          username.value = user.displayName;
+          firstName.value = user.displayName;
+        } else {
+          username.value = 'Seller';
+          firstName.value = 'Seller';
+        }
       }
+    } else {
+      console.log('No user authenticated in SellerDashboard');
+      currentUserId.value = null;
+      // Reset values
+      username.value = 'Loading...';
+      firstName.value = '';
+      email.value = 'Loading...';
+      profilePicture.value = null;
     }
+  });
+  
+  document.addEventListener('click', handleClickOutside);
+  fetchWeatherData();
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleClickOutside);
+});
+
+// Fetch weather data (mock function)
+const fetchWeatherData = async () => {
+  try {
+    // In a real app, you would fetch from a weather API
+    // For now, we'll just simulate with mock data
+    setTimeout(() => {
+      const weatherConditions = [
+        { temp: 28, condition: 'Partly Cloudy', icon: '02d' },
+        { temp: 32, condition: 'Sunny', icon: '01d' },
+        { temp: 26, condition: 'Light Rain', icon: '10d' },
+        { temp: 30, condition: 'Clear Sky', icon: '01d' }
+      ];
+      
+      weatherData.value = weatherConditions[Math.floor(Math.random() * weatherConditions.length)];
+    }, 1000);
   } catch (error) {
-    console.error('Error fetching user data:', error);
-    username.value = 'Error loading name';
-    email.value = 'Error loading email';
-  } finally {
-    isLoading.value = false;
+    console.error('Error fetching weather data:', error);
   }
 };
 
-// Add this after currentSellerId is set in fetchUserData
-const notificationSystem = ref(null);
+// Set time periods
+const setRevenuePeriod = (period) => {
+  revenuePeriod.value = period;
+  // In a real app, you would fetch data for the selected period
+  console.log('Revenue period changed to:', period);
+};
+
+const setTopProductsPeriod = (period) => {
+  topProductsPeriod.value = period;
+  // In a real app, you would fetch data for the selected period
+  console.log('Top products period changed to:', period);
+};
+
+// Watch for changes in time periods to update data
+watch(revenuePeriod, (newPeriod) => {
+  // In a real app, you would fetch new data based on the period
+  console.log('Fetching revenue data for period:', newPeriod);
+});
+
+watch(topProductsPeriod, (newPeriod) => {
+  // In a real app, you would fetch new data based on the period
+  console.log('Fetching top products data for period:', newPeriod);
+});
+
 // Calculate metrics based on orders and products
 const calculateMetrics = () => {
-  // Calculate new orders (last 24 hours)
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
   
@@ -378,8 +520,6 @@ const calculateMetrics = () => {
     new Date(order.date) >= yesterday
   ).length;
   
-  // For demo purposes, we'll set some example values
-  // In a real app, these would be calculated from actual data
   metrics.value = [
     { title: 'New Orders', value: newOrdersCount.toString(), change: 20 },
     { title: 'Harvest Ready', value: '5', change: -10 },
@@ -439,22 +579,19 @@ const setupOrdersListener = (sellerId) => {
 const fetchSellerOrders = async (sellerId) => {
   try {
     const ordersRef = collection(db, 'orders');
-    
-    // Query for recent orders (limit 3)
-    const recentQuery = query(
-      ordersRef, 
+    const q = query(
+      ordersRef,
       where('sellerId', '==', sellerId),
       orderBy('timestamp', 'desc'),
       limit(3)
     );
     
-    const recentSnapshot = await getDocs(recentQuery);
-    
+    const snapshot = await getDocs(q);
     const orders = [];
     
-    recentSnapshot.forEach((doc) => {
+    snapshot.forEach((doc) => {
       const orderData = doc.data();
-      const safeOrder = {
+      orders.push({
         id: doc.id,
         productName: orderData.productName || 'Unknown Product',
         productImage: orderData.productImage || '',
@@ -467,17 +604,11 @@ const fetchSellerOrders = async (sellerId) => {
         customer: orderData.customerName || 'N/A',
         location: orderData.shippingAddress || 'N/A',
         invoice: `INV-${doc.id.substring(0, 4).toUpperCase()}`
-      };
-      
-      orders.push(safeOrder);
+      });
     });
     
-    // Query for total orders count
-    const countQuery = query(ordersRef, where('sellerId', '==', sellerId));
-    const countSnapshot = await getDocs(countQuery);
-    totalOrders.value = countSnapshot.size;
-    
     recentOrders.value = orders;
+    totalOrders.value = snapshot.size;
   } catch (error) {
     console.error('Error fetching orders:', error);
     recentOrders.value = [];
@@ -494,128 +625,55 @@ const fetchSellerProducts = async (sellerId) => {
     );
     
     const snapshot = await getDocs(q);
-    
-    // Process products and update top products
     const products = [];
+    
     snapshot.forEach((doc) => {
       const productData = doc.data();
       products.push({
         id: doc.id,
         name: productData.productName || 'Unknown Product',
         image: productData.images && productData.images.length > 0 ? productData.images[0] : '/images/placeholder.jpg',
-        percentage: Math.floor(Math.random() * 100), // In a real app, calculate based on sales data
+        percentage: Math.floor(Math.random() * 100),
         stock: productData.stock || 0
       });
     });
     
-    // Sort by percentage (sales performance) and take top 10
     topProducts.value = products
       .sort((a, b) => b.percentage - a.percentage)
       .slice(0, 10);
-    
   } catch (error) {
     console.error('Error fetching products:', error);
   }
 };
 
-// Check authentication state
-onMounted(() => {
-  onAuthStateChanged(auth, (user) => {
-    if (user) {
-      fetchUserData();
-    } else {
-      // User is not logged in, redirect to login
-      router.push('/login');
-    }
-  });
-  
-  document.addEventListener('click', handleClickOutside);
-  
-  // Fetch weather data (mock - in a real app, you'd use a weather API)
-  fetchWeatherData();
-});
-
-// Fetch weather data (mock function)
-const fetchWeatherData = async () => {
-  try {
-    // In a real app, you would fetch from a weather API
-    // For now, we'll just simulate with mock data
-    setTimeout(() => {
-      const weatherConditions = [
-        { temp: 28, condition: 'Partly Cloudy', icon: '02d' },
-        { temp: 32, condition: 'Sunny', icon: '01d' },
-        { temp: 26, condition: 'Light Rain', icon: '10d' },
-        { temp: 30, condition: 'Clear Sky', icon: '01d' }
-      ];
-      
-      weatherData.value = weatherConditions[Math.floor(Math.random() * weatherConditions.length)];
-    }, 1000);
-  } catch (error) {
-    console.error('Error fetching weather data:', error);
+// Metric information
+const showMetricInfo = (metric) => {
+  let message = '';
+  switch(metric) {
+    case 'New Orders':
+      message = 'Number of new orders received in the last 24 hours';
+      break;
+    case 'Harvest Ready':
+      message = 'Products ready for harvest in the next 7 days';
+      break;
+    case 'Products Low Stock':
+      message = 'Products with less than 10 items in stock';
+      break;
+    case 'Customer Reviews':
+      message = 'New customer reviews received in the last week';
+      break;
   }
+  alert(`${metric}: ${message}`);
 };
 
-onBeforeUnmount(() => {
-  document.removeEventListener('click', handleClickOutside);
-});
-
-// Time periods
-const timePeriods = ref([
-  { label: 'Today', value: '1d' },
-  { label: 'This Week', value: '7d' },
-  { label: 'This Month', value: '1m' },
-  { label: 'This Year', value: '1y' }
-]);
-
-// Active time periods
-const revenuePeriod = ref('1m');
-const topProductsPeriod = ref('1m');
-
-// Total revenue
-const totalRevenue = ref(158700);
-
-// Top farm products
-const topProducts = ref([
-  { name: 'Organic Rice', percentage: 95, image: '/images/rice.jpg' },
-  { name: 'Fresh Tomatoes', percentage: 85, image: '/images/tomatoes.jpg' },
-  { name: 'Eggplant', percentage: 70, image: '/images/eggplant.jpg' },
-  { name: 'Pumpkin', percentage: 55, image: '/images/pumpkin.jpg' },
-  { name: 'Bananas', percentage: 50, image: '/images/bananas.jpg' },
-  { name: 'Mangoes', percentage: 45, image: '/images/mangoes.jpg' },
-  { name: 'Coconut', percentage: 40, image: '/images/coconut.jpg' },
-  { name: 'Sweet Corn', percentage: 30, image: '/images/corn.jpg' },
-  { name: 'Pineapple', percentage: 25, image: '/images/pineapple.jpg' },
-  { name: 'Coffee Beans', percentage: 20, image: '/images/coffee.jpg' }
-]);
-
-// Set time periods
-const setRevenuePeriod = (period) => {
-  revenuePeriod.value = period;
-  // In a real app, you would fetch data for the selected period
-  console.log('Revenue period changed to:', period);
-};
-
-const setTopProductsPeriod = (period) => {
-  topProductsPeriod.value = period;
-  // In a real app, you would fetch data for the selected period
-  console.log('Top products period changed to:', period);
-};
-
-// Watch for changes in time periods to update data
-watch(revenuePeriod, (newPeriod) => {
-  // In a real app, you would fetch new data based on the period
-  console.log('Fetching revenue data for period:', newPeriod);
-});
-
-watch(topProductsPeriod, (newPeriod) => {
-  // In a real app, you would fetch new data based on the period
-  console.log('Fetching top products data for period:', newPeriod);
-});
-
-// Expose notification methods if needed
-const handleNotificationClick = () => {
+// Add a method to manually check notifications
+const checkNotifications = async () => {
+  await nextTick(); // Wait for component to be mounted
   if (notificationSystem.value) {
-    notificationSystem.value.toggleNotificationPanel();
+    console.log('Manually checking notifications in SellerDashboard');
+    await notificationSystem.value.checkNotifications();
+  } else {
+    console.error('Notification system reference not found when checking notifications');
   }
 };
 </script>
@@ -688,6 +746,11 @@ const handleNotificationClick = () => {
   cursor: pointer;
 }
 
+.notification-wrapper {
+  position: relative;
+  margin-right: 1rem;
+}
+
 .notification-icon {
   width: 40px;
   height: 40px;
@@ -700,6 +763,11 @@ const handleNotificationClick = () => {
   cursor: pointer;
   border: 1px solid #e5e7eb;
   position: relative;
+  transition: all 0.2s ease;
+}
+
+.notification-icon:hover {
+  background-color: #f9fafb;
 }
 
 .notification-badge {
@@ -709,13 +777,14 @@ const handleNotificationClick = () => {
   background-color: #ef4444;
   color: white;
   border-radius: 50%;
-  width: 18px;
+  min-width: 18px;
   height: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 0.6rem;
   font-weight: bold;
+  padding: 0 4px;
 }
 
 .avatar {

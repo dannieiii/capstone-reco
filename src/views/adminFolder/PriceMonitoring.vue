@@ -388,7 +388,7 @@ import { ref, onMounted, computed, watch } from 'vue';
 import Chart from 'chart.js/auto';
 import AdminSidebar from '@/components/AdminSidebar.vue';
 import { db } from '@/firebase/firebaseConfig';
-import { collection, getDocs, query, where, orderBy, limit, Timestamp, doc, getDoc } from "firebase/firestore";
+import { collection, getDocs, query, where, orderBy, limit, Timestamp, doc, getDoc, addDoc, serverTimestamp } from "firebase/firestore";
 import { getAuth } from "firebase/auth"; // Import Firebase Auth
 
 export default {
@@ -1131,33 +1131,59 @@ export default {
       }
     };
     
-    const togglePriceAlert = (product) => {
-      const index = products.value.findIndex(p => p.productId === product.productId);
-      if (index !== -1) {
-        products.value[index].hasAlert = !products.value[index].hasAlert;
-        
-        // In a real app, you would save this to Firebase
-        if (products.value[index].hasAlert) {
-          // Add a new alert
-          const alertType = 'Price Threshold';
-          const date = new Date().toISOString();
-          const message = `Alert set for price changes on ${product.productName}.`;
-          
-          alerts.value.push({
-            productId: product.productId,
-            productName: product.productName,
-            type: alertType,
-            message: message,
-            date: date
-          });
-          
-          priceAlerts.value = alerts.value.length;
-          newAlertsToday.value += 1;
-        } else {
-          // Remove alerts for this product
-          alerts.value = alerts.value.filter(alert => alert.productId !== product.productId);
-          priceAlerts.value = alerts.value.length;
+    const togglePriceAlert = async (product) => {
+      try {
+        const sellerId = product.sellerId;
+        if (!sellerId) {
+          console.error('No seller ID found for product:', product.productId);
+          return;
         }
+
+        // Check existing alerts in notifadmin collection
+        const notifadminRef = collection(db, 'notifadmin');
+        const q = query(
+          notifadminRef,
+          where('productId', '==', product.productId),
+          where('sellerId', '==', sellerId)
+        );
+        
+        const snapshot = await getDocs(q);
+        const existingAlerts = snapshot.docs.map(doc => doc.data());
+        
+        // Count attempts
+        const attemptCount = existingAlerts.length;
+        
+        if (attemptCount >= 3) {
+          alert('Maximum alert attempts reached. Product will be terminated.');
+          // Here you would add logic to terminate/hide the product
+          return;
+        }
+
+        // Create new alert
+        const alertData = {
+          productId: product.productId,
+          sellerId: sellerId,
+          productName: product.productName,
+          currentPrice: product.price,
+          attemptNumber: attemptCount + 1,
+          message: `Price Alert: Your product "${product.productName}" is priced above market average. This is attempt ${attemptCount + 1} of 3.`,
+          timestamp: serverTimestamp(),
+          status: 'unread',
+          type: 'price_alert'
+        };
+
+        await addDoc(notifadminRef, alertData);
+
+        // Update local state
+        const index = products.value.findIndex(p => p.productId === product.productId);
+        if (index !== -1) {
+          products.value[index].hasAlert = true;
+        }
+
+        alert(`Price alert sent to seller. Attempt ${attemptCount + 1} of 3.`);
+      } catch (error) {
+        console.error('Error creating price alert:', error);
+        alert('Error creating price alert. Please try again.');
       }
     };
     
@@ -1190,9 +1216,56 @@ export default {
       alert(`Exporting price history for ${product.productName}`);
     };
     
-    const setupPriceAlert = (product) => {
-      // This would show a modal to set up a price alert
-      alert(`Setting up price alert for ${product.productName}`);
+    const setupPriceAlert = async (product) => {
+      try {
+        const sellerId = product.sellerId;
+        if (!sellerId) {
+          console.error('No seller ID found for product:', product.productId);
+          return;
+        }
+
+        // Check existing alerts
+        const notifadminRef = collection(db, 'notifadmin');
+        const q = query(
+          notifadminRef,
+          where('productId', '==', product.productId),
+          where('sellerId', '==', sellerId)
+        );
+        
+        const snapshot = await getDocs(q);
+        const existingAlerts = snapshot.docs.map(doc => doc.data());
+        
+        // Count attempts
+        const attemptCount = existingAlerts.length;
+        
+        if (attemptCount >= 3) {
+          alert('Maximum alert attempts reached. Product will be terminated.');
+          // Here you would add logic to terminate/hide the product
+          return;
+        }
+
+        // Create new alert
+        const alertData = {
+          productId: product.productId,
+          sellerId: sellerId,
+          productName: product.productName,
+          currentPrice: product.price,
+          attemptNumber: attemptCount + 1,
+          message: `Price Alert: Your product "${product.productName}" is priced above market average. This is attempt ${attemptCount + 1} of 3.`,
+          timestamp: serverTimestamp(),
+          status: 'unread',
+          type: 'price_alert'
+        };
+
+        await addDoc(notifadminRef, alertData);
+        alert(`Price alert sent to seller. Attempt ${attemptCount + 1} of 3.`);
+        
+        // Close the modal
+        closeProductModal();
+      } catch (error) {
+        console.error('Error setting up price alert:', error);
+        alert('Error setting up price alert. Please try again.');
+      }
     };
     
     const formatDate = (dateString) => {

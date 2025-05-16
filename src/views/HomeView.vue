@@ -189,24 +189,24 @@
         <h3>{{ userLocation }} <MapPin size="14" /></h3>
       </div>
       
-      <div class="categories">
-        <div 
-          class="category" 
-          v-for="category in categories" 
-          :key="category.name"
-          @click="filterByCategory(category.name)"
-          :class="{ 'active': selectedCategory === category.name }"
-        >
-          <div class="category-icon">
-            <img 
-              :src="category.image" 
-              :alt="category.name"
-              @error="handleImageError($event, category)"
-            >
-          </div>
-          <span>{{ category.name }}</span>
+    <div class="categories">
+      <div 
+        class="category" 
+        v-for="category in categories" 
+        :key="category.id" <!-- Make sure this matches your Firestore ID field -->
+        @click="filterByCategory(category.category)"
+        :class="{ active: selectedCategory === category.category }"
+      >
+        <div class="category-icon">
+          <img 
+            :src="category.image || getCategoryFallbackImage(category.category)"
+            :alt="category.category"
+            @error="handleImageError($event, category)"
+          >
         </div>
+        <span>{{ category.category }}</span>
       </div>
+    </div>
     </div>
     
     <div class="content">
@@ -456,66 +456,55 @@ export default {
     const typeFilter = ref([]);
     const isPriceFiltered = ref(false);
     const sortOption = ref('default');
+    const categories = ref([]);
 
     // Fallback images for categories
     const categoryFallbackImages = {
-      'Vegetables': 'https://cdn-icons-png.flaticon.com/512/2153/2153788.png',
-      'Fruits': 'https://cdn-icons-png.flaticon.com/512/3194/3194766.png',
-      'Grains': 'https://cdn-icons-png.flaticon.com/512/3823/3823396.png',
-      'Dairy': 'https://cdn-icons-png.flaticon.com/512/3050/3050158.png',
-      'Meat': 'https://cdn-icons-png.flaticon.com/512/1046/1046769.png',
-      'Seafood': 'https://cdn-icons-png.flaticon.com/512/2970/2970023.png',
-      'Herbs': 'https://cdn-icons-png.flaticon.com/512/2909/2909841.png',
-      'Organic': 'https://cdn-icons-png.flaticon.com/512/1147/1147805.png',
       'default': 'https://cdn-icons-png.flaticon.com/512/1147/1147805.png'
     };
 
-    // Categories data
-    const categories = [
-      {
-        name: 'Vegetables',
-        image: 'https://images.unsplash.com/photo-1597362925123-77861d3fbac7?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80'
-      },
-      {
-        name: 'Fruits',
-        image: 'https://images.unsplash.com/photo-1619566636858-adf3ef46400b?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80'
-      },
-      {
-        name: 'Grains',
-        image: 'https://images.unsplash.com/photo-1574323347407-f5e1c5a1ec21?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80'
-      },
-      {
-        name: 'Dairy',
-        image: 'https://images.unsplash.com/photo-1628088062854-d1870b4553da?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80'
-      },
-      {
-        name: 'Meat',
-        image: 'https://images.unsplash.com/photo-1607623814075-e51df1bdc82f?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80'
-      },
-      {
-        name: 'Seafood',
-        image: 'https://images.unsplash.com/photo-1611089676098-ecb1f485a6f7?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80'
-      },
-      {
-        name: 'Herbs',
-        image: 'https://images.unsplash.com/photo-1600599067176-8d49193f9d83?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80'
-      },
-      {
-        name: 'Organic',
-        image: 'https://images.unsplash.com/photo-1550989460-0adf9ea622e2?ixlib=rb-4.0.3&auto=format&fit=crop&w=200&q=80'
-      }
-    ];
+    // Fetch categories from Firestore
+   const fetchCategories = async () => {
+    try {
+      const querySnapshot = await getDocs(collection(db, 'categories'));
+      categories.value = querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,  // Make sure this matches your :key binding
+          category: data.category, // Field name in Firestore
+          image: data.image || getCategoryFallbackImage(data.category)
+        };
+      });
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+      categories.value = []; // Fallback empty array
+    }
+  };
 
-    // Enhanced filtered products with all filter criteria and sorting
-    const filteredProducts = computed(() => {
-      let result = [...products.value]; // Create a copy to avoid mutating the original array
-      
-      // Apply category filter
-      if (selectedCategory.value) {
-        result = result.filter(product => 
-          product.category && product.category.toLowerCase() === selectedCategory.value.toLowerCase()
-        );
-      }
+    // Handle image loading errors for categories
+   const handleImageError = (event, category) => {
+  event.target.src = getCategoryFallbackImage(category.category);
+};
+
+const getCategoryFallbackImage = (categoryName) => {
+  // Add your fallback image logic here
+  return 'https://cdn-icons-png.flaticon.com/512/1147/1147805.png'; // Example
+};
+
+   const filterByCategory = (categoryName) => {
+  // Simple toggle logic - no need to modify categories array
+    selectedCategory.value = selectedCategory.value === categoryName ? '' : categoryName;
+  };
+
+const filteredProducts = computed(() => {
+  let result = [...products.value];
+  
+  // Apply category filter (exact match with category.category)
+  if (selectedCategory.value) {
+    result = result.filter(product => 
+      product.category === selectedCategory.value
+    );
+  }
       
       // Apply search filter
       if (searchQuery.value) {
@@ -573,7 +562,6 @@ export default {
             return soldB - soldA;
           });
         } else if (sortOption.value === 'trending') {
-          // Sort by popularity score (combination of views, sales, and recency)
           result.sort((a, b) => {
             const scoreA = calculatePopularityScore(a);
             const scoreB = calculatePopularityScore(b);
@@ -615,30 +603,11 @@ export default {
       }
     });
 
-    // Handle image loading errors for categories
-    const handleImageError = (event, category) => {
-      event.target.src = getCategoryFallbackImage(category.name);
-    };
-
-    // Get fallback image for a category
-    const getCategoryFallbackImage = (categoryName) => {
-      return categoryFallbackImages[categoryName] || categoryFallbackImages['default'];
-    };
-
     // Handle image loading errors for products
     const handleProductImageError = (event, product) => {
       // Use category-specific product image or default
       const category = product.category || 'default';
       event.target.src = getCategoryFallbackImage(category);
-    };
-
-    // Filter by category
-    const filterByCategory = (category) => {
-      if (selectedCategory.value === category) {
-        selectedCategory.value = ''; // Toggle off if already selected
-      } else {
-        selectedCategory.value = category;
-      }
     };
 
     // Clear individual filters
@@ -747,6 +716,7 @@ export default {
 
     onMounted(() => {
       document.addEventListener('click', handleClickOutside);
+      fetchCategories(); // Fetch categories when component mounts
     });
 
     onUnmounted(() => {
@@ -811,9 +781,9 @@ export default {
             name: productData.name,
             price: productData.price || (Math.random() * 500 + 50).toFixed(2),
             stock: productData.stock || Math.floor(Math.random() * 100),
-            category: productData.category || getRandomCategory(),
+            category: productData.category, // Use the category from Firestore
             description: productData.description || '',
-            isOrganic: productData.isOrganic || Math.random() > 0.7, // Random for demo
+            isOrganic: productData.isOrganic || Math.random() > 0.7,
             rating: productData.rating || 0,
             views: productData.views || 0,
             sold: productData.sold || 0,
@@ -830,11 +800,6 @@ export default {
       } finally {
         isLoading.value = false;
       }
-    };
-    
-    const getRandomCategory = () => {
-      const categoryNames = categories.map(cat => cat.name);
-      return categoryNames[Math.floor(Math.random() * categoryNames.length)];
     };
 
     return {
@@ -1452,16 +1417,18 @@ export default {
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
   overflow: hidden;
   border: 2px solid rgba(255, 255, 255, 0.3);
-  transition: transform 0.2s ease, border-color 0.2s ease;
+  transition: all 0.2s ease;
 }
 
 .category:hover .category-icon {
   transform: scale(1.1);
 }
 
+
 .category.active .category-icon {
   border-color: #ffcc00;
   box-shadow: 0 4px 15px rgba(255, 204, 0, 0.4);
+  transform: scale(1.1);
 }
 
 .category-icon img {
@@ -1475,21 +1442,20 @@ export default {
   font-size: 12px;
   font-weight: 500;
   margin-top: 8px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-  transition: color 0.2s ease;
   text-align: center;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  display: block;
+  max-width: 100%;
+  white-space: nowrap;
   overflow: hidden;
-  line-height: 1.3;
-  max-height: 2.6em;
+  text-overflow: ellipsis;
 }
 
 .category.active span {
   color: #ffcc00;
   font-weight: 700;
 }
+
+
 
 .content {
   flex: 1;
@@ -1951,7 +1917,7 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  border-bottom: 2px solid yellow;
   -webkit-box-orient: vertical;
   line-height: 1.3;
   min-height: 36px;
