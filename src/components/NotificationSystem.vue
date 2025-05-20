@@ -1,312 +1,131 @@
-<template>
-    <div class="notification-container">
-      <!-- Remove the notification icon from here since it's in SellerDashboard -->
-      <div class="notification-panel" v-if="showNotificationPanel" @click.stop>
-        <div class="notification-header">
-          <h3>Notifications</h3>
-          <div class="header-actions">
-            <button 
-              v-if="notifications.length > 0 && unreadCount > 0"
-              class="mark-all-read" 
-              @click.stop="markAllAsRead"
-            >
-              <CheckSquare size="14" />
-              Mark all as read
-            </button>
-            <button @click.stop="toggleNotificationPanel" class="close-button">
-              <X size="20" />
-            </button>
-          </div>
-        </div>
-        
-        <div class="notification-list" v-if="notifications.length > 0">
-          <div 
-            v-for="notification in notifications" 
-            :key="notification.id"
-            class="notification-item"
-            :class="{ 
-              unread: !notification.read,
-              'price-alert': notification.type === 'price_alert'
-            }"
-            @click.stop="handleNotificationClick(notification)"
-          >
-            <div class="notification-icon-wrapper" :class="getNotificationTypeClass(notification.type)">
-              <ShoppingBag v-if="notification.type === 'order'" size="16" />
-              <AlertCircle v-else-if="notification.type === 'alert'" size="16" />
-              <MessageSquare v-else-if="notification.type === 'message'" size="16" />
-              <Bell v-else size="16" />
-            </div>
-            <div class="notification-content">
-              <div class="notification-title">
-                {{ notification.title }}
-                <span v-if="notification.type === 'price_alert'" class="notification-attempt">
-                  Attempt {{ notification.attemptNumber }}/3
-                </span>
-              </div>
-              <div class="notification-message">{{ notification.message }}</div>
-              <div class="notification-time">{{ formatTime(notification.timestamp) }}</div>
-              <div v-if="notification.type === 'price_alert'" class="notification-details">
-                <span class="notification-type">Price Alert</span>
-                <span class="notification-status" :class="{ 'status-unread': !notification.read }">
-                  {{ notification.read ? 'Read' : 'Unread' }}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        <div class="empty-notifications" v-else>
-          <Bell size="24" class="empty-icon" />
-          <p>No notifications</p>
-          <button class="refresh-btn" @click.stop="fetchNotifications">
-            <RefreshCw size="16" />
-            Refresh Notifications
-          </button>
-        </div>
-      </div>
-    </div>
-  </template>
-  
-  <script setup>
-  import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
-  import { useRouter } from 'vue-router';
-  import { Bell, CheckSquare, ShoppingBag, AlertCircle, MessageSquare, RefreshCw, X } from 'lucide-vue-next';
-  import { 
-    getFirestore, 
-    collection, 
-    query, 
-    where, 
-    getDocs,
-    doc,
-    updateDoc,
-    serverTimestamp,
-    orderBy,
-    limit
-  } from 'firebase/firestore';
-  import { getAuth, onAuthStateChanged } from 'firebase/auth';
-  
-  const router = useRouter();
-  const db = getFirestore();
-  const auth = getAuth();
-  
-  // State
-  const notifications = ref([]);
-  const showNotificationPanel = ref(false);
-  const currentUserId = ref(null);
-  const isLoading = ref(false);
-  const pollInterval = ref(null);
-  
-  // Props
-  const props = defineProps({
-    userId: {
-      type: String,
-      default: null
-    }
-  });
-  
-  // Emit definition
-  const emit = defineEmits(['notification-count-update']);
-  
-  // Computed properties
-  const unreadCount = computed(() => {
-    return notifications.value.filter(notification => !notification.read).length;
-  });
-  
-  // Toggle notification panel
-  const toggleNotificationPanel = () => {
-    showNotificationPanel.value = !showNotificationPanel.value;
-    if (showNotificationPanel.value) {
-      fetchNotifications();
-    }
-  };
-  
-  // Format timestamp
-  const formatTime = (timestamp) => {
-    if (!timestamp) return 'Unknown time';
-    const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
-    const now = new Date();
-    const diffMs = now - date;
-    const diffSec = Math.floor(diffMs / 1000);
-    const diffMin = Math.floor(diffSec / 60);
-    const diffHour = Math.floor(diffMin / 60);
-    const diffDay = Math.floor(diffHour / 24);
+<script setup>
+import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
+import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, limit } from 'firebase/firestore'
+import { db } from '@/firebase/firebaseConfig'
+import { CheckSquare, X, Bell } from 'lucide-vue-next'
+
+const props = defineProps({ 
+  userId: {
+    type: String,
+    required: true
+  }
+})
+
+const emit = defineEmits(['notification-count-update'])
+
+const showNotificationPanel = ref(false)
+const notifications = ref([])
+const unreadCount = ref(0)
+
+let unsubscribe = null
+
+const toggleNotificationPanel = () => {
+  showNotificationPanel.value = !showNotificationPanel.value
+}
+
+const formatTime = (timestamp) => {
+  if (!timestamp) return 'Unknown'
+  const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp)
+  return date.toLocaleString()
+}
+
+const markAllAsRead = async () => {
+  try {
+    const batchUpdates = notifications.value
+      .filter(n => n.status === 'unread')
+      .map(async notification => {
+        const notifRef = doc(db, 'notifadmin', notification.id)
+        await updateDoc(notifRef, { status: 'read' })
+      })
     
-    if (diffSec < 60) return 'Just now';
-    if (diffMin < 60) return `${diffMin} min ago`;
-    if (diffHour < 24) return `${diffHour} hr ago`;
-    if (diffDay < 7) return `${diffDay} days ago`;
-    return date.toLocaleDateString();
-  };
+    await Promise.all(batchUpdates)
+    unreadCount.value = 0
+    emit('notification-count-update', 0)
+  } catch (error) {
+    console.error('Error marking all as read:', error)
+  }
+}
+
+const markAsRead = async (notification) => {
+  if (notification.status === 'read') return
   
-  // Get notification type class
-  const getNotificationTypeClass = (type) => {
-    switch (type) {
-      case 'order': return 'type-order';
-      case 'alert': return 'type-alert';
-      case 'message': return 'type-message';
-      case 'price_alert': return 'type-price-alert';
-      default: return 'type-default';
-    }
-  };
-  
-  // Handle notification click
-  const handleNotificationClick = async (notification) => {
-    if (!notification.read) {
-      try {
-        const notificationRef = doc(db, 'notifications', notification.id);
-        await updateDoc(notificationRef, {
-          read: true,
-          readAt: serverTimestamp()
-        });
-        
-        // Update local state
-        notifications.value = notifications.value.map(n => 
-          n.id === notification.id ? { ...n, read: true } : n
-        );
-        
-        emit('notification-count-update', unreadCount.value);
-      } catch (error) {
-        console.error('Error marking notification as read:', error);
-      }
-    }
+  try {
+    const notifRef = doc(db, 'notifadmin', notification.id)
+    await updateDoc(notifRef, { status: 'read' })
     
-    if (notification.type === 'order' && notification.orderId) {
-      router.push(`/seller/orders/${notification.orderId}`);
-      showNotificationPanel.value = false;
-    } else if (notification.link) {
-      router.push(notification.link);
-      showNotificationPanel.value = false;
-    }
-  };
-  
-  // Mark all notifications as read
-  const markAllAsRead = async () => {
-    try {
-      const unreadNotifications = notifications.value.filter(n => !n.read);
-      for (const notification of unreadNotifications) {
-        const notificationRef = doc(db, 'notifications', notification.id);
-        await updateDoc(notificationRef, {
-          read: true,
-          readAt: serverTimestamp()
-        });
+    notification.status = 'read'
+    unreadCount.value = Math.max(0, unreadCount.value - 1)
+    emit('notification-count-update', unreadCount.value)
+  } catch (error) {
+    console.error('Error marking notification as read:', error)
+  }
+}
+
+const subscribeToNotifications = () => {
+  if (!props.userId) return
+
+  const q = query(
+    collection(db, 'notifadmin'),
+    where('sellerId', '==', props.userId),
+    orderBy('timestamp', 'desc'),
+    limit(50)
+  )
+
+  return onSnapshot(q, (snapshot) => {
+    const notifList = []
+    let unread = 0
+    
+    snapshot.forEach(doc => {
+      const data = doc.data()
+      const notification = {
+        id: doc.id,
+        title: data.title || 'Admin Notification',
+        message: data.message,
+        type: data.type || 'general',
+        status: data.status || 'unread',
+        timestamp: data.timestamp,
+        sellerId: data.sellerId
       }
       
-      // Update local state
-      notifications.value = notifications.value.map(n => ({ ...n, read: true }));
-      emit('notification-count-update', 0);
-    } catch (error) {
-      console.error('Error marking all notifications as read:', error);
-    }
-  };
-  
-  // Fetch notifications
-  const fetchNotifications = async () => {
-    if (isLoading.value || !currentUserId.value) return;
+      notifList.push(notification)
+      if (notification.status === 'unread') unread++
+    })
     
-    isLoading.value = true;
-    try {
-      const notificationsRef = collection(db, 'notifications');
-      // Simplified query to avoid index requirement
-      const q = query(
-        notificationsRef,
-        where('userId', '==', currentUserId.value),
-        limit(50)
-      );
-      
-      const snapshot = await getDocs(q);
-      const loadedNotifications = [];
-      
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        // Add specific handling for OverPricing notifications
-        if (data.type === 'price_alert') {
-          loadedNotifications.push({
-            id: doc.id,
-            ...data,
-            title: 'Price Alert',
-            message: `Your product "${data.productName}" is priced ${data.priceDifference}% above the market average. Please review your pricing.`,
-            timestamp: data.timestamp?.toDate() || new Date()
-          });
-        } else {
-          loadedNotifications.push({
-            id: doc.id,
-            ...data,
-            timestamp: data.timestamp?.toDate() || new Date()
-          });
-        }
-      });
-      
-      // Sort notifications by timestamp in memory
-      loadedNotifications.sort((a, b) => b.timestamp - a.timestamp);
-      notifications.value = loadedNotifications;
-      emit('notification-count-update', unreadCount.value);
-    } catch (error) {
-      console.error('Error fetching notifications:', error);
-    } finally {
-      isLoading.value = false;
-    }
-  };
-  
-  // Start polling for notifications
-  const startPolling = () => {
-    if (pollInterval.value) return;
-    
-    // Initial fetch
-    fetchNotifications();
-    
-    // Set up polling interval (every 30 seconds)
-    pollInterval.value = setInterval(() => {
-      if (currentUserId.value) {
-        fetchNotifications();
-      }
-    }, 30000);
-  };
-  
-  // Stop polling
-  const stopPolling = () => {
-    if (pollInterval.value) {
-      clearInterval(pollInterval.value);
-      pollInterval.value = null;
-    }
-  };
-  
-  // Initialize
-  onMounted(async () => {
-    const userId = props.userId;
-    if (userId) {
-      currentUserId.value = userId;
-      startPolling();
-    } else {
-      onAuthStateChanged(auth, async (user) => {
-        if (user) {
-          currentUserId.value = user.uid;
-          startPolling();
-        }
-      });
-    }
-  });
-  
-  // Cleanup
-  onUnmounted(() => {
-    stopPolling();
-  });
-  
-  // Watch for userId changes
-  watch(() => props.userId, (newUserId) => {
-    if (newUserId) {
-      currentUserId.value = newUserId;
-      startPolling();
-    }
-  });
-  
-  // Expose methods
-  defineExpose({
-    unreadCount,
-    toggleNotificationPanel,
-    markAllAsRead,
-    fetchNotifications
-  });
-  </script>
+    notifications.value = notifList
+    unreadCount.value = unread
+    emit('notification-count-update', unread)
+  })
+}
+
+const setupNotificationListener = () => {
+  if (unsubscribe) unsubscribe() // cleanup old listener
+  if (props.userId) {
+    console.log('Listening for notifications for user:', props.userId)
+    unsubscribe = subscribeToNotifications()
+  }
+}
+
+// Trigger on userId change
+watch(() => props.userId, (newId) => {
+  if (newId) setupNotificationListener()
+})
+
+// Setup on mount
+onMounted(() => {
+  if (props.userId) setupNotificationListener()
+})
+
+onBeforeUnmount(() => {
+  if (unsubscribe) unsubscribe()
+})
+
+defineExpose({ 
+  toggleNotificationPanel,
+  setupNotificationListener
+})
+</script>
+
+
   
   <style scoped>
   .notification-container {

@@ -38,18 +38,19 @@
         </div>
       </div>
       
-      <div class="product-categories">
-        <button 
-          v-for="category in categories" 
-          :key="category.id"
-          :class="['category-btn', { active: activeCategory === category.id }]"
-          @click="setActiveCategory(category.id)"
-        >
-          {{ category.name }}
-        </button>
-      </div>
       
-      <div class="products-grid">
+<div class="product-categories">
+  <button 
+    v-for="category in categories" 
+    :key="category.id"
+    :class="['category-btn', { active: activeCategory === category.name }]"
+    @click="setActiveCategory(category.name)"
+  >
+    {{ category.name }}
+  </button>
+</div>
+
+<div class="products-grid">
         <div v-if="isLoading" class="loading-state">Loading products...</div>
         <template v-else-if="filteredProducts.length > 0">
           <div class="product-card" v-for="product in filteredProducts" :key="product.id">
@@ -121,30 +122,37 @@
   </div>
 </template>
 
+
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useRouter } from 'vue-router';
 import { db } from '@/firebase/firebaseConfig';
-import { collection, query, where, getDocs, doc, deleteDoc } from 'firebase/firestore';
+import { collection as fbCollection, query, where, getDocs, doc, deleteDoc } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
-import { 
-  Search, 
-  Filter, 
-  Plus, 
-  ShoppingCart, 
-  Star, 
-  Eye, 
-  Edit, 
+
+// ✅ Fixed Firestore imports for category fetching
+import { getFirestore, getDocs as getDocsCat, collection as catCollection } from 'firebase/firestore';
+import { getApp } from 'firebase/app';
+
+import {
+  Search,
+  Filter,
+  Plus,
+  ShoppingCart,
+  Star,
+  Eye,
+  Edit,
   Trash,
   ChevronDown
 } from 'lucide-vue-next';
+
 import Sidebar from '@/components/Sidebar.vue';
 import ConfirmModal from '@/components/ConfirmModal.vue';
 
 const router = useRouter();
 const auth = getAuth();
 
-// Product management
+// States
 const searchQuery = ref('');
 const activeCategory = ref('all');
 const showFilterDropdown = ref(false);
@@ -153,21 +161,14 @@ const isLoading = ref(true);
 const showModal = ref(false);
 const productToDelete = ref(null);
 
+// Filter options
 const filterOptions = ['All', 'Active', 'Inactive', 'Scheduled'];
 
-// Categories
-const categories = [
-  { id: 'all', name: 'All Products' },
-  { id: 'vegetables', name: 'Vegetables' },
-  { id: 'fruits', name: 'Fruits' },
-  { id: 'grains', name: 'Grains' },
-  { id: 'herbs', name: 'Herbs & Spices' }
-];
-
-// Products data
+// Dynamic categories and products
+const categories = ref([]);
 const products = ref([]);
 
-// Delete confirmation handlers
+// Delete confirmation
 const showDeleteConfirmation = (productId) => {
   productToDelete.value = productId;
   showModal.value = true;
@@ -177,7 +178,7 @@ const handleDeleteConfirm = async () => {
   if (productToDelete.value) {
     try {
       await deleteDoc(doc(db, 'products', productToDelete.value));
-      await fetchProducts(); // Refresh the product list
+      await fetchProducts();
     } catch (error) {
       console.error('Error deleting product:', error);
       alert('Failed to delete product.');
@@ -192,7 +193,7 @@ const handleDeleteCancel = () => {
   productToDelete.value = null;
 };
 
-// Fetch products from Firestore based on userId
+// Fetch products
 const fetchProducts = async () => {
   const user = auth.currentUser;
   if (!user) {
@@ -202,7 +203,7 @@ const fetchProducts = async () => {
   }
 
   try {
-    const q = query(collection(db, 'products'), where('sellerId', '==', user.uid));
+    const q = query(fbCollection(db, 'products'), where('sellerId', '==', user.uid));
     const querySnapshot = await getDocs(q);
     products.value = querySnapshot.docs.map((doc) => {
       const data = doc.data();
@@ -228,7 +229,7 @@ const fetchProducts = async () => {
   }
 };
 
-// Filtered products based on search, category, and status
+// Computed: filtered products
 const filteredProducts = computed(() => {
   return products.value.filter(product => {
     const productName = product.productName?.toLowerCase() || '';
@@ -236,30 +237,29 @@ const filteredProducts = computed(() => {
     const status = product.status?.toLowerCase() || '';
 
     const matchesSearch = productName.includes(searchQuery.value.toLowerCase());
-    const matchesCategory = activeCategory.value === 'all' || category === activeCategory.value;
+    const matchesCategory = activeCategory.value === 'all' || category === activeCategory.value.toLowerCase();
     const matchesFilter = activeFilter.value === 'All' || status === activeFilter.value.toLowerCase();
 
     return matchesSearch && matchesCategory && matchesFilter;
   });
 });
 
-// Set active category
-const setActiveCategory = (categoryId) => {
-  activeCategory.value = categoryId;
+// Category filter
+const setActiveCategory = (categoryName) => {
+  activeCategory.value = categoryName;
 };
 
-// Toggle filter dropdown
+// Filter dropdown handlers
 const toggleFilterDropdown = () => {
   showFilterDropdown.value = !showFilterDropdown.value;
 };
 
-// Set active filter
 const setFilter = (filter) => {
   activeFilter.value = filter;
   showFilterDropdown.value = false;
 };
 
-// Get stock class based on stock level
+// Stock visual
 const getStockClass = (stock, maxStock) => {
   const percentage = (stock / maxStock) * 100;
   if (percentage < 20) return 'low';
@@ -267,7 +267,7 @@ const getStockClass = (stock, maxStock) => {
   return 'high';
 };
 
-// Close filter dropdown when clicking outside
+// Close dropdown if clicked outside
 const clickOutside = (event) => {
   const filterDropdown = document.querySelector('.filter-dropdown');
   if (filterDropdown && !filterDropdown.contains(event.target)) {
@@ -275,7 +275,16 @@ const clickOutside = (event) => {
   }
 };
 
+// Fetch on mount
 onMounted(() => {
+  const db = getFirestore(getApp());
+  getDocsCat(catCollection(db, 'categories')).then(snapshot => {
+    categories.value = snapshot.docs.map(doc => ({
+      id: doc.id,
+      name: doc.data().category
+    }));
+  });
+
   document.addEventListener('click', clickOutside);
   fetchProducts();
 });
@@ -284,6 +293,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', clickOutside);
 });
 </script>
+
 
 <style scoped>
 .dashboard-container {

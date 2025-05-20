@@ -2,12 +2,12 @@
   <div class="home-page">
     <div class="header">
       <div class="search-container">
-        <!-- Filter Button -->
+        
         <button class="filter-button" @click="toggleFilterMenu" ref="filterRef">
           <SlidersHorizontal size="18" />
         </button>
         
-        <!-- Filter Dropdown -->
+        
         <div class="filter-dropdown" v-if="showFilterMenu" ref="filterDropdownRef">
           <div class="filter-header">
             <h3>Filter Products</h3>
@@ -16,7 +16,7 @@
             </button>
           </div>
           
-          <!-- Price Range -->
+          
           <div class="filter-section">
             <h4>Price Range</h4>
             <div class="price-range">
@@ -45,7 +45,7 @@
             </div>
           </div>
           
-          <!-- Sort By -->
+          
           <div class="filter-section">
             <h4>Sort By</h4>
             <div class="sort-options">
@@ -126,7 +126,7 @@
             <User size="18" />
           </button>
           
-          <!-- Profile Dropdown Menu -->
+          
           <div class="profile-dropdown" v-if="showProfileMenu">
             <div class="profile-header">
               <div class="profile-avatar">
@@ -193,7 +193,7 @@
       <div 
         class="category" 
         v-for="category in categories" 
-        :key="category.id" <!-- Make sure this matches your Firestore ID field -->
+        :key="category.id" 
         @click="filterByCategory(category.category)"
         :class="{ active: selectedCategory === category.category }"
       >
@@ -210,7 +210,7 @@
     </div>
     
     <div class="content">
-      <!-- Delivery Options -->
+      
       <div class="delivery-options">
         <div class="delivery-card farm-fresh" @click="navigateToPath('/farm-fresh')">
           <div class="delivery-content">
@@ -242,7 +242,7 @@
         </div>
       </div>
       
-      <!-- Active Filters -->
+      
       <div class="active-filters" v-if="hasActiveFilters">
         <div class="filter-tag" v-if="searchQuery">
           Search: "{{ searchQuery }}"
@@ -287,7 +287,7 @@
         </div>
       </div>
 
-      <!-- Popular Products Banner -->
+      
       <div class="popular-products-banner" v-if="trendingProducts.length > 0 && !hasActiveFilters">
         <h3>
           <TrendingUp size="16" />
@@ -320,7 +320,7 @@
         </div>
       </div>
 
-      <!-- Products Grid -->
+      
       <div class="products-grid">
         <div v-if="isLoading" class="loading-state">
           <div class="spinner"></div>
@@ -347,12 +347,12 @@
                 <span v-else-if="product.ribbon === 'limited'">LIMITED</span>
               </div>
               <div class="product-badge" v-if="product.isOrganic && !product.ribbon">Organic</div>
-              <!-- Trending Badge -->
+              
               <div class="trending-badge" v-if="product.isTrending">
                 <TrendingUp size="12" />
                 Trending
               </div>
-              <!-- Hot Seller Badge -->
+              
               <div class="hot-seller-badge" v-if="product.isHotSeller && !product.isTrending">
                 <Flame size="12" />
                 Hot Seller
@@ -416,6 +416,14 @@ import { auth, db } from '@/firebase/firebaseConfig';
 import { collection, getDocs, doc, getDoc, query, orderBy, limit, where } from 'firebase/firestore';
 
 export default {
+  computed: {
+    filteredProducts() {
+      return this.products.filter(p =>
+        p.category && this.selectedCategory &&
+        p.category.toLowerCase().trim() === this.selectedCategory.toLowerCase().trim()
+      );
+    }
+  },
   components: {
     BottomNavigation,
     ProductRating,

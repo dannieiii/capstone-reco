@@ -42,13 +42,14 @@
             
             <div class="form-group">
               <label for="category">Category *</label>
-              <select id="category" v-model="product.category" required>
-                <option value="" disabled>Select a category</option>
-                <option value="Vegetables">Vegetables</option>
-                <option value="Fruits">Fruits</option>
-                <option value="Grains">Grains</option>
-                <option value="Herbs & Spices">Herbs & Spices</option>
-              </select>
+              
+<select id="category" v-model="product.category" required>
+  <option value="" disabled>Select a category</option>
+  <option v-for="cat in categories" :key="cat.id" :value="cat.category">
+    {{ cat.category }}
+  </option>
+</select>
+
             </div>
             
             <div class="form-group">
@@ -280,10 +281,13 @@
 
 
 <script setup>
+
 import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { db } from '@/firebase/firebaseConfig';
-import { collection, addDoc, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, doc, getDoc, updateDoc, getDocs, increment } from 'firebase/firestore'; // ✅ correct
+
+
 import { getAuth } from 'firebase/auth';
 import Sidebar from '@/components/Sidebar.vue';
 import NotifProduct from '@/components/NotifProduct.vue';
@@ -427,6 +431,13 @@ const saveProduct = async () => {
         ...dataToSave,
         createdAt: new Date()
       });
+      // Increment productCount in the selected category
+      const categorySnapshot = await getDocs(collection(db, 'categories'));
+      const matchedCategory = categorySnapshot.docs.find(doc => doc.data().category === product.value.category);
+      if (matchedCategory) {
+        await updateDoc(matchedCategory.ref, { productCount: increment(1) });
+      }
+    
       product.value.productId = docRef.id;
       await updateDoc(docRef, { productId: docRef.id });
       showNotification('Product saved successfully!', 'success');
@@ -444,6 +455,18 @@ const cancelEdit = () => {
   showNotification('Cancelled editing. Changes were not saved.', 'warning');
   setTimeout(() => router.push('/products'), 1500);
 };
+
+
+const categories = ref([]);
+
+// Fetch category options from Firestore
+onMounted(async () => {
+  const snapshot = await getDocs(collection(db, 'categories'));
+  categories.value = snapshot.docs.map(doc => ({
+    id: doc.id,
+    category: doc.data().category
+  }));
+});
 
 onMounted(() => {
   // Test notification to verify component is working
@@ -465,6 +488,10 @@ onMounted(() => {
     }
   }
 });
+</script>
+
+<script setup>
+
 </script>
 
 <style scoped>

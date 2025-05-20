@@ -12,14 +12,14 @@
         </div>
         
         <div class="user-profile" @click="toggleProfileMenu" ref="profileRef">
-          <div class="notification-wrapper">
+         <div class="notification-wrapper">
             <div class="notification-icon" @click.stop="handleNotificationClick">
               <Bell size="20" />
-              <span v-if="notificationCount > 0" class="notification-badge">{{ notificationCount }}</span>
+              <span v-if="unreadNotificationsCount > 0" class="notification-badge">{{ unreadNotificationsCount }}</span>
             </div>
             <NotificationSystem 
               ref="notificationSystem" 
-              :userId="currentUserId"
+              :userId="currentUserId" 
               @notification-count-update="updateNotificationCount"
             />
           </div>
@@ -286,6 +286,8 @@ const performanceMessage = ref("You're doing great! 👍");
 const monthlyTarget = ref(50000);
 const currentMonthSales = ref(32500);
 const totalRevenue = ref(158700);
+const unreadNotificationsCount = ref(0);
+
 
 // Top products
 const topProducts = ref([
@@ -306,6 +308,10 @@ const handleNotificationClick = async () => {
   } else {
     console.error('Notification system reference not found in SellerDashboard');
   }
+};
+
+const updateNotificationCount = (count) => {
+  unreadNotificationsCount.value = count;
 };
 
 const toggleProfileMenu = () => {
@@ -356,10 +362,7 @@ watch(() => notificationSystem.value?.unreadCount, (newCount) => {
 }, { immediate: true });
 
 // Add this method to handle notification count updates
-const updateNotificationCount = (count) => {
-  console.log('Notification count updated in SellerDashboard:', count);
-  notificationCount.value = count;
-};
+
 
 // Lifecycle hooks
 onMounted(async () => {

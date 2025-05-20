@@ -19,16 +19,16 @@
         
         <form @submit.prevent="saveCategory" class="category-form">
           <div class="form-group">
-            <label for="categoryName">Category Name</label>
+            <label for="category">Category Name</label>
             <input 
               type="text" 
-              id="categoryName" 
-              v-model="category.categoryName" 
+              id="category" 
+              v-model="category.category" 
               placeholder="Enter category name" 
               required
-              :class="{ 'error': errors.categoryName }"
+              :class="{ 'error': errors.category }"
             />
-            <span v-if="errors.categoryName" class="error-message">{{ errors.categoryName }}</span>
+            <span v-if="errors.category" class="error-message">{{ errors.category }}</span>
           </div>
 
           <div class="form-group">
@@ -130,7 +130,7 @@ export default {
     };
 
     const category = reactive({
-      categoryName: '',
+      category: '',
       description: '',
       image: '',
       isActive: true,
@@ -139,7 +139,7 @@ export default {
     });
 
     const errors = reactive({
-      categoryName: '',
+      category: '',
       image: ''
     });
 
@@ -246,14 +246,14 @@ export default {
       let isValid = true;
       
       // Validate category name
-      if (!category.categoryName.trim()) {
-        errors.categoryName = 'Category name is required';
+      if (!category.category.trim()) {
+        errors.category = 'Category name is required';
         isValid = false;
-      } else if (category.categoryName.length < 2) {
-        errors.categoryName = 'Category name must be at least 2 characters';
+      } else if (category.category.length < 2) {
+        errors.category = 'Category name must be at least 2 characters';
         isValid = false;
       } else {
-        errors.categoryName = '';
+        errors.category = '';
       }
       
       return isValid;
