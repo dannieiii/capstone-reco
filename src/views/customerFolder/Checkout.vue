@@ -347,6 +347,7 @@
   </div>
 </template>
 
+
 <script>
 import { 
   ChevronLeft, 
@@ -371,14 +372,15 @@ import {
   serverTimestamp,
   arrayUnion,
   runTransaction,
-  deleteDoc
+  deleteDoc,
+  increment
 } from 'firebase/firestore';
 import { db, auth } from '@/firebase/firebaseConfig';
 import Notification from '@/components/Notification.vue';
 
 // Oriental Mindoro data from Register.vue
 const orientalMindoroData = {
-  "Baco": ["Alag", "Bangkatan", "Burbuli", "Catwiran I", "Catwiran II", "Dulangan I", "Dulangan II", "Lumangbayan", "Malapad", "Mangangan I", "Mangangan II", "Mayabig", "Pambisan", "Poblacion", "Pulang-Tubig", "Putican-Cabulo", "San Andres", "San Ignacio", "Santa Cruz", "Santa Rosa I", "Santa Rosa II", "Tabon-Tabon", "Tagumpay", "Water"],
+ "Baco": ["Alag", "Bangkatan", "Burbuli", "Catwiran I", "Catwiran II", "Dulangan I", "Dulangan II", "Lumangbayan", "Malapad", "Mangangan I", "Mangangan II", "Mayabig", "Pambisan", "Poblacion", "Pulang-Tubig", "Putican-Cabulo", "San Andres", "San Ignacio", "Santa Cruz", "Santa Rosa I", "Santa Rosa II", "Tabon-Tabon", "Tagumpay", "Water"],
   "Bansud": ["Alcate", "Bato", "Buenavista", "Burgos", "Cambunang", "Canaan", "Daguit", "Marfrancisco", "Pag-asa", "Poblacion", "Proper Bansud", "Proper Tiguisan", "Rosacara", "Salcedo", "Sumagui", "Villa Pag-asa"],
   "Bongabong": ["Anilao", "Aplaya", "Bagong Bayan I", "Bagong Bayan II", "Batangan", "Bukal", "Camantigue", "Carmen", "Cawayan", "Dayhagan", "Formon", "Hagan", "Hagupit", "Ilasan", "Kaligtasan", "Labasan", "Mag-asawang Tubig", "Malitbog", "Mapang", "Masaguisi", "Morente", "Ogbot", "Orconuma", "Poblacion", "Polusahi", "Sagana", "San Isidro", "San Jose", "San Juan", "Santa Cruz", "Sinanlaban", "Tawas", "Villa M. Principe"],
   "Bulalacao": ["Bagong Sikat", "Balatasan", "Benli", "Cabugao", "Cambunang", "Camilmil", "Giagan", "Maasin", "Maujao", "Milagrosa", "Nasukob", "Poblacion", "San Francisco", "San Isidro", "San Juan", "San Roque", "Siguian"],
@@ -432,13 +434,18 @@ export default {
     const orderItems = ref([]);
     const isBuyNow = ref(false);
     
-    // Parse items from route query
+    // Parse items from route query with validation
     onMounted(() => {
       try {
         if (route.query.items) {
           const items = JSON.parse(route.query.items);
-          orderItems.value = items;
-          // Check if this is a buy now order
+          orderItems.value = items.map(item => ({
+            ...item,
+            weight: Number(item.weight) || 0.5,
+            pricePerKg: Number(item.pricePerKg) || Number(item.price) || 0,
+            totalPrice: (Number(item.pricePerKg) || Number(item.price) || 0) * (Number(item.weight) || 0.5),
+            packagingType: item.packagingType || 'N/A'
+          }));
           isBuyNow.value = items[0]?.isBuyNow || false;
         }
       } catch (error) {
@@ -497,14 +504,15 @@ export default {
 
     // Quantity control methods
     const increaseQuantity = (item) => {
-      item.weight += 0.5;
-      item.totalPrice = item.weight * item.pricePerKg;
+      item.weight = (parseFloat(item.weight) || 0) + 0.5;
+      item.totalPrice = (item.pricePerKg || item.price || 0) * item.weight;
     };
 
     const decreaseQuantity = (item) => {
-      if (item.weight > 0.5) {
-        item.weight -= 0.5;
-        item.totalPrice = item.weight * item.pricePerKg;
+      const currentWeight = parseFloat(item.weight) || 0;
+      if (currentWeight > 0.5) {
+        item.weight = currentWeight - 0.5;
+        item.totalPrice = (item.pricePerKg || item.price || 0) * item.weight;
       }
     };
 
@@ -529,18 +537,9 @@ export default {
         const userDoc = await getDoc(userDocRef);
         
         if (userDoc.exists()) {
-          if (userDoc.data().addresses) {
-            addresses.value = userDoc.data().addresses;
-          } else {
-            await updateDoc(userDocRef, {
-              addresses: []
-            });
-            addresses.value = [];
-          }
+          addresses.value = userDoc.data().addresses || [];
         } else {
-          await setDoc(userDocRef, {
-            addresses: []
-          });
+          await setDoc(userDocRef, { addresses: [] });
           addresses.value = [];
         }
       } catch (error) {
@@ -559,38 +558,25 @@ export default {
       }
       
       try {
-        if (!auth.currentUser) {
-          throw new Error('User not authenticated');
-        }
+        if (!auth.currentUser) throw new Error('User not authenticated');
         
         const userDocRef = doc(db, 'users', auth.currentUser.uid);
+        const newAddressData = {
+          name: newAddress.value.name,
+          province: newAddress.value.province,
+          municipality: newAddress.value.municipality,
+          barangay: newAddress.value.barangay,
+          locationNotes: newAddress.value.locationNotes || '',
+          address: `${newAddress.value.barangay}, ${newAddress.value.municipality}, ${newAddress.value.province}`
+        };
         
         await updateDoc(userDocRef, {
-          addresses: arrayUnion({
-            name: newAddress.value.name,
-            province: newAddress.value.province,
-            municipality: newAddress.value.municipality,
-            barangay: newAddress.value.barangay,
-            locationNotes: newAddress.value.locationNotes || '',
-            address: `${newAddress.value.barangay}, ${newAddress.value.municipality}, ${newAddress.value.province}`
-          })
+          addresses: arrayUnion(newAddressData)
         });
         
         await fetchUserAddresses();
-        
-        if (addresses.value.length > 0) {
-          selectedAddressIndex.value = addresses.value.length - 1;
-        }
-        
-        newAddress.value = {
-          name: '',
-          province: 'Oriental Mindoro',
-          municipality: '',
-          barangay: '',
-          locationNotes: ''
-        };
-        showNewAddressForm.value = false;
-        
+        selectedAddressIndex.value = addresses.value.length - 1;
+        resetNewAddressForm();
         showNotificationMessage('Address added successfully');
       } catch (error) {
         console.error('Error saving address:', error);
@@ -598,7 +584,7 @@ export default {
       }
     };
 
-    const cancelNewAddress = () => {
+    const resetNewAddressForm = () => {
       newAddress.value = {
         name: '',
         province: 'Oriental Mindoro',
@@ -607,6 +593,10 @@ export default {
         locationNotes: ''
       };
       showNewAddressForm.value = false;
+    };
+
+    const cancelNewAddress = () => {
+      resetNewAddressForm();
     };
 
     const confirmAddress = () => {
@@ -619,19 +609,18 @@ export default {
       notificationType.value = type;
       showNotification.value = true;
       
-      if (notificationTimeout) {
-        clearTimeout(notificationTimeout);
-      }
-      
+      clearTimeout(notificationTimeout);
       notificationTimeout = setTimeout(() => {
         showNotification.value = false;
       }, 5000);
     };
 
     // Calculations for multiple items
-    const subtotal = computed(() => {
+   const subtotal = computed(() => {
       return orderItems.value.reduce((total, item) => {
-        return total + (item.price * (item.quantity || 1));
+        const price = Number(item.pricePerKg) || Number(item.price) || 0;
+        const weight = Number(item.weight) || 0;
+        return total + (price * weight);
       }, 0);
     });
     
@@ -647,114 +636,179 @@ export default {
     });
 
     // Place order function for multiple items
-    const placeOrder = async () => {
-      if (!selectedAddress.value) {
-        showNotificationMessage('Please select a delivery address', 'error');
-        return;
+      const placeOrder = async () => {
+  // Validation checks
+  if (!selectedAddress.value) {
+    showNotificationMessage('Please select a delivery address', 'error');
+    return;
+  }
+  
+  if (paymentMethod.value === 'gcash' && !gcashDetails.value.number) {
+    showNotificationMessage('Please enter your GCash number', 'error');
+    return;
+  }
+
+  // Validate all order items
+  for (const item of orderItems.value) {
+    if (!item.productId || !item.sellerId || !item.weight || (!item.pricePerKg && !item.price)) {
+      showNotificationMessage('One or more items have incomplete information', 'error');
+      return;
+    }
+  }
+
+  try {
+    if (!auth.currentUser) throw new Error('User not authenticated');
+
+    // Generate order code
+    const orderCode = generateOrderCode();
+    orderNumber.value = orderCode;
+
+    // Get user data
+    const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
+    const username = userDoc.exists() ? userDoc.data().username || '' : '';
+
+    // Collect cart items to delete (if not buy now)
+    const cartItemsToDelete = [];
+    if (!isBuyNow.value) {
+      orderItems.value.forEach(item => {
+        if (item.cartItemId) {
+          cartItemsToDelete.push(item.cartItemId);
+        }
+      });
+    }
+
+    // PHASE 1: VALIDATION - Check all products first
+    const productPromises = orderItems.value.map(item => 
+      getDoc(doc(db, 'products', item.productId))
+    );
+    const productSnapshots = await Promise.all(productPromises);
+
+    // Verify stock before transaction
+    for (let i = 0; i < orderItems.value.length; i++) {
+      const item = orderItems.value[i];
+      const productDoc = productSnapshots[i];
+      
+      if (!productDoc.exists()) {
+        throw new Error(`Product ${item.productName || item.productId} not found`);
       }
       
-      if (paymentMethod.value === 'gcash' && !gcashDetails.value.number) {
-        showNotificationMessage('Please enter your GCash number', 'error');
-        return;
+      const productData = productDoc.data();
+      if (Number(productData.stock) < Number(item.weight)) {
+        throw new Error(`Only ${productData.stock}kg available for ${item.productName || 'product'}`);
       }
-      
+    }
+
+    // PHASE 2: TRANSACTION - Only writes here
+    await runTransaction(db, async (transaction) => {
+      // Process each item
+      for (let i = 0; i < orderItems.value.length; i++) {
+        const item = orderItems.value[i];
+        const productRef = doc(db, 'products', item.productId);
+        const productData = productSnapshots[i].data();
+        
+        // Update product stock
+        transaction.update(productRef, {
+          stock: increment(-Number(item.weight))
+        });
+
+        // Calculate all price components
+        const pricePerKg = Number(item.pricePerKg) || Number(item.price) || 0;
+        const weight = Number(item.weight) || 0;
+        const itemPrice = pricePerKg * weight;
+        const deliveryFeeValue = paymentMethod.value !== 'pickup' ? deliveryFee.value : 0;
+        const taxValue = itemPrice * 0.08; // 8% tax
+        const totalPrice = itemPrice + deliveryFeeValue + taxValue;
+
+        // Create order document with complete financial information
+        const orderRef = doc(collection(db, 'orders'));
+        transaction.set(orderRef, {
+          orderCode: orderCode,
+          sellerId: item.sellerId,
+          productId: item.productId,
+          productName: item.productName,
+          productImage: item.productImage || placeholderImage,
+          pricePerKg: pricePerKg,
+          itemPrice: itemPrice,
+          weight: weight,
+          packagingType: item.packagingType || 'N/A',
+          paymentMethod: paymentMethod.value,
+          gcashNumber: paymentMethod.value === 'gcash' ? gcashDetails.value.number : null,
+          deliveryOption: paymentMethod.value !== 'pickup' ? deliveryOption.value : null,
+          deliveryFee: deliveryFeeValue,
+          tax: taxValue,
+          totalPrice: totalPrice,
+          Location: {
+            province: selectedAddress.value.province,
+            municipality: selectedAddress.value.municipality,
+            barangay: selectedAddress.value.barangay,
+            address: `${selectedAddress.value.barangay}, ${selectedAddress.value.municipality}, ${selectedAddress.value.province}`,
+            notes: selectedAddress.value.locationNotes || ''
+          },
+          status: 'Processing',
+          payStatus: 'unpaid', // Default payment status
+          createdAt: serverTimestamp(),
+          userId: auth.currentUser.uid,
+          username: username,
+          isBuyNow: isBuyNow.value
+        });
+
+        // Create sale record with accurate financial data
+        const saleRef = doc(collection(db, 'sales'));
+        transaction.set(saleRef, {
+          productId: item.productId,
+          productName: item.productName,
+          category: productData.category || 'uncategorized',
+          quantity: weight,
+          price: pricePerKg,
+          totalPrice: itemPrice,
+          timestamp: serverTimestamp(),
+          sellerId: item.sellerId,
+          season: getCurrentSeason(),
+          orderCode: orderCode,
+          isBuyNow: isBuyNow.value,
+          paymentStatus: 'unpaid' // Consistent with order record
+        });
+      }
+    });
+
+    // PHASE 3: CLEANUP - Delete cart items after successful transaction
+    if (!isBuyNow.value && cartItemsToDelete.length > 0) {
       try {
-        if (!auth.currentUser) {
-          throw new Error('User not authenticated');
-        }
-
-        // Generate order code
-        const orderCode = generateOrderCode();
-        orderNumber.value = orderCode;
-
-        // Process each item in the order
-        for (const item of orderItems.value) {
-          // Get product data
-          const productDoc = await getDoc(doc(db, 'products', item.productId));
-          if (!productDoc.exists()) {
-            throw new Error(`Product ${item.productName} not found`);
-          }
-          const productData = productDoc.data();
-
-          // Process the order transaction
-          await runTransaction(db, async (transaction) => {
-            const productRef = doc(db, 'products', item.productId);
-            const currentStock = productData.stock;
-            const orderedWeight = item.weight;
-            
-            if (currentStock < orderedWeight) {
-              throw new Error(`Only ${currentStock}kg available for ${item.productName}. Please adjust your order.`);
-            }
-            
-            // Update product stock
-            transaction.update(productRef, { 
-              stock: currentStock - orderedWeight 
-            });
-            
-            // Create order document
-            const orderRef = doc(collection(db, 'orders'));
-            transaction.set(orderRef, {
-              orderCode: orderCode,
-              sellerId: item.sellerId,
-              productId: item.productId,
-              productName: item.productName,
-              productImage: item.productImage,
-              price: item.price,
-              totalPrice: item.price * item.weight,
-              weight: item.weight,
-              packagingType: item.packagingType,
-              paymentMethod: paymentMethod.value,
-              Location: {
-                province: selectedAddress.value.province,
-                municipality: selectedAddress.value.municipality,
-                barangay: selectedAddress.value.barangay,
-                address: `${selectedAddress.value.barangay}, ${selectedAddress.value.municipality}, ${selectedAddress.value.province}`,
-                notes: selectedAddress.value.locationNotes || ''
-              },
-              status: 'Processing',
-              createdAt: serverTimestamp(),
-              userId: auth.currentUser.uid,
-              username: (await getDoc(doc(db, 'users', auth.currentUser.uid))).data().username || '',
-              isBuyNow: isBuyNow.value
-            });
-
-            // Save to sales collection
-            const saleData = {
-              productId: item.productId,
-              productName: item.productName,
-              category: productData.category || 'uncategorized',
-              quantity: item.weight,
-              price: item.price,
-              totalPrice: item.price * item.weight,
-              timestamp: serverTimestamp(),
-              sellerId: item.sellerId,
-              season: getCurrentSeason(),
-              orderCode: orderCode,
-              isBuyNow: isBuyNow.value
-            };
-
-            const saleRef = await addDoc(collection(db, 'sales'), saleData);
-
-            // Only remove from cart if it's not a buy now order
-            if (!isBuyNow.value && item.id) {
-              const cartItemRef = doc(db, 'carts', item.id);
-              await deleteDoc(cartItemRef);
-            }
-          });
-        }
-        
-        // Show success
-        showSuccessModal.value = true;
-        showNotificationMessage('Order placed successfully!', 'success');
-        
-      } catch (error) {
-        console.error('Order placement error:', error);
-        showNotificationMessage(
-          error.message || 'Failed to place order. Please try again.',
-          'error'
+        const deletePromises = cartItemsToDelete.map(cartItemId => 
+          deleteDoc(doc(db, 'carts', cartItemId))
         );
+        await Promise.all(deletePromises);
+      } catch (error) {
+        console.error('Error deleting cart items:', error);
+        // Non-critical error, doesn't affect order success
       }
-    };
+    }
+    
+    // Show success notification and modal
+    showSuccessModal.value = true;
+    showNotificationMessage('Order placed successfully!', 'success');
+    
+    // Save GCash number if requested
+    if (paymentMethod.value === 'gcash' && saveGcash.value) {
+      try {
+        const userRef = doc(db, 'users', auth.currentUser.uid);
+        await updateDoc(userRef, {
+          savedGcashNumber: gcashDetails.value.number
+        });
+      } catch (error) {
+        console.error('Error saving GCash number:', error);
+        // Non-critical error
+      }
+    }
+    
+  } catch (error) {
+    console.error('Order placement error:', error);
+    showNotificationMessage(
+      error.message || 'Failed to place order. Please try again.',
+      'error'
+    );
+  }
+};
 
     function getCurrentSeason() {
       const month = new Date().getMonth() + 1;
@@ -825,6 +879,8 @@ export default {
   }
 }
 </script>
+
+
 
 <style scoped>
 /* Base styles */
