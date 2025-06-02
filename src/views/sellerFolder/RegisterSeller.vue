@@ -195,12 +195,12 @@
           <div class="form-group">
             <label for="validID">Valid ID</label>
             <div class="file-upload">
-              <input type="file" id="validID" class="file-input">
+              <input type="file" id="validID" class="file-input" @change="handleFileUpload($event, 'validID')">
               <div class="file-upload-button">
                 <Upload size="18" />
                 <span>Upload Valid ID</span>
               </div>
-              <span class="file-name">{{ formData.verificationDocs.validID }}</span>
+              <span class="file-name">{{ formData.verificationDocs.validID ? formData.verificationDocs.validID.name : '' }}</span>
             </div>
             <p class="file-help">Accepted formats: JPG, PNG, PDF (max 5MB)</p>
           </div>
@@ -208,12 +208,12 @@
           <div class="form-group">
             <label for="businessPermit">Business Permit</label>
             <div class="file-upload">
-              <input type="file" id="businessPermit" class="file-input">
+              <input type="file" id="businessPermit" class="file-input" @change="handleFileUpload($event, 'businessPermit')">
               <div class="file-upload-button">
                 <Upload size="18" />
                 <span>Upload Business Permit</span>
               </div>
-              <span class="file-name">{{ formData.verificationDocs.businessPermit }}</span>
+              <span class="file-name">{{ formData.verificationDocs.businessPermit ? formData.verificationDocs.businessPermit.name : '' }}</span>
             </div>
             <p class="file-help">Accepted formats: JPG, PNG, PDF (max 5MB)</p>
           </div>
@@ -221,12 +221,12 @@
           <div class="form-group">
             <label for="farmCert">Farm Certification</label>
             <div class="file-upload">
-              <input type="file" id="farmCert" class="file-input">
+              <input type="file" id="farmCert" class="file-input" @change="handleFileUpload($event, 'farmCert')">
               <div class="file-upload-button">
                 <Upload size="18" />
                 <span>Upload Farm Certification</span>
               </div>
-              <span class="file-name">{{ formData.verificationDocs.farmCert }}</span>
+              <span class="file-name">{{ formData.verificationDocs.farmCert ? formData.verificationDocs.farmCert.name : '' }}</span>
             </div>
             <p class="file-help">Accepted formats: JPG, PNG, PDF (max 5MB)</p>
           </div>
@@ -238,14 +238,24 @@
           <p class="step-description">Tell us how you plan to deliver your products</p>
           
           <div class="form-group">
-            <label for="deliveryMethod">Delivery Method</label>
-            <select id="deliveryMethod" v-model="formData.deliveryInfo.deliveryMethod">
-              <option value="" disabled selected>Select delivery method</option>
-              <option value="Own Delivery">Own Delivery</option>
-              <option value="Third-party Courier">Third-party Courier</option>
-              <option value="Pickup Only">Pickup Only</option>
-              <option value="Multiple Options">Multiple Options</option>
-            </select>
+            <label>Delivery Method</label>
+            <div class="dropdown-checkbox">
+              <div class="dropdown-header" @click="toggleDeliveryDropdown">
+                <span>{{ selectedDeliveryMethods.length ? `${selectedDeliveryMethods.length} selected` : 'Select delivery methods' }}</span>
+                <ChevronDown :class="{'rotate-180': isDeliveryDropdownOpen}" />
+              </div>
+              <div class="dropdown-content" v-if="isDeliveryDropdownOpen">
+                <div class="checkbox-group" v-for="method in deliveryMethods" :key="method.value">
+                  <input 
+                    type="checkbox" 
+                    :id="method.value" 
+                    :value="method.value" 
+                    v-model="formData.deliveryInfo.deliveryMethods"
+                  >
+                  <label :for="method.value">{{ method.label }}</label>
+                </div>
+              </div>
+            </div>
           </div>
           
           <div class="form-group">
@@ -259,13 +269,24 @@
           </div>
           
           <div class="form-group">
-            <label for="areasCovered">Areas Covered</label>
-            <textarea 
-              id="areasCovered" 
-              v-model="formData.deliveryInfo.areasCovered" 
-              placeholder="List the areas you can deliver to"
-              rows="3"
-            ></textarea>
+            <label>Areas Covered (Municipalities of Oriental Mindoro)</label>
+            <div class="dropdown-checkbox">
+              <div class="dropdown-header" @click="toggleMunicipalityDropdown">
+                <span>{{ selectedMunicipalities.length ? `${selectedMunicipalities.length} selected` : 'Select municipalities' }}</span>
+                <ChevronDown :class="{'rotate-180': isMunicipalityDropdownOpen}" />
+              </div>
+              <div class="dropdown-content" v-if="isMunicipalityDropdownOpen">
+                <div class="checkbox-group" v-for="municipality in municipalities" :key="municipality">
+                  <input 
+                    type="checkbox" 
+                    :id="municipality" 
+                    :value="municipality" 
+                    v-model="formData.deliveryInfo.areasCovered"
+                  >
+                  <label :for="municipality">{{ municipality }}</label>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         
@@ -385,13 +406,21 @@
     </div>
   </div>
 </template>
+
 <script>
-import { db, auth } from "@/firebase/firebaseConfig";
-import { collection, addDoc, doc, getDoc } from "firebase/firestore";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { db, auth, storage } from "@/firebase/firebaseConfig";
+import { collection, addDoc, doc, getDoc, updateDoc } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { ChevronLeft, ChevronRight, Upload, ChevronDown } from 'lucide-vue-next';
 
 export default {
   name: "SellerRegister",
+  components: {
+    ChevronLeft,
+    ChevronRight,
+    Upload,
+    ChevronDown
+  },
   data() {
     return {
       currentStep: 0,
@@ -404,11 +433,34 @@ export default {
         "Additional Details",
         "Terms"
       ],
+      isDeliveryDropdownOpen: false,
+      isMunicipalityDropdownOpen: false,
+      municipalities: [
+        "Baco",
+        "Bansud",
+        "Bongabong",
+        "Bulalacao",
+        "Calapan City",
+        "Gloria",
+        "Mansalay",
+        "Naujan",
+        "Pinamalayan",
+        "Pola",
+        "Puerto Galera",
+        "Roxas",
+        "San Teodoro",
+        "Socorro",
+        "Victoria"
+      ],
+      deliveryMethods: [
+        { label: "Own Delivery", value: "own_delivery" },
+        { label: "Pickup Only", value: "pickup_only" }
+      ],
       formData: {
         personalInfo: {
           firstName: "",
           lastName: "",
-          contactNumber: "",
+          contact: "",
           email: "",
           address: ""
         },
@@ -425,14 +477,14 @@ export default {
           accountNumber: ""
         },
         verificationDocs: {
-          validID: "",
-          businessPermit: "",
-          farmCert: ""
+          validID: null,
+          businessPermit: null,
+          farmCert: null
         },
         deliveryInfo: {
-          deliveryMethod: "",
+          deliveryMethods: [],
           operatingHours: "",
-          areasCovered: ""
+          areasCovered: []
         },
         additionalDetails: {
           socialMedia: "",
@@ -442,6 +494,11 @@ export default {
           agreeTerms: false,
           consentData: false
         }
+      },
+      uploadProgress: {
+        validID: 0,
+        businessPermit: 0,
+        farmCert: 0
       }
     };
   },
@@ -451,12 +508,35 @@ export default {
     },
     canSubmit() {
       return this.formData.termsAgreement.agreeTerms && this.formData.termsAgreement.consentData;
+    },
+    selectedMunicipalities() {
+      return this.formData.deliveryInfo.areasCovered || [];
+    },
+    selectedDeliveryMethods() {
+      return this.formData.deliveryInfo.deliveryMethods || [];
     }
   },
   async created() {
     await this.fetchUserData();
   },
   methods: {
+    toggleDeliveryDropdown() {
+      this.isDeliveryDropdownOpen = !this.isDeliveryDropdownOpen;
+      if (this.isDeliveryDropdownOpen) {
+        this.isMunicipalityDropdownOpen = false;
+      }
+    },
+    toggleMunicipalityDropdown() {
+      this.isMunicipalityDropdownOpen = !this.isMunicipalityDropdownOpen;
+      if (this.isMunicipalityDropdownOpen) {
+        this.isDeliveryDropdownOpen = false;
+      }
+    },
+    goToStep(index) {
+      if (index <= this.currentStep) {
+        this.currentStep = index;
+      }
+    },
     async fetchUserData() {
       try {
         const user = auth.currentUser;
@@ -497,68 +577,91 @@ export default {
         this.currentStep--;
       }
     },
-    async submitForm() {
-    try {
-      const user = auth.currentUser;
-      if (!user) {
-        alert("No authenticated user found. Please log in.");
-        return;
+    handleFileUpload(event, key) {
+      const file = event.target.files[0];
+      if (!file) return;
+      
+      this.formData.verificationDocs[key] = file;
+    },
+    async uploadFile(file, path) {
+      if (!file) return null;
+
+      try {
+        const timestamp = Date.now();
+        const fileName = `${timestamp}_${file.name}`;
+        const storageRef = ref(storage, `${path}/${fileName}`);
+        
+        // Upload the file
+        const uploadTask = await uploadBytes(storageRef, file);
+        
+        // Get download URL
+        const downloadURL = await getDownloadURL(uploadTask.ref);
+        return downloadURL;
+      } catch (error) {
+        console.error("Error uploading file:", error);
+        throw error;
       }
+    },
+    async submitForm() {
+      try {
+        const user = auth.currentUser;
+        if (!user) {
+          alert("No authenticated user found. Please log in.");
+          return;
+        }
 
-      // Upload files and get their download URLs
-      const validIDUrl = await this.uploadFile(this.formData.verificationDocs.validID);
-      const businessPermitUrl = await this.uploadFile(this.formData.verificationDocs.businessPermit);
-      const farmCertUrl = await this.uploadFile(this.formData.verificationDocs.farmCert);
+        // Upload files to Firebase Storage
+        const validIDUrl = this.formData.verificationDocs.validID ? 
+          await this.uploadFile(this.formData.verificationDocs.validID, `sellers/${user.uid}/documents`) : null;
+        
+        const businessPermitUrl = this.formData.verificationDocs.businessPermit ? 
+          await this.uploadFile(this.formData.verificationDocs.businessPermit, `sellers/${user.uid}/documents`) : null;
+        
+        const farmCertUrl = this.formData.verificationDocs.farmCert ? 
+          await this.uploadFile(this.formData.verificationDocs.farmCert, `sellers/${user.uid}/documents`) : null;
 
-      const sellerData = {
-        sellerId: user.uid,
-        ...this.formData.personalInfo,  
-        ...this.formData.farmDetails,
-        ...this.formData.paymentInfo,
-        ...this.formData.deliveryInfo,
-        ...this.formData.additionalDetails,
-        validID: validIDUrl, // Store directly in the document
-        businessPermit: businessPermitUrl, // Store directly in the document
-        farmCert: farmCertUrl, // Store directly in the document
-        agreeTerms: this.formData.termsAgreement.agreeTerms,
-        consentData: this.formData.termsAgreement.consentData,
-        isVerified: false, // Default to false, can be updated later
-        createdAt: new Date().toISOString(),
-        wholesaleAvailability: this.formData.additionalDetails.wholesaleAvailability,
-      };
+        // Prepare seller data for Firestore
+        const sellerData = {
+          userId: user.uid,
+          personalInfo: this.formData.personalInfo,
+          farmDetails: this.formData.farmDetails,
+          paymentInfo: this.formData.paymentInfo,
+          deliveryInfo: {
+            deliveryMethods: this.formData.deliveryInfo.deliveryMethods,
+            operatingHours: this.formData.deliveryInfo.operatingHours,
+            areasCovered: this.formData.deliveryInfo.areasCovered
+          },
+          additionalDetails: this.formData.additionalDetails,
+          documents: {
+            validID: validIDUrl,
+            businessPermit: businessPermitUrl,
+            farmCert: farmCertUrl
+          },
+          termsAgreement: this.formData.termsAgreement,
+          isVerified: false,
+          status: "pending",
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
 
-      // Save to Firestore
-      await addDoc(collection(db, "sellers"), sellerData);
-      alert("Registration successful!");
-      this.$router.push("/");
-    } catch (error) {
-      console.error("Error submitting form: ", error);
-      alert("Registration failed. Please try again.");
+        // Check if seller document already exists
+        const sellersRef = collection(db, "sellers");
+        const sellerDocRef = await addDoc(sellersRef, sellerData);
+
+        // Update user document to mark as seller
+        const userRef = doc(db, "users", user.uid);
+        await updateDoc(userRef, {
+          isSeller: true,
+          sellerDocId: sellerDocRef.id
+        });
+
+        alert("Your seller application has been submitted successfully!");
+        this.$emit('navigate', 'HomePage');
+      } catch (error) {
+        console.error("Error submitting form:", error);
+        alert("There was an error submitting your application. Please try again.");
+      }
     }
-  },
-  async uploadFile(file) {
-    if (!file) return null;
-
-    const storage = getStorage();
-    const storageRef = ref(storage, `sellers/${file.name}`);
-    console.log("Uploading file:", file.name);
-   
-    try {
-      await uploadBytes(storageRef, file);
-      const downloadURL = await getDownloadURL(storageRef);
-      console.log("File uploaded. Download URL:", downloadURL);
-      return downloadURL;
-    } catch (error) {
-      console.error("Error uploading file:", error);
-      return null;
-    }
-  },
-  handleFileUpload(event, key) {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    this.formData.verificationDocs[key] = file;
-  },
   }
 };
 </script>
@@ -588,6 +691,8 @@ export default {
   justify-content: center;
   color: white;
   margin-right: 10px;
+  background: transparent;
+  border: none;
 }
 
 .header h1 {
@@ -703,6 +808,7 @@ export default {
 
 .form-group {
   margin-bottom: 20px;
+  position: relative;
 }
 
 .form-group label {
@@ -724,6 +830,14 @@ export default {
   border-radius: 8px;
   font-size: 14px;
   transition: border-color 0.3s ease;
+  background-color: white;
+}
+
+.form-group input::placeholder,
+.form-group textarea::placeholder,
+.form-group select::placeholder {
+  color: #999;
+  opacity: 1;
 }
 
 .form-group input:focus,
@@ -747,6 +861,55 @@ export default {
 
 .checkbox-group label {
   margin-bottom: 0;
+}
+
+/* Dropdown with Checkboxes */
+.dropdown-checkbox {
+  position: relative;
+  width: 100%;
+}
+
+.dropdown-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 15px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background-color: white;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.dropdown-header svg {
+  transition: transform 0.3s ease;
+}
+
+.dropdown-header .rotate-180 {
+  transform: rotate(180deg);
+}
+
+.dropdown-content {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 100%;
+  max-height: 200px;
+  overflow-y: auto;
+  background-color: white;
+  border: 1px solid #ddd;
+  border-radius: 0 0 8px 8px;
+  z-index: 10;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.dropdown-content .checkbox-group {
+  padding: 10px 15px;
+  border-bottom: 1px solid #eee;
+}
+
+.dropdown-content .checkbox-group:last-child {
+  border-bottom: none;
 }
 
 /* File Upload */
@@ -782,6 +945,10 @@ export default {
   margin-left: 10px;
   font-size: 14px;
   color: #666;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
 }
 
 .file-help {
@@ -844,6 +1011,8 @@ export default {
   font-size: 14px;
   font-weight: 600;
   transition: all 0.2s ease;
+  border: none;
+  cursor: pointer;
 }
 
 .prev-button {

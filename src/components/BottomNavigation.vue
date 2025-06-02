@@ -10,11 +10,11 @@
     </button>
     <button 
       class="nav-item" 
-      :class="{ active: activeTab === '/likes' }"
-      @click="navigate('/likes')"
+      :class="{ active: activeTab === '/community' }"
+      @click="navigate('/community')"
     >
-      <Heart :size="iconSize" :fill="activeTab === '/likes' ? '#2e5c31' : 'none'" :stroke="activeTab === '/likes' ? '#2e5c31' : '#2e5c31'" stroke-width="2" />
-      <span>Likes</span>
+      <MessagesSquare :size="iconSize" :fill="activeTab === '/community' ? '#2e5c31' : 'none'" :stroke="activeTab === '/community' ? '#2e5c31' : '#2e5c31'" stroke-width="2" />
+      <span>Community</span>
     </button>
     <button 
       class="nav-item" 
@@ -44,12 +44,12 @@
 </template>
 
 <script>
-import { Home, Heart, MessageCircle, Package, ShoppingCart } from 'lucide-vue-next';
+import { Home, MessagesSquare, MessageCircle, Package, ShoppingCart } from 'lucide-vue-next';
 
 export default {
   components: {
     Home,
-    Heart,
+    MessagesSquare,
     MessageCircle,
     Package,
     ShoppingCart

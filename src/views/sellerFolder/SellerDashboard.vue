@@ -142,14 +142,21 @@
           </div>
         </div>
         
-        <!-- Farm Revenue Chart -->
-        <FarmRevenueChart 
-          :totalRevenue="totalRevenue" 
-          :currency="'₱'" 
-          :timePeriods="timePeriods"
-          :activePeriod="revenuePeriod"
-          @setActivePeriod="setRevenuePeriod"
-        />
+        <!-- Farm Revenue Chart & Oriental Mindoro Map -->
+        <div class="dashboard-row">
+          <div class="dashboard-col dashboard-col--main">
+            <FarmRevenueChart 
+              :totalRevenue="totalRevenue" 
+              :currency="'₱'" 
+              :timePeriods="timePeriods"
+              :activePeriod="revenuePeriod"
+              @setActivePeriod="setRevenuePeriod"
+            />
+          </div>
+          <div class="dashboard-col dashboard-col--side">
+            <OrientalMindoroMap />
+          </div>
+        </div>
         
         <div class="bottom-section">
           <!-- Farm Performance -->
@@ -214,6 +221,7 @@ import {
 } from 'lucide-vue-next';
 import Sidebar from '@/components/Sidebar.vue';
 import FarmRevenueChart from '@/components/SalesRevenueChart.vue';
+import OrientalMindoroMap from '@/components/sellerside/OrientalMindoroMap.vue';
 import FarmPerformance from '@/components/SalesPerformance.vue';
 import TopProducts from '@/components/TopSales.vue';
 import RecentOrders from '@/components/RecentOrders.vue';
@@ -1268,5 +1276,34 @@ const checkNotifications = async () => {
 :global(.dark) .avatar,
 :global(.dark) .profile-avatar {
   background-color: #374151;
+}
+
+/* Add after .metric-cards styles or near other layout styles */
+.dashboard-row {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+.dashboard-col {
+  display: flex;
+  flex-direction: column;
+}
+.dashboard-col--main {
+  flex: 2 1 0%;
+}
+.dashboard-col--side {
+  flex: 1 1 0%;
+  min-width: 320px;
+  max-width: 400px;
+}
+@media (max-width: 992px) {
+  .dashboard-row {
+    flex-direction: column;
+    gap: 15px;
+  }
+  .dashboard-col--side {
+    min-width: 0;
+    max-width: 100%;
+  }
 }
 </style>

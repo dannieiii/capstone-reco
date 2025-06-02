@@ -2,8 +2,10 @@
   <div class="register-container">
     <div class="logo-container">
       <img src="@/assets/logo.png" alt="FarmXpress Logo" class="logo" />
-      <h1 class="app-title">FarmXpress</h1>
-      <h3 class="app-subtitle">MOBILE APP</h3>
+      <div class="title-container">
+        <h1 class="app-title">FarmXpress</h1>
+        <h3 class="app-subtitle">MOBILE APP</h3>
+      </div>
     </div>
 
     <!-- Alert Box -->
@@ -24,73 +26,77 @@
         <span>or register with email</span>
       </div>
       
-      <div class="input-container">
-        <i class="fas fa-user icon"></i>
-        <input type="text" v-model="firstName" placeholder="First Name" required />
+      <div class="form-grid">
+        <div class="input-container">
+          <i class="fas fa-user icon"></i>
+          <input type="text" v-model="firstName" placeholder="First Name" required />
+        </div>
+        
+        <div class="input-container">
+          <i class="fas fa-user icon"></i>
+          <input type="text" v-model="lastName" placeholder="Last Name" required />
+        </div>
+        
+        <div class="input-container">
+          <i class="fas fa-at icon"></i>
+          <input type="text" v-model="username" placeholder="Username" required />
+        </div>
+        
+        <div class="input-container">
+          <i class="fas fa-envelope icon"></i>
+          <input type="email" v-model="email" placeholder="Email" required />
+        </div>
+        
+        <div class="input-container">
+          <i class="fas fa-phone icon"></i>
+          <input type="text" v-model="contactNumber" placeholder="Contact Number" required />
+        </div>
+        
+        <div class="input-container location-select">
+          <i class="fas fa-map-marker-alt icon"></i>
+          <select v-model="selectedProvince" disabled>
+            <option value="Oriental Mindoro">Oriental Mindoro</option>
+          </select>
+        </div>
+        
+        <div class="input-container location-select">
+          <i class="fas fa-city icon"></i>
+          <select v-model="selectedMunicipality" @change="updateBarangays" required>
+            <option value="" disabled selected>Select Municipality/City</option>
+            <option v-for="municipality in municipalities" :value="municipality" :key="municipality">
+              {{ municipality }}
+            </option>
+          </select>
+        </div>
+        
+        <div class="input-container location-select">
+          <i class="fas fa-map-pin icon"></i>
+          <select v-model="selectedBarangay" required>
+            <option value="" disabled selected>Select Barangay</option>
+            <option v-for="barangay in barangays" :value="barangay" :key="barangay">
+              {{ barangay }}
+            </option>
+          </select>
+        </div>
       </div>
       
-      <div class="input-container">
-        <i class="fas fa-user icon"></i>
-        <input type="text" v-model="lastName" placeholder="Last Name" required />
-      </div>
-      
-      <div class="input-container">
-        <i class="fas fa-at icon"></i>
-        <input type="text" v-model="username" placeholder="Username" required />
-      </div>
-      
-      <div class="input-container">
-        <i class="fas fa-envelope icon"></i>
-        <input type="email" v-model="email" placeholder="Email" required />
-      </div>
-      
-      <div class="input-container">
-        <i class="fas fa-phone icon"></i>
-        <input type="text" v-model="contactNumber" placeholder="Contact Number" required />
-      </div>
-      
-      <!-- Location Selection -->
-      <div class="input-container location-select">
-        <i class="fas fa-map-marker-alt icon"></i>
-        <select v-model="selectedProvince" disabled>
-          <option value="Oriental Mindoro">Oriental Mindoro</option>
-        </select>
-      </div>
-      
-      <div class="input-container location-select">
-        <i class="fas fa-city icon"></i>
-        <select v-model="selectedMunicipality" @change="updateBarangays" required>
-          <option value="" disabled selected>Select Municipality/City</option>
-          <option v-for="municipality in municipalities" :value="municipality" :key="municipality">
-            {{ municipality }}
-          </option>
-        </select>
-      </div>
-      
-      <div class="input-container location-select">
-        <i class="fas fa-map-pin icon"></i>
-        <select v-model="selectedBarangay" required>
-          <option value="" disabled selected>Select Barangay</option>
-          <option v-for="barangay in barangays" :value="barangay" :key="barangay">
-            {{ barangay }}
-          </option>
-        </select>
-      </div>
-      
-      <div class="input-container">
-        <i class="fas fa-lock icon"></i>
-        <input :type="showPassword ? 'text' : 'password'" v-model="password" placeholder="Password" required />
-        <span class="eye-icon" @click="togglePassword">
-          <i :class="showPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
-        </span>
-      </div>
-      
-      <div class="input-container">
-        <i class="fas fa-lock icon"></i>
-        <input :type="showConfirmPassword ? 'text' : 'password'" v-model="confirmPassword" placeholder="Confirm Password" required />
-        <span class="eye-icon" @click="toggleConfirmPassword">
-          <i :class="showConfirmPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
-        </span>
+      <!-- Password fields in their own section for chronological order -->
+      <div class="password-section">
+        <div class="input-container password-container">
+          <i class="fas fa-lock icon"></i>
+          <input :type="showPassword ? 'text' : 'password'" v-model="password" placeholder="Password" required />
+          <span class="eye-icon" @click="togglePassword">
+            <i :class="showPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+          </span>
+        </div>
+        
+        <div class="input-container password-container">
+          <i class="fas fa-lock icon"></i>
+          <input :type="showConfirmPassword ? 'text' : 'password'" v-model="confirmPassword" placeholder="Confirm Password" required />
+          <span class="eye-icon" @click="toggleConfirmPassword">
+            <i :class="showConfirmPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+          </span>
+        </div>
       </div>
 
       <button class="register-button" @click="register">Create Account</button>
@@ -101,8 +107,9 @@
 </template>
 
 <script>
+// Script remains unchanged
 import { auth, db, googleProvider } from '../firebase/firebaseConfig';
-import { createUserWithEmailAndPassword, sendEmailVerification, signInWithPopup, GoogleAuthProvider, signOut, fetchSignInMethodsForEmail } from 'firebase/auth';
+import { createUserWithEmailAndPassword, sendEmailVerification, signInWithPopup, GoogleAuthProvider, signOut, fetchSignInMethodsForEmail, onAuthStateChanged } from 'firebase/auth';
 import { doc, setDoc, query, collection, where, getDocs } from 'firebase/firestore';
 
 // Sample data for Oriental Mindoro municipalities and barangays
@@ -201,6 +208,8 @@ export default {
         const userCredential = await createUserWithEmailAndPassword(auth, this.email, this.password);
         const user = userCredential.user;
         
+        console.log('User after registration:', userCredential.user);
+        
         // Send verification email
         await sendEmailVerification(user);
         
@@ -295,105 +304,177 @@ export default {
         this.showAlert(errorMessage, 'error');
       }
     }
+  },
+  mounted() {
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        // User is authenticated
+      }
+    });
   }
 };
 </script>
 
 <style scoped>
+/* Main Container */
 .register-container {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 100vh;
-  background: #f2f2f2;
+  height: 100vh;
+  background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
   padding: 20px;
+  font-family: 'Arial', sans-serif;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
 }
 
+/* Logo Container */
 .logo-container {
-  text-align: center;
-  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 10px;
+  animation: fadeIn 1s ease-in-out;
 }
 
 .logo {
-  width: 300px;
-  margin-bottom: 2px;
+  width: 140px;
+  height: auto;
+  margin-right: 10px;
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1));
+}
+
+.title-container {
+  text-align: left;
 }
 
 .app-title {
   color: #2e5c31;
-  font-size: 36px;
+  font-size: 32px;
   font-weight: bold;
   margin: 0;
   letter-spacing: 2px;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.1);
+  line-height: 1;
 }
 
 .app-subtitle {
   color: #2e5c31;
-  font-size: 18px;
+  font-size: 14px;
   margin: 0;
-  letter-spacing: 3px;
+  letter-spacing: 4px;
+  font-weight: 500;
 }
 
 /* Alert Box */
 .alert-box {
-  padding: 12px;
-  margin-bottom: 15px;
-  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 10px;
+  border-radius: 10px;
   text-align: center;
-  font-size: 14px;
+  font-size: 13px;
   width: 90%;
-  max-width: 350px;
+  max-width: 700px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  animation: slideDown 0.3s ease-out;
+  transition: all 0.3s ease;
 }
 
 .success {
   background: #d4edda;
   color: #155724;
-  border: 1px solid #c3e6cb;
+  border-left: 5px solid #28a745;
 }
 
 .warning {
   background: #fff3cd;
   color: #856404;
-  border: 1px solid #ffeeba;
+  border-left: 5px solid #ffc107;
 }
 
 .error {
   background: #f8d7da;
   color: #721c24;
-  border: 1px solid #f5c6cb;
+  border-left: 5px solid #dc3545;
 }
 
+.info {
+  background: #d1ecf1;
+  color: #0c5460;
+  border-left: 5px solid #17a2b8;
+}
+
+/* Register Box */
 .register-box {
   background: white;
   border-radius: 20px;
-  padding: 25px;
-  width: 90%;
-  max-width: 350px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  width: 95%;
+  max-width: 700px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+  animation: fadeIn 0.5s ease-in-out;
+  transition: transform 0.3s ease;
+  margin-bottom: 15px;
+  max-height: calc(100vh - 200px);
+  overflow-y: auto;
+}
+
+.register-box:hover {
+  transform: translateY(-5px);
 }
 
 .register-title {
   color: #2e5c31;
   text-align: center;
-  margin-bottom: 20px;
+  margin-top: 0;
+  margin-bottom: 10px;
   font-size: 22px;
+  font-weight: 600;
 }
 
+/* Form Grid for Desktop - 2 columns */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+/* Password Section - Separate from grid for chronological order */
+.password-section {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 15px;
+}
+
+/* Input Fields */
 .input-container {
   display: flex;
   align-items: center;
-  background: #eaeaea;
+  background: #f7f7f7;
   border-radius: 50px;
-  padding: 12px;
-  margin-bottom: 15px;
-  position: relative;
+  padding: 10px 15px;
+  border: 1px solid #e0e0e0;
+  transition: all 0.3s ease;
+}
+
+.input-container:focus-within {
+  border-color: #2e5c31;
+  box-shadow: 0 0 0 2px rgba(46, 92, 49, 0.2);
+  background: #ffffff;
 }
 
 .icon {
   margin-right: 10px;
-  color: #999;
-  font-size: 18px;
+  color: #2e5c31;
+  font-size: 15px;
 }
 
 input[type="email"],
@@ -405,46 +486,32 @@ input[type="password"] {
   flex: 1;
   font-size: 14px;
   color: #333;
+  width: 100%;
+}
+
+input::placeholder {
+  color: #999;
+}
+
+/* Password Container */
+.password-container {
+  position: relative;
 }
 
 .eye-icon {
   position: absolute;
   right: 15px;
-  color: #999;
+  color: #777;
   cursor: pointer;
-  font-size: 18px;
+  font-size: 15px;
+  transition: color 0.3s;
 }
 
-.register-button {
-  background: #2e5c31;
-  color: white;
-  border: none;
-  border-radius: 50px;
-  padding: 12px;
-  width: 100%;
-  font-size: 16px;
-  cursor: pointer;
-  transition: background 0.3s;
-  margin-top: 10px;
-}
-
-.register-button:hover {
-  background: #26492a;
-}
-
-.login-link {
-  text-align: center;
-  font-size: 14px;
-  margin-top: 15px;
-  color: #666;
-}
-
-.login-link a {
+.eye-icon:hover {
   color: #2e5c31;
-  text-decoration: none;
-  font-weight: bold;
 }
 
+/* Location Select */
 .location-select {
   position: relative;
 }
@@ -459,7 +526,8 @@ input[type="password"] {
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
-  padding-right: 30px;
+  padding-right: 25px;
+  cursor: pointer;
 }
 
 .location-select::after {
@@ -472,14 +540,45 @@ input[type="password"] {
   transform: translateY(-50%);
   color: #999;
   pointer-events: none;
+  font-size: 12px;
 }
 
-/* Social Login Styles */
+/* Register Button */
+.register-button {
+  background: linear-gradient(to right, #2e5c31, #3a7d3e);
+  color: white;
+  border: none;
+  border-radius: 50px;
+  padding: 12px;
+  width: 100%;
+  max-width: 300px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 10px rgba(46, 92, 49, 0.3);
+  letter-spacing: 1px;
+  margin: 0 auto;
+  display: block;
+}
+
+.register-button:hover {
+  background: linear-gradient(to right, #26492a, #2e5c31);
+  box-shadow: 0 6px 15px rgba(46, 92, 49, 0.4);
+  transform: translateY(-2px);
+}
+
+.register-button:active {
+  transform: translateY(1px);
+  box-shadow: 0 2px 5px rgba(46, 92, 49, 0.4);
+}
+
+/* Social Login Divider */
 .social-divider {
   display: flex;
   align-items: center;
   text-align: center;
-  margin: 20px 0;
+  margin: 15px 0;
 }
 
 .social-divider::before,
@@ -490,11 +589,13 @@ input[type="password"] {
 }
 
 .social-divider span {
-  padding: 0 10px;
+  padding: 0 15px;
   color: #777;
-  font-size: 14px;
+  font-size: 13px;
+  background: white;
 }
 
+/* Google Button */
 .google-button {
   display: flex;
   align-items: center;
@@ -503,21 +604,161 @@ input[type="password"] {
   color: #444;
   border: 1px solid #ddd;
   border-radius: 50px;
-  padding: 10px;
+  padding: 12px;
   width: 100%;
+  max-width: 300px;
   font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
-  transition: background 0.3s;
-  margin-bottom: 5px;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+  margin: 0 auto;
 }
 
 .google-button:hover {
-  background: #f5f5f5;
+  background: #f8f8f8;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
 }
 
 .google-icon {
   width: 18px;
   height: 18px;
   margin-right: 10px;
+}
+
+/* Login Link */
+.login-link {
+  text-align: center;
+  font-size: 13px;
+  margin-top: 15px;
+  margin-bottom: 0;
+  color: #555;
+}
+
+.login-link a {
+  color: #2e5c31;
+  text-decoration: none;
+  font-weight: 600;
+  transition: color 0.3s;
+}
+
+.login-link a:hover {
+  color: #1e3e21;
+  text-decoration: underline;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .register-box {
+    padding: 15px;
+  }
+  
+  .form-grid, .password-section {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  
+  .logo-container {
+    flex-direction: column;
+    text-align: center;
+  }
+  
+  .logo {
+    width: 120px;
+    margin-right: 0;
+    margin-bottom: 5px;
+  }
+  
+  .title-container {
+    text-align: center;
+  }
+  
+  .app-title {
+    font-size: 28px;
+  }
+  
+  .app-subtitle {
+    font-size: 12px;
+  }
+  
+  /* Make buttons narrower on mobile */
+  .google-button, .register-button {
+    max-width: 100%;
+  }
+  
+  .input-container {
+    padding: 8px 12px;
+  }
+}
+
+@media (max-height: 700px) {
+  .register-box {
+    padding: 15px;
+    max-height: calc(100vh - 150px);
+  }
+  
+  .logo {
+    width: 100px;
+  }
+  
+  .app-title {
+    font-size: 26px;
+  }
+  
+  .app-subtitle {
+    font-size: 12px;
+  }
+  
+  .register-title {
+    font-size: 18px;
+    margin-bottom: 8px;
+  }
+  
+  .input-container {
+    padding: 8px 12px;
+  }
+  
+  .icon {
+    font-size: 14px;
+  }
+  
+  input[type="email"],
+  input[type="text"],
+  input[type="password"] {
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 480px) {
+  .register-box {
+    padding: 12px;
+  }
+  
+  .input-container {
+    padding: 8px 12px;
+  }
+  
+  .app-title {
+    font-size: 24px;
+  }
+  
+  .app-subtitle {
+    font-size: 11px;
+  }
+  
+  .logo {
+    width: 100px;
+  }
 }
 </style>

@@ -16,16 +16,21 @@
         <i class="fas fa-user icon"></i>
         <input type="email" v-model="email" placeholder="Email" />
       </div>
-      <div class="input-container">
+      <div class="input-container password-container">
         <i class="fas fa-lock icon"></i>
-        <input type="password" v-model="password" placeholder="Password" />
+        <input :type="showPassword ? 'text' : 'password'" v-model="password" placeholder="Password" />
+        <span class="eye-icon" @click="togglePassword">
+          <i :class="showPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+        </span>
       </div>
 
       <div class="options">
-        <label>
-          <input type="checkbox" v-model="rememberMe" /> Remember Me
+        <label class="remember-me">
+          <input type="checkbox" v-model="rememberMe" />
+          <span class="checkmark"></span>
+          Remember Me
         </label>
-        <a @click="forgotPassword" href="#">Forgot Password?</a>
+        <a @click="forgotPassword" href="#" class="forgot-password">Forgot Password?</a>
       </div>
 
       <button class="login-button" @click="login">Login</button>
@@ -41,14 +46,13 @@
         Continue with Google
       </button>
 
-      <p>Don't have an account? <a href="/registration">Create an account</a></p>
-      
-    
+      <p class="signup-text">Don't have an account? <a href="/registration" class="signup-link">Create an account</a></p>
     </div>
   </div>
 </template>
 
 <script>
+// Script remains unchanged
 import { auth, db, googleProvider } from '../firebase/firebaseConfig';
 import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, sendEmailVerification } from 'firebase/auth';
 import { doc, getDoc, collection, query, where, getDocs, setDoc } from 'firebase/firestore';
@@ -62,43 +66,41 @@ export default {
       alertMessage: '',
       alertType: '',
       pendingVerificationEmail: '',
+      showPassword: false,
     };
   },
-  methods: {
-    async login() {
-      if (!this.email || !this.password) {
-        this.showAlert('Please enter both email and password.', 'warning');
-        return;
-      }
-      
-      try {
-        const userCredential = await signInWithEmailAndPassword(auth, this.email, this.password);
-        const user = userCredential.user;
-
-       
-        
-
-        if (!user.emailVerified) {
-          // Sign out the user since they're not verified
-          await auth.signOut();
-          this.showAlert('Please verify your email before logging in. Check your inbox for the verification link.', 'warning');
+    methods: {
+      async login() {
+        if (!this.email || !this.password) {
+          this.showAlert('Please enter both email and password.', 'warning');
           return;
         }
+        
+        try {
+          const userCredential = await signInWithEmailAndPassword(auth, this.email, this.password);
+          const user = userCredential.user;
 
-        await this.processUserLogin(user);
-      } catch (error) {
-        console.error('Login Error:', error);
-        let errorMessage = 'Login failed! Check your credentials.';
-        
-        if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
-          errorMessage = 'Invalid email or password.';
-        } else if (error.code === 'auth/too-many-requests') {
-          errorMessage = 'Too many failed login attempts. Please try again later.';
+          if (!user.emailVerified) {
+            // Sign out the user since they're not verified
+            await auth.signOut();
+            this.showAlert('Please verify your email before logging in. Check your inbox for the verification link.', 'warning');
+            return;
+          }
+
+          await this.processUserLogin(user);
+        } catch (error) {
+          console.error('Login Error:', error);
+          let errorMessage = 'Login failed! Check your credentials.';
+          
+          if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+            errorMessage = 'Invalid email or password.';
+          } else if (error.code === 'auth/too-many-requests') {
+            errorMessage = 'Too many failed login attempts. Please try again later.';
+          }
+          
+          this.showAlert(errorMessage, 'error');
         }
-        
-        this.showAlert(errorMessage, 'error');
-      }
-    },
+      },
 
     async loginWithGoogle() {
       try {
@@ -209,7 +211,11 @@ export default {
 
       this.showAlert('Login Successful!', 'success');
     },
-
+    
+    
+    togglePassword() {
+    this.showPassword = !this.showPassword;
+  },
     async checkStoredSession() {
       // Check if user is already authenticated via Firebase Auth
       const user = auth.currentUser;
@@ -281,8 +287,6 @@ export default {
       this.$router.push('/reset-password');
     },
     
- 
-
     showAlert(message, type) {
       this.alertMessage = message;
       this.alertType = type;
@@ -304,97 +308,178 @@ export default {
 </script>
 
 <style scoped>
+/* Main Container */
+
+/* Specifically target the password input */
+.password-container input {
+  border: none;
+  background: transparent;
+  outline: none;
+  flex: 1;
+  font-size: 15px;
+  color: #333;
+  width: 100%;
+}
+.password-container {
+  position: relative;
+}
+
+.eye-icon {
+  position: absolute;
+  right: 15px;
+  color: #777;
+  cursor: pointer;
+  font-size: 15px;
+  transition: color 0.3s;
+}
+
+.eye-icon:hover {
+  color: #2e5c31;
+}
+.password-toggle {
+  margin-left: 10px;
+  color: #777;
+  cursor: pointer;
+  transition: color 0.3s;
+}
+
+.password-toggle:hover {
+  color: #2e5c31;
+}
+
 .login-container {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 100vh;
-  background: #f2f2f2;
+  height: 100vh;
+  background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
   padding: 20px;
+  font-family: 'Arial', sans-serif;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
 }
 
+
+
+/* Logo Container */
 .logo-container {
   text-align: center;
-  margin-bottom: 30px;
+  margin-bottom: 15px;
+  animation: fadeIn 1s ease-in-out;
 }
 
 .logo {
-  width: 300px;
-  margin-bottom: 2px;
+  width: 280px;
+  max-width: 100%;
+  height: auto;
+  margin-bottom: 0;
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1));
 }
 
 .app-title {
   color: #2e5c31;
-  font-size: 36px;
+  font-size: 38px;
   font-weight: bold;
   margin: 0;
   letter-spacing: 2px;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .app-subtitle {
   color: #2e5c31;
   font-size: 18px;
   margin: 0;
-  letter-spacing: 3px;
+  letter-spacing: 4px;
+  font-weight: 500;
 }
 
 /* Alert Box */
 .alert-box {
   padding: 12px;
   margin-bottom: 15px;
-  border-radius: 8px;
+  border-radius: 10px;
   text-align: center;
   font-size: 14px;
   width: 90%;
-  max-width: 350px;
+  max-width: 450px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  animation: slideDown 0.3s ease-out;
+  transition: all 0.3s ease;
 }
 
 .success {
   background: #d4edda;
   color: #155724;
-  border: 1px solid #c3e6cb;
+  border-left: 5px solid #28a745;
 }
 
 .warning {
   background: #fff3cd;
   color: #856404;
-  border: 1px solid #ffeeba;
+  border-left: 5px solid #ffc107;
 }
 
 .error {
   background: #f8d7da;
   color: #721c24;
-  border: 1px solid #f5c6cb;
+  border-left: 5px solid #dc3545;
 }
 
 .info {
   background: #d1ecf1;
   color: #0c5460;
-  border: 1px solid #bee5eb;
+  border-left: 5px solid #17a2b8;
 }
 
+/* Login Box */
 .login-box {
   background: white;
   border-radius: 20px;
-  padding: 25px;
+  padding: 30px;
   width: 90%;
-  max-width: 350px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
-.input-container {
-  display: flex;
-  align-items: center;
-  background: #eaeaea;
-  border-radius: 50px;
-  padding: 12px;
+  max-width: 450px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+  animation: fadeIn 0.5s ease-in-out;
+  transition: transform 0.3s ease;
   margin-bottom: 15px;
 }
 
+.login-box:hover {
+  transform: translateY(-5px);
+}
+
+/* Input Fields */
+.input-container {
+  display: flex;
+  align-items: center;
+  background: #f7f7f7;
+  border-radius: 50px;
+  padding: 14px 18px;
+  margin-bottom: 15px;
+  border: 1px solid #e0e0e0;
+  transition: all 0.3s ease;
+}
+
+.input-container:focus-within {
+  border-color: #2e5c31;
+  background: #ffffff;
+}
+.password-container input:focus {
+  outline: none !important;
+  box-shadow: none !important;
+  -webkit-box-shadow: none !important;
+  -moz-box-shadow: none !important;
+  -webkit-appearance: none !important;
+}
+
 .icon {
-  margin-right: 10px;
-  color: #999;
+  margin-right: 15px;
+  color: #2e5c31;
   font-size: 18px;
 }
 
@@ -404,39 +489,125 @@ input[type="password"] {
   background: transparent;
   outline: none;
   flex: 1;
-  font-size: 14px;
+  font-size: 15px;
   color: #333;
+  width: 100%;
 }
 
+input::placeholder {
+  color: #999;
+}
+
+/* Options - Keep on same row */
 .options {
   display: flex;
   justify-content: space-between;
-  font-size: 12px;
-  margin-bottom: 15px;
+  align-items: center;
+  font-size: 14px;
+  margin-bottom: 20px;
+  flex-wrap: nowrap; /* Prevent wrapping */
 }
 
-.options a {
-  color: #0056b3;
+/* Custom Checkbox */
+.remember-me {
+  display: flex;
+  align-items: center;
+  position: relative;
+  padding-left: 30px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap; /* Prevent wrapping */
+}
+
+.remember-me input {
+  position: absolute;
+  opacity: 0;
+  cursor: pointer;
+  height: 0;
+  width: 0;
+}
+
+.checkmark {
+  position: absolute;
+  top: -2px; /* Adjusted from 0px to -2px to move it higher */
+  left: 0;
+  height: 20px;
+  width: 20px;
+  background-color: #f7f7f7;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.remember-me:hover input ~ .checkmark {
+  background-color: #eee;
+}
+
+.remember-me input:checked ~ .checkmark {
+  background-color: #2e5c31;
+  border-color: #2e5c31;
+}
+
+.checkmark:after {
+  content: "";
+  position: absolute;
+  display: none;
+}
+
+.remember-me input:checked ~ .checkmark:after {
+  display: block;
+}
+
+.remember-me .checkmark:after {
+  left: 7px;
+  top: 3px;
+  width: 5px;
+  height: 10px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.forgot-password {
+  color: #2e5c31;
   text-decoration: none;
+  font-weight: 500;
+  transition: color 0.3s;
+  white-space: nowrap; /* Prevent wrapping */
 }
 
+.forgot-password:hover {
+  color: #1e3e21;
+  text-decoration: underline;
+}
+
+/* Login Button */
 .login-button {
-  background: #2e5c31;
+  background: linear-gradient(to right, #2e5c31, #3a7d3e);
   color: white;
   border: none;
   border-radius: 50px;
-  padding: 12px;
+  padding: 14px;
   width: 100%;
   font-size: 16px;
+  font-weight: 600;
   cursor: pointer;
-  transition: background 0.3s;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 10px rgba(46, 92, 49, 0.3);
+  letter-spacing: 1px;
 }
 
 .login-button:hover {
-  background: #26492a;
+  background: linear-gradient(to right, #26492a, #2e5c31);
+  box-shadow: 0 6px 15px rgba(46, 92, 49, 0.4);
+  transform: translateY(-2px);
 }
 
-/* Social Login Styles */
+.login-button:active {
+  transform: translateY(1px);
+  box-shadow: 0 2px 5px rgba(46, 92, 49, 0.4);
+}
+
+/* Social Login Divider */
 .social-divider {
   display: flex;
   align-items: center;
@@ -452,11 +623,13 @@ input[type="password"] {
 }
 
 .social-divider span {
-  padding: 0 10px;
+  padding: 0 15px;
   color: #777;
   font-size: 14px;
+  background: white;
 }
 
+/* Google Button */
 .google-button {
   display: flex;
   align-items: center;
@@ -465,33 +638,172 @@ input[type="password"] {
   color: #444;
   border: 1px solid #ddd;
   border-radius: 50px;
-  padding: 10px;
+  padding: 12px;
   width: 100%;
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 500;
   cursor: pointer;
-  transition: background 0.3s;
-  margin-bottom: 15px;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
 }
 
 .google-button:hover {
-  background: #f5f5f5;
+  background: #f8f8f8;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
 }
 
 .google-icon {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   margin-right: 10px;
 }
 
-p {
+/* Sign Up Text */
+.signup-text {
   text-align: center;
   font-size: 14px;
-  margin-top: 10px;
+  margin-top: 20px;
+  margin-bottom: 0;
+  color: #555;
 }
 
-p a {
-  color: #0056b3;
+.signup-link {
+  color: #2e5c31;
   text-decoration: none;
+  font-weight: 600;
+  transition: color 0.3s;
 }
 
+.signup-link:hover {
+  color: #1e3e21;
+  text-decoration: underline;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Responsive Design - Keep consistent layout */
+@media (max-width: 768px) {
+  .login-box {
+    padding: 25px;
+  }
+  
+  .app-title {
+    font-size: 32px;
+  }
+  
+  .app-subtitle {
+    font-size: 16px;
+  }
+  
+  .logo {
+    width: 240px;
+  }
+  
+  /* Keep options on same row */
+  .options {
+    font-size: 12px;
+  }
+  
+  .remember-me {
+    padding-left: 25px;
+  }
+  
+  .checkmark {
+    height: 18px;
+    width: 18px;
+  }
+}
+
+@media (max-height: 700px) {
+  .logo {
+    width: 200px;
+  }
+  
+  .app-title {
+    font-size: 30px;
+  }
+  
+  .app-subtitle {
+    font-size: 14px;
+  }
+  
+  .login-box {
+    padding: 20px;
+  }
+  
+  .input-container {
+    padding: 10px 15px;
+    margin-bottom: 10px;
+  }
+  
+  .options {
+    margin-bottom: 15px;
+  }
+}
+
+@media (max-width: 480px) {
+  .login-box {
+    padding: 20px;
+  }
+  
+  .input-container {
+    padding: 12px 15px;
+  }
+  
+  /* Keep options on same row */
+  .options {
+    font-size: 11px;
+  }
+  
+  .remember-me {
+    padding-left: 22px;
+  }
+  
+  .checkmark {
+    height: 16px;
+    width: 16px;
+    top: 1px;
+  }
+  
+  .app-title {
+    font-size: 28px;
+  }
+  
+  .app-subtitle {
+    font-size: 14px;
+  }
+  
+  .logo {
+    width: 220px;
+  }
+}
+
+/* For very small screens */
+@media (max-width: 360px) {
+  .login-box {
+    padding: 15px;
+  }
+  
+  .options {
+    font-size: 10px;
+  }
+  
+  .remember-me {
+    padding-left: 20px;
+  }
+  
+  .checkmark {
+    height: 14px;
+    width: 14px;
+  }
+}
 </style>

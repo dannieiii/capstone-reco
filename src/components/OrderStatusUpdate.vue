@@ -47,33 +47,30 @@
         </div>
       </div>
       
-      <!-- Delivery confirmation photo upload for Delivered status -->
       <div v-if="selectedStatus === 'Delivered'" class="additional-fields">
         <div class="field-group">
           <label for="deliveryPhoto">Delivery Confirmation Photo</label>
-          <div class="photo-upload-container">
+          <div class="image-upload-container">
             <div 
-              v-if="!deliveryPhotoPreview" 
-              class="photo-upload-placeholder"
+              class="image-preview" 
+              :class="{ 'has-image': imagePreview }"
               @click="triggerFileInput"
             >
-              <Camera size="24" />
-              <span>Upload Delivery Photo</span>
-            </div>
-            <div v-else class="photo-preview-container">
-              <img :src="deliveryPhotoPreview" alt="Delivery confirmation" class="photo-preview" />
-              <button class="remove-photo-btn" @click="removePhoto">
-                <X size="16" />
-              </button>
+              <img v-if="imagePreview" :src="imagePreview" alt="Delivery confirmation" />
+              <div v-else class="upload-placeholder">
+                <i class="fas fa-cloud-upload-alt"></i>
+                <p>Click to upload image</p>
+              </div>
             </div>
             <input 
-              type="file"
-              ref="fileInput"
-              accept="image/*"
+              type="file" 
+              ref="fileInput" 
+              @change="handleImageUpload" 
+              accept="image/*" 
               class="file-input"
-              @change="handleFileChange"
             />
           </div>
+          <span v-if="errors.image" class="error-message">{{ errors.image }}</span>
           <p class="photo-help-text">
             Take a clear photo of the delivered package or delivery location as proof of delivery
           </p>
@@ -93,13 +90,13 @@
       <button 
         class="update-status-btn" 
         @click="updateOrderStatus"
-        :disabled="isUpdating || (selectedStatus === 'Delivered' && !deliveryPhoto && requirePhotoForDelivery)"
+        :disabled="isUpdating || (selectedStatus === 'Delivered' && !selectedFile && requirePhotoForDelivery)"
       >
         <Loader v-if="isUpdating" size="16" class="spinner" />
         <span v-else>Update Status</span>
       </button>
       
-      <div v-if="selectedStatus === 'Delivered' && requirePhotoForDelivery && !deliveryPhoto" class="photo-required-message">
+      <div v-if="selectedStatus === 'Delivered' && requirePhotoForDelivery && !selectedFile" class="photo-required-message">
         <AlertCircle size="16" />
         <span>A delivery confirmation photo is required</span>
       </div>
@@ -108,7 +105,7 @@
 </template>
 
 <script setup>
-import { ref, watch, computed } from 'vue';
+import { ref, watch, computed, reactive } from 'vue';
 import { getFirestore, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Camera, X, AlertCircle, Loader } from 'lucide-vue-next';
@@ -131,91 +128,73 @@ const selectedStatus = ref(props.currentStatus);
 const estimatedTime = ref(4); // Default 4 hours
 const deliveryNotes = ref('');
 const sellerContact = ref('');
-const deliveryPhoto = ref(null);
-const deliveryPhotoPreview = ref(null);
 const fileInput = ref(null);
+const imagePreview = ref(null);
+const selectedFile = ref(null);
 const isUpdating = ref(false);
-const requirePhotoForDelivery = ref(true); // Set to true to make photo required for delivery
-
-// Reset additional fields when status changes
-watch(selectedStatus, (newStatus) => {
-  if (newStatus !== 'Shipped') {
-    estimatedTime.value = 4;
-    deliveryNotes.value = '';
-  }
-  
-  if (newStatus !== 'Delivered') {
-    deliveryPhoto.value = null;
-    deliveryPhotoPreview.value = null;
-  }
+const requirePhotoForDelivery = ref(true);
+const errors = reactive({
+  image: ''
 });
 
 const triggerFileInput = () => {
   fileInput.value.click();
 };
 
-const handleFileChange = (event) => {
+const handleImageUpload = (event) => {
   const file = event.target.files[0];
   if (!file) return;
   
-  // Check file type
+  // Validate file type
   if (!file.type.match('image.*')) {
-    alert('Please select an image file');
+    errors.image = 'Please select an image file';
     return;
   }
   
-  // Check file size (limit to 5MB)
-  if (file.size > 5 * 1024 * 1024) {
-    alert('Image size should be less than 5MB');
+  // Validate file size (max 2MB)
+  if (file.size > 2 * 1024 * 1024) {
+    errors.image = 'Image size should not exceed 2MB';
     return;
   }
   
-  deliveryPhoto.value = file;
+  errors.image = '';
+  selectedFile.value = file;
   
   // Create preview
   const reader = new FileReader();
   reader.onload = (e) => {
-    deliveryPhotoPreview.value = e.target.result;
+    imagePreview.value = e.target.result;
   };
   reader.readAsDataURL(file);
 };
 
-const removePhoto = () => {
-  deliveryPhoto.value = null;
-  deliveryPhotoPreview.value = null;
-  if (fileInput.value) {
-    fileInput.value.value = '';
-  }
-};
-
-const uploadDeliveryPhoto = async () => {
-  if (!deliveryPhoto.value) return null;
-
-  const storage = getStorage();
-  const photoRef = storageRef(storage, `delivery-photos/${props.orderId}_${Date.now()}`);
-
-  // Add this metadata object with CORS settings
-  const metadata = {
-    contentType: deliveryPhoto.value.type,
-    customMetadata: {
-      'Access-Control-Allow-Origin': '*'
-    }
-  };
-
+// Use base64 approach to avoid CORS issues
+const saveImageToFirestore = async () => {
+  if (!selectedFile.value) return null;
+  
   try {
-    // Pass the metadata as the third parameter
-    const snapshot = await uploadBytes(photoRef, deliveryPhoto.value, metadata);
-    const downloadURL = await getDownloadURL(snapshot.ref);
-    return downloadURL;
+    console.log('Converting image to base64...');
+    // Convert the image to base64 string
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        resolve(e.target.result);
+      };
+      reader.onerror = (e) => {
+        console.error('Error reading file:', e);
+        reject(new Error('Failed to read image file'));
+      };
+      reader.readAsDataURL(selectedFile.value);
+    });
   } catch (error) {
-    console.error('Error uploading delivery photo:', error);
-    throw error;
+    console.error("Error processing image:", error);
+    throw new Error('Failed to process image');
   }
 };
 
 const updateOrderStatus = async () => {
   // Validate if photo is required for delivery
-  if (selectedStatus.value === 'Delivered' && requirePhotoForDelivery.value && !deliveryPhoto.value) {
+  if (selectedStatus.value === 'Delivered' && requirePhotoForDelivery.value && !selectedFile.value) {
     return;
   }
   
@@ -243,9 +222,9 @@ const updateOrderStatus = async () => {
     
     // Add delivery photo for delivered status
     if (selectedStatus.value === 'Delivered') {
-      if (deliveryPhoto.value) {
-        const photoURL = await uploadDeliveryPhoto();
-        updateData.deliveryPhotoURL = photoURL;
+      if (selectedFile.value) {
+        // Store the image as base64 directly in Firestore
+        updateData.deliveryPhotoURL = await saveImageToFirestore();
       }
       
       if (deliveryNotes.value) {
@@ -269,8 +248,11 @@ const updateOrderStatus = async () => {
     
     // Reset form after successful update
     if (selectedStatus.value === 'Delivered') {
-      deliveryPhoto.value = null;
-      deliveryPhotoPreview.value = null;
+      selectedFile.value = null;
+      imagePreview.value = null;
+      if (fileInput.value) {
+        fileInput.value.value = '';
+      }
       deliveryNotes.value = '';
     }
     
@@ -381,65 +363,53 @@ const updateOrderStatus = async () => {
   cursor: not-allowed;
 }
 
-/* Photo upload styles */
-.photo-upload-container {
+/* Image upload styles */
+.image-upload-container {
   position: relative;
-  width: 100%;
   margin-top: 5px;
 }
 
-.photo-upload-placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  height: 150px;
-  border: 2px dashed #d1d5db;
-  border-radius: 6px;
-  background-color: #f9fafb;
-  cursor: pointer;
-  transition: all 0.2s;
-  color: #6b7280;
-}
-
-.photo-upload-placeholder:hover {
-  border-color: #9ca3af;
-  background-color: #f3f4f6;
-}
-
-.file-input {
-  display: none;
-}
-
-.photo-preview-container {
-  position: relative;
+.image-preview {
   width: 100%;
   height: 200px;
+  border: 2px dashed #e9ecef;
   border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
   overflow: hidden;
+  transition: border-color 0.2s ease;
 }
 
-.photo-preview {
+.image-preview:hover {
+  border-color: #3498db;
+}
+
+.image-preview.has-image {
+  border-style: solid;
+}
+
+.image-preview img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.remove-photo-btn {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background-color: rgba(255, 255, 255, 0.8);
+.upload-placeholder {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  border: none;
-  cursor: pointer;
-  color: #ef4444;
+  color: #6c757d;
+  gap: 8px;
+}
+
+.upload-placeholder i {
+  font-size: 2.5rem;
+}
+
+.file-input {
+  display: none;
 }
 
 .photo-help-text {
@@ -454,6 +424,11 @@ const updateOrderStatus = async () => {
   gap: 6px;
   font-size: 0.8rem;
   color: #ef4444;
+}
+
+.error-message {
+  color: #ef4444;
+  font-size: 0.75rem;
 }
 
 .spinner {

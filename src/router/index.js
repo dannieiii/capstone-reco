@@ -25,6 +25,7 @@ import AdminEditProfile from '../views/adminFolder/AdminEditProfile.vue';
 import PriceMonitoring from '../views/adminFolder/PriceMonitoring.vue';
 import Overpricing from '../views/adminFolder/Overpricing.vue';
 import AddAdmin from '../views/adminFolder/AddAdmin.vue';
+import AdminForecasting from '@/views/adminFolder/AdminForecasting.vue';
 
 
 
@@ -38,15 +39,15 @@ import Messages from '../views/customerFolder/Messages.vue';
 import CustomerOrders from '../views/customerFolder/CustomerOrders.vue';
 import Cart from '../views/customerFolder/Cart.vue';
 import FarmStore from '../views/customerFolder/FarmStore.vue';
+import PaymentSuccess from '../views/customerFolder/PaymentSuccess.vue';
+import PaymentFailed from '../views/customerFolder/PaymentFailed.vue';
+import CommunityView from '../views/customerFolder/CommunityView.vue';
 
 
 // Seller components
 import ProductManagement from '../views/sellerFolder/ProductManagement.vue';
 import Product from '../views/sellerFolder/Product.vue';
-
 import SellerDashboard from '../views/sellerFolder/SellerDashboard.vue';
-
-
 import RegisterSeller from '../views/sellerFolder/RegisterSeller.vue';
 import AddEditProduct from '@/views/sellerFolder/AddEditProduct.vue';
 import Chat from '@/views/sellerFolder/Chat.vue';
@@ -338,7 +339,30 @@ const routes = [
     component: HarvestCalendarPage,
     meta: { requiresAuth: true, allowedRoles: ['seller'] }, // Only admins can access
   },
- 
+  {
+    path: '/admin/forecasting',
+    name: 'AdminForecasting',
+    component: AdminForecasting,
+    meta: { requiresAuth: true, allowedRoles: ['admin'] }, // Only admins can access
+  },
+  {
+    path: '/payment/success',
+    name: 'PaymentSuccess',
+    component: PaymentSuccess,
+    meta: { requiresAuth: true, allowedRoles: ['customer'] }
+  },
+  {
+    path: '/payment/failed',
+    name: 'PaymentFailed',
+    component: PaymentFailed,
+    meta: { requiresAuth: true, allowedRoles: ['customer'] }
+  },
+  {
+    path: '/community',
+    name: 'CommunityView',
+    component: CommunityView,
+    
+  }
 ];
 
 const router = createRouter({

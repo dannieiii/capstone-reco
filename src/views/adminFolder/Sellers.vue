@@ -2,19 +2,26 @@
   <div class="dashboard-container">
     <AdminSidebar />
     <div class="main-content">
-      <h1 class="page-title">Sellers Management</h1>
-      
-      <!-- Action buttons above the table -->
-      <div class="action-buttons">
-        <button class="primary-btn">
-          <i class="fas fa-plus"></i> Add New Seller
-        </button>
-        <button class="secondary-btn">
-          <i class="fas fa-filter"></i> Filter
-        </button>
-        <button class="secondary-btn">
-          <i class="fas fa-download"></i> Export
-        </button>
+      <div class="header-section">
+        <h1 class="page-title">Sellers Management</h1>
+        <div class="action-buttons">
+          <button class="secondary-btn">
+            <i class="fas fa-filter"></i> Filter
+          </button>
+          <div class="export-dropdown">
+            <button class="secondary-btn">
+              <i class="fas fa-download"></i> Export
+            </button>
+            <div class="export-dropdown-content">
+              <button @click="exportData('csv')" class="export-option">
+                <i class="fas fa-file-csv"></i> Export as CSV
+              </button>
+              <button @click="exportData('pdf')" class="export-option">
+                <i class="fas fa-file-pdf"></i> Export as PDF
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
       
       <!-- Stats cards -->
@@ -43,7 +50,6 @@
               <th>Farm Name</th>
               <th>Farm Address</th>
               <th>Farm Type</th>
-              <th>Total Sales</th>
               <th>Registration Status</th>
               <th>Verification Status</th>
               <th>Actions</th>
@@ -61,7 +67,6 @@
               <td>{{ seller.farmName || 'N/A' }}</td>
               <td>{{ seller.farmAddress || 'N/A' }}</td>
               <td>{{ seller.farmType || 'N/A' }}</td>
-              <td>${{ seller.totalSales?.toLocaleString() || '0' }}</td>
               <td>
                 <div class="custom-dropdown">
                   <select 
@@ -81,8 +86,8 @@
                 </span>
               </td>
               <td class="actions-cell">
-                <button class="btn-info" @click="navigateToSellerDetails(seller.id)">
-                  <i class="fas fa-info-circle"></i> Details
+                <button class="action-btn view" @click="navigateToSellerDetails(seller.id)">
+                  <i class="fas fa-eye"></i>
                 </button>
               </td>
             </tr>
@@ -103,7 +108,7 @@ import { collection, getDocs, doc, updateDoc } from "firebase/firestore";
 const router = useRouter();
 const sellers = ref([]);
 
-const activeSellers = computed(() => sellers.value.filter(s => s.registrationStatus === 'Active').length);
+const activeSellers = computed(() => sellers.value.filter(s => s.registrationStatus === 'Accept').length);
 const pendingSellers = computed(() => sellers.value.filter(s => s.registrationStatus === 'Pending').length);
 
 const fetchSellers = async () => {
@@ -139,23 +144,135 @@ const updateRegistrationStatus = async (seller) => {
     // Update the seller's status, isVerified, and verificationStatus in the sellers collection
     const sellerRef = doc(db, "sellers", seller.id);
     await updateDoc(sellerRef, { 
-      status: "Active",
-      registrationStatus: "Active", // Update registration status
-      isVerified: true, // Set isVerified to true
-      verificationStatus: "Verified", // Set verificationStatus to "Verified"
+      status: seller.registrationStatus,
+      registrationStatus: seller.registrationStatus, // Update registration status
+      isVerified: seller.registrationStatus === 'Accept', // Set isVerified to true if accepted
+      verificationStatus: seller.registrationStatus === 'Accept' ? 'Verified' : 'Pending', // Set verificationStatus accordingly
     });
 
     // Update the local state to reflect the new status
-    seller.status = "Active";
-    seller.registrationStatus = "Active";
-    seller.isVerified = true;
-    seller.verificationStatus = "Verified";
+    seller.status = seller.registrationStatus;
+    seller.isVerified = seller.registrationStatus === 'Accept';
 
-    alert("Seller approved and verified successfully!");
+    alert("Seller status updated successfully!");
   } catch (error) {
     console.error("Error updating user role or seller status:", error);
-    alert("Failed to approve seller. Please try again.");
+    alert("Failed to update seller status. Please try again.");
   }
+};
+
+const exportData = (format) => {
+  try {
+    if (format === 'csv') {
+      // CSV Export Logic
+      const headers = ['Name', 'Email', 'Farm Name', 'Farm Address', 'Farm Type', 'Registration Status', 'Verification Status'];
+      const csvContent = [
+        headers.join(','),
+        ...sellers.value.map(seller => [
+          `${seller.firstName} ${seller.lastName}`,
+          seller.email,
+          seller.farmName || 'N/A',
+          seller.farmAddress || 'N/A',
+          seller.farmType || 'N/A',
+          seller.registrationStatus || 'N/A',
+          seller.verificationStatus || 'N/A'
+        ].join(','))
+      ].join('\n');
+      
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      
+      link.setAttribute('href', url);
+      link.setAttribute('download', `sellers_data_${new Date().toISOString().slice(0, 10)}.csv`);
+      link.style.visibility = 'hidden';
+      
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else if (format === 'pdf') {
+      // Create a new window for PDF content
+      const printWindow = window.open('', '_blank');
+      
+      // Create PDF content
+      let pdfContent = '<!DOCTYPE html>';
+      pdfContent += '<html>';
+      pdfContent += '<head>';
+      pdfContent += '<title>Sellers Export</title>';
+      pdfContent += '<style>';
+      pdfContent += 'body { font-family: Arial, sans-serif; margin: 20px; }';
+      pdfContent += 'h1 { color: #2e5c31; margin-bottom: 20px; }';
+      pdfContent += 'table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }';
+      pdfContent += 'th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }';
+      pdfContent += 'th { background-color: #f2f2f2; font-weight: bold; }';
+      pdfContent += 'tr:nth-child(even) { background-color: #f9f9f9; }';
+      pdfContent += '.export-info { margin-top: 20px; font-size: 12px; color: #666; }';
+      pdfContent += '.status-badge { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 12px; }';
+      pdfContent += '.status-verified { background-color: #d1fae5; color: #059669; }';
+      pdfContent += '.status-pending { background-color: #fef3c7; color: #d97706; }';
+      pdfContent += '</style>';
+      pdfContent += '</head>';
+      pdfContent += '<body>';
+      pdfContent += '<h1>Sellers Export</h1>';
+      pdfContent += '<table>';
+      pdfContent += '<thead>';
+      pdfContent += '<tr>';
+      pdfContent += '<th>Name</th>';
+      pdfContent += '<th>Email</th>';
+      pdfContent += '<th>Farm Name</th>';
+      pdfContent += '<th>Farm Address</th>';
+      pdfContent += '<th>Farm Type</th>';
+      pdfContent += '<th>Registration Status</th>';
+      pdfContent += '<th>Verification Status</th>';
+      pdfContent += '</tr>';
+      pdfContent += '</thead>';
+      pdfContent += '<tbody>';
+      
+      // Add seller rows
+      sellers.value.forEach(seller => {
+        const fullName = `${seller.firstName || ''} ${seller.lastName || ''}`.trim() || 'N/A';
+        const statusClass = seller.verificationStatus?.toLowerCase() === 'verified' ? 'status-verified' : 'status-pending';
+        
+        pdfContent += '<tr>';
+        pdfContent += `<td>${escapeHtml(fullName)}</td>`;
+        pdfContent += `<td>${escapeHtml(seller.email || 'N/A')}</td>`;
+        pdfContent += `<td>${escapeHtml(seller.farmName || 'N/A')}</td>`;
+        pdfContent += `<td>${escapeHtml(seller.farmAddress || 'N/A')}</td>`;
+        pdfContent += `<td>${escapeHtml(seller.farmType || 'N/A')}</td>`;
+        pdfContent += `<td>${escapeHtml(seller.registrationStatus || 'N/A')}</td>`;
+        pdfContent += `<td><span class="status-badge ${statusClass}">${escapeHtml(seller.verificationStatus || 'Unknown')}</span></td>`;
+        pdfContent += '</tr>';
+      });
+      
+      pdfContent += '</tbody>';
+      pdfContent += '</table>';
+      pdfContent += '<div class="export-info">';
+      pdfContent += `<p>Generated on: ${new Date().toLocaleString()}</p>`;
+      pdfContent += `<p>Total Sellers: ${sellers.value.length}</p>`;
+      pdfContent += '</div>';
+      pdfContent += '<script>';
+      pdfContent += 'window.onload = function() { window.print(); }';
+      pdfContent += '<\/script>';
+      pdfContent += '</body>';
+      pdfContent += '</html>';
+      
+      // Write content to the new window
+      printWindow.document.open();
+      printWindow.document.write(pdfContent);
+      printWindow.document.close();
+    }
+  } catch (error) {
+    console.error(`Error exporting ${format}:`, error);
+    alert(`Failed to export as ${format.toUpperCase()}`);
+  }
+};
+
+// Helper function to escape HTML
+const escapeHtml = (text) => {
+  if (!text) return '';
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 };
 
 onMounted(fetchSellers);
@@ -176,18 +293,23 @@ onMounted(fetchSellers);
   margin-left: 260px; /* Adjust this value to match the width of the sidebar */
 }
 
+.header-section {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
 .page-title {
   font-size: 2rem;
-  color: #2c3e50;
-  margin-bottom: 1.5rem;
+  color: #2e5c31;
+  margin: 0;
   font-weight: 700;
 }
 
-/* Action buttons above the table */
 .action-buttons {
   display: flex;
   gap: 1rem;
-  margin-bottom: 1.5rem;
 }
 
 .primary-btn, .secondary-btn {
@@ -204,12 +326,12 @@ onMounted(fetchSellers);
 }
 
 .primary-btn {
-  background-color: #3498db;
+  background-color: #2e5c31;
   color: white;
 }
 
 .primary-btn:hover {
-  background-color: #2980b9;
+  background-color: #1a3a1c;
 }
 
 .secondary-btn {
@@ -222,7 +344,6 @@ onMounted(fetchSellers);
   background-color: #e9ecef;
 }
 
-/* Stats cards */
 .sellers-stats {
   display: flex;
   justify-content: space-between;
@@ -252,11 +373,10 @@ onMounted(fetchSellers);
 .stat-value {
   font-size: 2rem;
   font-weight: bold;
-  color: #3498db;
+  color: #2e5c31;
   margin: 0;
 }
 
-/* Table styles */
 .sellers-table {
   background-color: white;
   border-radius: 10px;
@@ -276,23 +396,22 @@ th, td {
 }
 
 th {
-  background-color: #f8f9fa;
+  background-color: #f8fafc;
   font-weight: 600;
-  color: #495057;
+  color: #4a5568;
   text-transform: uppercase;
   font-size: 0.75rem;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.05em;
 }
 
 tr:nth-child(even) {
-  background-color: #f8f9fa;
+  background-color: #f8fafc;
 }
 
 tr:hover {
-  background-color: #f1f4f7;
+  background-color: #f0f7f0;
 }
 
-/* Seller info styles */
 .seller-info {
   display: flex;
   flex-direction: column;
@@ -300,7 +419,7 @@ tr:hover {
 
 .seller-name {
   font-weight: 600;
-  color: #2c3e50;
+  color: #2d3748;
 }
 
 .seller-location {
@@ -309,60 +428,69 @@ tr:hover {
   margin-top: 0.25rem;
 }
 
-/* Custom dropdown styles */
-.custom-dropdown {
-  position: relative;
-  display: inline-block;
-  width: 100%;
+.action-buttons {
+  display: flex;
+  gap: 0.5rem;
 }
 
-.custom-dropdown select {
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  width: 100%;
-  padding: 0.5rem 2rem 0.5rem 1rem;
-  border: 1px solid #e9ecef;
-  border-radius: 6px;
-  background-color: white;
-  font-size: 0.875rem;
+.action-btn {
+  padding: 0.5rem;
+  border: none;
+  border-radius: 4px;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.custom-dropdown select:focus {
-  outline: none;
-  border-color: #3498db;
-  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+.action-btn.view {
+  background-color: #2e5c31;
+  color: white;
 }
 
-.custom-dropdown select:disabled {
-  background-color: #f8f9fa;
-  cursor: not-allowed;
+.action-btn.view:hover {
+  background-color: #1a3a1c;
 }
 
-.custom-dropdown .dropdown-icon {
-  position: absolute;
-  right: 1rem;
-  top: 50%;
-  transform: translateY(-50%);
-  pointer-events: none;
-  color: #6c757d;
+.action-btn.edit {
+  background-color: #2e5c31;
+  color: white;
 }
 
-/* Status badge styles */
+.action-btn.edit:hover {
+  background-color: #1a3a1c;
+}
+
+.action-btn.delete {
+  background-color: #e74c3c;
+  color: white;
+  width: 36px;
+  height: 36px;
+}
+
+.action-btn.delete:hover {
+  background-color: #c0392b;
+}
+
 .status-badge {
-  padding: 0.35rem 0.75rem;
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
   border-radius: 20px;
   font-size: 0.75rem;
   font-weight: 600;
-  text-transform: uppercase;
-  display: inline-block;
+  text-align: center;
 }
 
-.status-badge.verified {
+.status-badge.active, .status-badge.verified {
   background-color: #d4edda;
   color: #155724;
+}
+
+.status-badge.inactive, .status-badge.unknown {
+  background-color: #f8d7da;
+  color: #721c24;
 }
 
 .status-badge.pending {
@@ -370,38 +498,66 @@ tr:hover {
   color: #856404;
 }
 
-.status-badge.declined {
-  background-color: #f8d7da;
-  color: #721c24;
+@media (max-width: 1200px) {
+  .sellers-table {
+    overflow-x: auto;
+  }
+  
+  .sellers-stats {
+    flex-direction: column;
+  }
+  
+  .stat-card {
+    width: 100%;
+  }
+  
+  .header-section {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+  
+  .action-buttons {
+    width: 100%;
+  }
 }
 
-.status-badge.unknown {
-  background-color: #e2e3e5;
-  color: #383d41;
+.export-dropdown {
+  position: relative;
+  display: inline-block;
 }
 
-/* Action buttons in table */
-.actions-cell {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.btn-info {
-  padding: 0.5rem 1rem;
-  border: none;
+.export-dropdown-content {
+  display: none;
+  position: absolute;
+  right: 0;
+  background-color: white;
+  min-width: 160px;
+  box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+  z-index: 1;
   border-radius: 6px;
-  font-weight: 600;
-  cursor: pointer;
+  overflow: hidden;
+}
+
+.export-dropdown:hover .export-dropdown-content {
+  display: block;
+}
+
+.export-option {
+  color: #2c3e50;
+  padding: 12px 16px;
+  text-decoration: none;
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  transition: all 0.2s ease;
-  font-size: 0.8rem;
-  background-color: #17a2b8;
-  color: white;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  cursor: pointer;
 }
 
-.btn-info:hover {
-  background-color: #138496;
+.export-option:hover {
+  background-color: #f1f1f1;
 }
 </style>

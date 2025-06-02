@@ -7,16 +7,38 @@
     
     <div class="main-content" :class="{ 'expanded': sidebarCollapsed }">
       <NotifProduct ref="notifProduct" />
+      
+      <!-- Header -->
       <header class="header">
         <div class="page-title">
           <h1>{{ isEditing ? 'Edit Product' : 'Add New Product' }}</h1>
-          <p>{{ isEditing ? 'Update product details' : 'Create a new farm product' }}</p>
+          <p>{{ isEditing ? 'Update product details' : 'Create a new farm product with detailed information' }}</p>
         </div>
       </header>
-      
+
+      <!-- Status Ribbons -->
+      <div v-if="product.status === 'limited' || product.isOnSale || product.isPreOrder" class="status-ribbons">
+        <div v-if="product.status === 'limited'" class="status-badge limited">
+          <svg class="badge-icon" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M17.707 9.293a1 1 0 010 1.414l-7 7a1 1 0 01-1.414 0l-7-7A.997.997 0 012 10V5a3 3 0 013-3h5c.256 0 .512.098.707.293l7 7zM5 6a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"></path>
+          </svg>
+          Limited Stock
+        </div>
+        <div v-if="product.isOnSale" class="status-badge sale">
+          <svg class="badge-icon" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM7 9a1 1 0 000 2h6a1 1 0 100-2H7z" clip-rule="evenodd"></path>
+          </svg>
+          On Sale - {{ product.discountPercentage }}% Off
+        </div>
+        <div v-if="product.isPreOrder" class="status-badge pre-order">
+          Pre-Order Available
+        </div>
+      </div>
+
       <form @submit.prevent="saveProduct" class="product-form">
         <div class="form-grid">
-          <!-- Basic Information Section -->
+          
+          <!-- Basic Information -->
           <div class="form-section">
             <h2>Basic Information</h2>
             <div class="form-group">
@@ -29,158 +51,418 @@
                 placeholder="Enter product name"
               >
             </div>
-            
+
             <div class="form-group">
               <label for="description">Description</label>
               <textarea 
                 id="description" 
                 v-model="product.description" 
                 rows="3"
-                placeholder="Enter product description"
+                placeholder="Short description of your product"
               ></textarea>
             </div>
-            
+
             <div class="form-group">
               <label for="category">Category *</label>
-              
-<select id="category" v-model="product.category" required>
-  <option value="" disabled>Select a category</option>
-  <option v-for="cat in categories" :key="cat.id" :value="cat.category">
-    {{ cat.category }}
-  </option>
-</select>
-
+              <select id="category" v-model="product.category" required>
+                <option value="" disabled>Select category</option>
+                <option v-for="cat in categories" :key="cat.id" :value="cat.category">
+                  {{ cat.category }}
+                </option>
+              </select>
             </div>
-            
+
             <div class="form-group">
-              <label for="code">Product Code</label>
+              <label>Product Code</label>
               <input 
                 type="text" 
-                id="code" 
-                v-model="product.code"
-                placeholder="Enter product code"
+                v-model="product.code" 
+                readonly
+                class="readonly-input"
               >
             </div>
           </div>
-          
-          <!-- Pricing & Stock Section -->
-          <div class="form-section">
-            <h2>Pricing & Stock</h2>
-            <div class="form-group">
-              <label for="price">Price *</label>
-              <div class="input-group">
-                <span class="input-group-text">$</span>
-                <input 
-                  type="number" 
-                  id="price" 
-                  v-model="product.price" 
-                  step="0.01" 
-                  min="0"
-                  @input="calculateProfit"
-                  required
-                  placeholder="0.00"
-                >
+
+          <!-- Selling Units & Pricing -->
+          <div class="form-section wide">
+            <h2>Selling Options & Pricing</h2>
+            
+            <!-- Unit Selection -->
+            <div class="unit-selection">
+              <label class="with-tooltip">
+                Selling Units *
+                <div class="info-tooltip">
+                  <div class="info-icon">i</div>
+                  <div class="tooltip-content">
+                    Select the units in which you want to sell this product
+                  </div>
+                </div>
+              </label>
+              <div class="unit-checkboxes">
+                <label v-for="unit in availableUnits" :key="unit.value">
+                  <input 
+                    type="checkbox" 
+                    v-model="selectedUnits" 
+                    :value="unit.value"
+                    @change="handleUnitSelection(unit.value)"
+                  >
+                  {{ unit.label }}
+                </label>
               </div>
             </div>
-            
-            <div class="form-group">
-              <label for="cost">Cost *</label>
-              <div class="input-group">
-                <span class="input-group-text">$</span>
+
+            <!-- Dynamic Unit Fields -->
+            <template v-for="unit in selectedUnits" :key="unit">
+              <div class="unit-details">
+                <h3>{{ getUnitLabel(unit) }}</h3>
+                
+                <!-- Per Kilo -->
+                <div v-if="unit === 'perKilo'" class="form-group">
+                  <label>Price per Kilo (₱)</label>
+                  <input 
+                    type="number" 
+                    v-model="product.pricePerKilo" 
+                    min="0"
+                    step="0.01"
+                    @input="calculateProfit"
+                  >
+                  <p v-if="product.isOnSale" class="sale-price">
+                    Sale Price: ₱{{ calculateSalePrice(product.pricePerKilo).toFixed(2) }}
+                  </p>
+                  <label>Available Stock (kg)</label>
+                  <input 
+                    type="number" 
+                    v-model="product.stockPerKilo" 
+                    min="0"
+                    @input="calculateProfit"
+                  >
+                </div>
+                
+                <!-- Per Sack -->
+                <div v-if="unit === 'perSack'" class="form-group">
+                  <label>Price per Sack (₱)</label>
+                  <input 
+                    type="number" 
+                    v-model="product.pricePerSack" 
+                    min="0"
+                    step="0.01"
+                    @input="calculateProfit"
+                  >
+                  <p v-if="product.isOnSale" class="sale-price">
+                    Sale Price: ₱{{ calculateSalePrice(product.pricePerSack).toFixed(2) }}
+                  </p>
+                  <label>Sack Weight (kg)</label>
+                  <input 
+                    type="number" 
+                    v-model="product.sackWeight" 
+                    min="0"
+                    @input="calculateProfit"
+                  >
+                  <label>Available Sacks</label>
+                  <input 
+                    type="number" 
+                    v-model="product.stockPerSack" 
+                    min="0"
+                    @input="calculateProfit"
+                  >
+                </div>
+                
+                <!-- Per Tali -->
+                <div v-if="unit === 'perTali'" class="form-group">
+                  <label>Price per Tali (₱)</label>
+                  <input 
+                    type="number" 
+                    v-model="product.pricePerTali" 
+                    min="0"
+                    step="0.01"
+                    @input="calculateProfit"
+                  >
+                  <p v-if="product.isOnSale" class="sale-price">
+                    Sale Price: ₱{{ calculateSalePrice(product.pricePerTali).toFixed(2) }}
+                  </p>
+                  <label>Bunches per Tali</label>
+                  <input 
+                    type="number" 
+                    v-model="product.itemsPerTali" 
+                    min="1"
+                    @input="calculateProfit"
+                  >
+                  <label>Available Tali</label>
+                  <input 
+                    type="number" 
+                    v-model="product.stockPerTali" 
+                    min="0"
+                    @input="calculateProfit"
+                  >
+                </div>
+                
+                <!-- Per Kaing -->
+                <div v-if="unit === 'perKaing'" class="form-group">
+                  <label>Price per Kaing (₱)</label>
+                  <input 
+                    type="number" 
+                    v-model="product.pricePerKaing" 
+                    min="0"
+                    step="0.01"
+                    @input="calculateProfit"
+                  >
+                  <p v-if="product.isOnSale" class="sale-price">
+                    Sale Price: ₱{{ calculateSalePrice(product.pricePerKaing).toFixed(2) }}
+                  </p>
+                  <label>Weight per Kaing (kg)</label>
+                  <input 
+                    type="number" 
+                    v-model="product.kaingWeight" 
+                    min="0"
+                    @input="calculateProfit"
+                  >
+                  <label>Available Kaing</label>
+                  <input 
+                    type="number" 
+                    v-model="product.stockPerKaing" 
+                    min="0"
+                    @input="calculateProfit"
+                  >
+                </div>
+                
+                <!-- Per Tray -->
+                <div v-if="unit === 'perTray'" class="form-group">
+                  <label>Price per Tray (₱)</label>
+                  <input 
+                    type="number" 
+                    v-model="product.pricePerTray" 
+                    min="0"
+                    step="0.01"
+                    @input="calculateProfit"
+                  >
+                  <p v-if="product.isOnSale" class="sale-price">
+                    Sale Price: ₱{{ calculateSalePrice(product.pricePerTray).toFixed(2) }}
+                  </p>
+                  <label>Items per Tray</label>
+                  <input 
+                    type="number" 
+                    v-model="product.itemsPerTray" 
+                    min="1"
+                    @input="calculateProfit"
+                  >
+                  <label>Available Trays</label>
+                  <input 
+                    type="number" 
+                    v-model="product.stockPerTray" 
+                    min="0"
+                    @input="calculateProfit"
+                  >
+                </div>
+                
+                <!-- Per Piece -->
+                <div v-if="unit === 'perPiece'" class="form-group">
+                  <label>Price per Piece (₱)</label>
+                  <input 
+                    type="number" 
+                    v-model="product.pricePerPiece" 
+                    min="0"
+                    step="0.01"
+                    @input="calculateProfit"
+                  >
+                  <p v-if="product.isOnSale" class="sale-price">
+                    Sale Price: ₱{{ calculateSalePrice(product.pricePerPiece).toFixed(2) }}
+                  </p>
+                  <label>Available Pieces</label>
+                  <input 
+                    type="number" 
+                    v-model="product.stockPerPiece" 
+                    min="0"
+                    @input="calculateProfit"
+                  >
+                </div>
+              </div>
+            </template>
+
+            <!-- Cost & Profit -->
+            <div class="cost-profit-section">
+              <div class="form-group">
+                <label class="with-tooltip">
+                  Production Cost per Unit (₱)
+                  <div class="info-tooltip">
+                    <div class="info-icon">i</div>
+                    <div class="tooltip-content">
+                      Cost to produce one unit including materials and labor
+                    </div>
+                  </div>
+                </label>
                 <input 
                   type="number" 
-                  id="cost" 
                   v-model="product.cost" 
-                  step="0.01" 
                   min="0"
+                  step="0.01"
                   @input="calculateProfit"
-                  required
-                  placeholder="0.00"
                 >
               </div>
-            </div>
-            
-            <div class="form-group">
-              <label for="profit">Profit</label>
-              <div class="input-group">
-                <span class="input-group-text">$</span>
+
+              <div class="form-group">
+                <label class="with-tooltip">
+                  Estimated Profit (₱)
+                  <div class="info-tooltip">
+                    <div class="info-icon">i</div>
+                    <div class="tooltip-content">
+                      Calculated profit based on price minus cost
+                    </div>
+                  </div>
+                </label>
                 <input 
                   type="number" 
-                  id="profit" 
                   v-model="product.profit" 
-                  step="0.01" 
                   readonly
-                  placeholder="Auto-calculated"
+                  class="readonly-input"
                 >
               </div>
             </div>
-            
-            <div class="form-group">
-              <label for="stock">Stock *</label>
+          </div>
+
+          <!-- Sale Settings -->
+          <div class="form-section">
+            <h2 class="with-tooltip">
+              Sale Settings
+              <div class="info-tooltip">
+                <div class="info-icon">i</div>
+                <div class="tooltip-content">
+                  Configure sale pricing and discounts
+                </div>
+              </div>
+            </h2>
+            <div class="form-group checkbox-group">
+              <label>
+                <input type="checkbox" v-model="product.isOnSale">
+                Product is on sale
+              </label>
+            </div>
+
+            <div v-if="product.isOnSale" class="form-group">
+              <label>Discount Percentage (%)</label>
               <input 
                 type="number" 
-                id="stock" 
-                v-model="product.stock" 
-                min="0"
-                required
-                placeholder="Enter available quantity"
+                v-model="product.discountPercentage" 
+                min="0" 
+                max="100"
+                @input="calculateProfit"
               >
             </div>
           </div>
-          
-          <!-- Product Details Section -->
+
+          <!-- Pre-order Settings -->
+          <div class="form-section">
+            <h2 class="with-tooltip">
+              Pre-order Settings
+              <div class="info-tooltip">
+                <div class="info-icon">i</div>
+                <div class="tooltip-content">
+                  Configure pre-order options for future availability
+                </div>
+              </div>
+            </h2>
+            <div class="form-group checkbox-group">
+              <label>
+                <input type="checkbox" v-model="product.isPreOrder">
+                Enable pre-orders
+              </label>
+            </div>
+
+            <template v-if="product.isPreOrder">
+              <div class="form-group">
+                <label>Pre-order Message</label>
+                <input 
+                  type="text"
+                  v-model="product.preOrderMessage"
+                  placeholder="e.g., Available for harvest in 2 weeks"
+                >
+              </div>
+
+              <div class="form-group">
+                <label>Pre-order Limit</label>
+                <input 
+                  type="number" 
+                  v-model="product.preOrderLimit"
+                  placeholder="Maximum pre-order quantity"
+                >
+              </div>
+
+              <div class="form-group">
+                <label>Lead Time (days)</label>
+                <input 
+                  type="number" 
+                  v-model="product.preorderDays"
+                >
+              </div>
+            </template>
+          </div>
+
+          <!-- Wholesale Settings -->
+          <div class="form-section">
+            <h2 class="with-tooltip">
+              Wholesale Options
+              <div class="info-tooltip">
+                <div class="info-icon">i</div>
+                <div class="tooltip-content">
+                  Configure wholesale pricing for bulk orders
+                </div>
+              </div>
+            </h2>
+            <div class="form-group checkbox-group">
+              <label>
+                <input type="checkbox" v-model="product.wholesaleAvailable">
+                Available for wholesale
+              </label>
+            </div>
+
+            <div v-if="product.wholesaleAvailable" class="form-group">
+              <label>Minimum Wholesale Quantity</label>
+              <input 
+                type="number" 
+                v-model="product.minWholesaleQty" 
+                min="1"
+              >
+              <label>Wholesale Price (₱)</label>
+              <input 
+                type="number" 
+                v-model="product.wholesalePrice" 
+                min="0"
+                step="0.01"
+              >
+            </div>
+          </div>
+
+          <!-- Product Details -->
           <div class="form-section">
             <h2>Product Details</h2>
             <div class="form-group">
-              <label for="weight">Weight</label>
-              <div class="input-group">
-                <input 
-                  type="number" 
-                  id="weight" 
-                  v-model="product.weight" 
-                  step="0.01" 
-                  min="0"
-                  placeholder="Enter weight"
-                >
-                <select id="unit" v-model="product.unit">
-                  <option value="kg">kg</option>
-                  <option value="lb">lb</option>
-                  <option value="g">g</option>
-                  <option value="oz">oz</option>
-                </select>
-              </div>
-            </div>
-            
-            <div class="form-group">
-              <label for="packagingType">Packaging Type</label>
-              <select id="packagingType" v-model="product.packagingType">
-                <option value="box">Box</option>
-                <option value="bag">Bag</option>
-                <option value="crate">Crate</option>
-                <option value="bunch">Bunch</option>
+              <label>Packaging Type</label>
+              <select v-model="product.packagingType">
+                <option value="none">None</option>
+                <option value="plastic">Plastic Bag</option>
+                <option value="kaing">Kaing (Basket)</option>
+                <option value="sack">Sack</option>
+                <option value="tray">Tray</option>
+                <option value="bundle">Bundle</option>
+                <option value="tali">Tied (Tali)</option>
               </select>
             </div>
-            
+
             <div class="form-group">
-              <label for="quantityPerPackage">Quantity per Package</label>
-              <input 
-                type="number" 
-                id="quantityPerPackage" 
-                v-model="product.quantityPerPackage" 
-                min="1"
-                placeholder="Enter quantity"
-              >
+              <label>Status *</label>
+              <select v-model="product.status" required>
+                <option value="available">Available</option>
+                <option value="limited">Limited Stock</option>
+                <option value="preorder">Pre-order Only</option>
+              </select>
             </div>
           </div>
-          
-          <!-- Images Section -->
+
+          <!-- Product Image -->
           <div class="form-section">
-            <h2>Images</h2>
+            <h2>Product Image</h2>
             <div class="form-group">
-              <label for="productImage">Upload Product Image</label>
               <input 
                 type="file" 
-                id="productImage" 
                 @change="uploadImage" 
                 accept="image/*"
                 class="image-upload-input"
@@ -203,65 +485,31 @@
               </div>
             </div>
           </div>
-          
-          <!-- Marketing & Availability Section -->
-          <div class="form-section">
-            <h2>Marketing & Availability</h2>
-            <div class="form-group">
-              <label for="ribbon">Ribbon</label>
-              <input 
-                type="text" 
-                id="ribbon" 
-                v-model="product.ribbon"
-                placeholder="e.g., 'Organic', 'Sale'"
-              >
+        </div>
+
+        <!-- Pre-order and Sale Info Display -->
+        <div v-if="product.isPreOrder || product.isOnSale" class="info-panel">
+          <div class="info-content">
+            <div v-if="product.isOnSale" class="info-row">
+              <span class="info-label">Sale Information:</span>
+              <span class="info-value">{{ product.discountPercentage }}% discount applied</span>
             </div>
-            
-            <div class="form-group">
-              <label for="status">Status *</label>
-              <select id="status" v-model="product.status" required>
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-                <option value="Scheduled">Scheduled</option>
-              </select>
+            <div v-if="product.isPreOrder" class="info-row">
+              <span class="info-label">Pre-order Message:</span>
+              <span class="info-value">{{ product.preOrderMessage || 'Available for pre-order' }}</span>
             </div>
-            
-            <div class="form-group checkbox-group">
-              <label>
-                <input type="checkbox" id="preorder" v-model="product.preorder">
-                Available for Preorder
-              </label>
-            </div>
-            
-            <div class="form-group" v-if="product.preorder">
-              <label for="preorderLimit">Preorder Limit</label>
-              <input 
-                type="number" 
-                id="preorderLimit" 
-                v-model="product.preorderLimit" 
-                min="0"
-                placeholder="Enter maximum preorders"
-              >
-            </div>
-            
-            <div class="form-group" v-if="product.preorder">
-              <label for="preorderMessage">Preorder Message</label>
-              <textarea 
-                id="preorderMessage" 
-                v-model="product.preorderMessage" 
-                rows="2"
-                placeholder="Special instructions for preorders"
-              ></textarea>
+            <div v-if="product.isPreOrder" class="info-row">
+              <span class="info-label">Pre-order Limit:</span>
+              <span class="info-value">{{ product.preOrderLimit }} units</span>
             </div>
           </div>
         </div>
-        
+
         <div class="form-actions">
           <button 
             type="button" 
             class="cancel-btn" 
             @click="cancelEdit"
-            :disabled="isSaving"
           >
             Cancel
           </button>
@@ -270,8 +518,7 @@
             class="save-btn" 
             :disabled="isSaving"
           >
-            <span v-if="isSaving">Saving...</span>
-            <span v-else>{{ isEditing ? 'Update' : 'Save' }} Product</span>
+            {{ isSaving ? 'Saving...' : 'Save Product' }}
           </button>
         </div>
       </form>
@@ -279,15 +526,11 @@
   </div>
 </template>
 
-
 <script setup>
-
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { db } from '@/firebase/firebaseConfig';
-import { collection, addDoc, doc, getDoc, updateDoc, getDocs, increment } from 'firebase/firestore'; // ✅ correct
-
-
+import { collection, addDoc, doc, getDoc, updateDoc, getDocs, increment, serverTimestamp } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import Sidebar from '@/components/Sidebar.vue';
 import NotifProduct from '@/components/NotifProduct.vue';
@@ -297,40 +540,185 @@ const router = useRouter();
 const auth = getAuth();
 const notifProduct = ref(null);
 
+// Configuration
+const availableUnits = ref([
+  { value: 'perKilo', label: 'Per Kilo' },
+  { value: 'perSack', label: 'Per Sack' },
+  { value: 'perTali', label: 'Per Tali' },
+  { value: 'perKaing', label: 'Per Kaing' },
+  { value: 'perTray', label: 'Per Tray' },
+  { value: 'perPiece', label: 'Per Piece' }
+]);
+
+// Component state
 const isEditing = computed(() => route.name === 'EditProduct');
 const isSaving = ref(false);
 const sidebarCollapsed = ref(false);
+const selectedUnits = ref([]);
+const categories = ref([]);
 
 const product = ref({
+  // Basic Info
   productName: '',
   description: '',
-  ribbon: '',
   category: '',
-  price: null,
-  cost: null,
-  profit: null,
-  stock: null,
   code: '',
-  weight: null,
-  unit: 'kg',
-  packagingType: 'box',
-  quantityPerPackage: null,
+  
+  // Pricing
+  cost: 0,
+  profit: 0,
+  
+  // Units
+  pricePerKilo: 0,
+  stockPerKilo: 0,
+  pricePerSack: 0,
+  sackWeight: 50,
+  stockPerSack: 0,
+  pricePerTali: 0,
+  itemsPerTali: 10,
+  stockPerTali: 0,
+  pricePerKaing: 0,
+  kaingWeight: 12,
+  stockPerKaing: 0,
+  pricePerTray: 0,
+  itemsPerTray: 30,
+  stockPerTray: 0,
+  pricePerPiece: 0,
+  stockPerPiece: 0,
+  
+  // Details
+  packagingType: 'none',
   image: '',
-  preorder: false,
-  preorderLimit: null,
-  preorderMessage: '',
-  status: 'Active',
+  
+  // Availability
+  status: 'available',
+  wholesaleAvailable: false,
+  minWholesaleQty: 1,
+  wholesalePrice: 0,
+  preorderDays: 7,
+  
+  // Sale features
+  isOnSale: false,
+  discountPercentage: 0,
+  
+  // Pre-order features
+  isPreOrder: false,
+  preOrderMessage: '',
+  preOrderLimit: 0,
+  
+  // Metadata
   sellerId: '',
-  productId: ''
+  createdAt: null,
+  updatedAt: null,
+  availableUnits: []
 });
 
-// Helper function for notifications
-const showNotification = (message, type = 'success') => {
-  notifProduct.value?.showNotification(message, type);
+// Methods
+const generateProductCode = () => {
+  if (!product.value.category || !product.value.productName) return;
+  
+  const categoryPrefix = product.value.category.substring(0, 3).toUpperCase();
+  const namePrefix = product.value.productName.substring(0, 2).toUpperCase().replace(/[^A-Z]/g, '');
+  const randomNum = Math.floor(100 + Math.random() * 900);
+  const timestamp = Date.now().toString().slice(-3);
+  
+  product.value.code = `${categoryPrefix}${namePrefix}-${randomNum}${timestamp}`;
 };
 
-const handleSidebarToggle = (collapsed) => {
-  sidebarCollapsed.value = collapsed;
+const calculateSalePrice = (originalPrice) => {
+  if (!product.value.isOnSale || product.value.discountPercentage <= 0) return originalPrice;
+  return originalPrice * (1 - product.value.discountPercentage / 100);
+};
+
+const calculateProfit = () => {
+  let totalProfit = 0;
+  
+  selectedUnits.value.forEach(unit => {
+    let unitProfit = 0;
+    let price = 0;
+    let stock = 0;
+    let unitCost = 0;
+    
+    switch(unit) {
+      case 'perKilo':
+        price = product.value.isOnSale ? calculateSalePrice(product.value.pricePerKilo) : product.value.pricePerKilo;
+        stock = product.value.stockPerKilo;
+        unitCost = product.value.cost;
+        unitProfit = (price - unitCost) * stock;
+        break;
+        
+      case 'perSack':
+        price = product.value.isOnSale ? calculateSalePrice(product.value.pricePerSack) : product.value.pricePerSack;
+        stock = product.value.stockPerSack;
+        // For sacks, the cost should be per sack, not per kg
+        unitCost = product.value.cost;
+        unitProfit = (price - unitCost) * stock;
+        break;
+        
+      case 'perTali':
+        price = product.value.isOnSale ? calculateSalePrice(product.value.pricePerTali) : product.value.pricePerTali;
+        stock = product.value.stockPerTali;
+        // For tali, the cost should be per tali, not per bunch
+        unitCost = product.value.cost;
+        unitProfit = (price - unitCost) * stock;
+        break;
+        
+      case 'perKaing':
+        price = product.value.isOnSale ? calculateSalePrice(product.value.pricePerKaing) : product.value.pricePerKaing;
+        stock = product.value.stockPerKaing;
+        unitCost = product.value.cost;
+        unitProfit = (price - unitCost) * stock;
+        break;
+        
+      case 'perTray':
+        price = product.value.isOnSale ? calculateSalePrice(product.value.pricePerTray) : product.value.pricePerTray;
+        stock = product.value.stockPerTray;
+        // For trays, the cost should be per tray, not per item
+        unitCost = product.value.cost;
+        unitProfit = (price - unitCost) * stock;
+        break;
+        
+      case 'perPiece':
+        price = product.value.isOnSale ? calculateSalePrice(product.value.pricePerPiece) : product.value.pricePerPiece;
+        stock = product.value.stockPerPiece;
+        unitCost = product.value.cost;
+        unitProfit = (price - unitCost) * stock;
+        break;
+    }
+    
+    totalProfit += unitProfit;
+  });
+  
+  product.value.profit = parseFloat(totalProfit.toFixed(2));
+};
+
+const handleUnitSelection = (unit) => {
+  if (selectedUnits.value.includes(unit)) {
+    switch(unit) {
+      case 'perSack':
+        if (!product.value.sackWeight) product.value.sackWeight = 50;
+        break;
+      case 'perTali':
+        if (!product.value.itemsPerTali) product.value.itemsPerTali = 10;
+        break;
+      case 'perKaing':
+        if (!product.value.kaingWeight) product.value.kaingWeight = 12;
+        break;
+      case 'perTray':
+        if (!product.value.itemsPerTray) product.value.itemsPerTray = 30;
+        break;
+    }
+  }
+  calculateProfit();
+};
+
+const getUnitLabel = (unit) => {
+  const unitObj = availableUnits.value.find(u => u.value === unit);
+  return unitObj ? unitObj.label : '';
+};
+
+const showNotification = (message, type = 'success') => {
+  notifProduct.value?.showNotification(message, type);
 };
 
 const uploadImage = (event) => {
@@ -348,14 +736,6 @@ const removeImage = () => {
   product.value.image = '';
 };
 
-const calculateProfit = () => {
-  if (product.value.price && product.value.cost) {
-    product.value.profit = (product.value.price - product.value.cost).toFixed(2);
-  } else {
-    product.value.profit = null;
-  }
-};
-
 const validateForm = () => {
   if (!product.value.productName) {
     showNotification('Product name is required', 'warning');
@@ -365,12 +745,8 @@ const validateForm = () => {
     showNotification('Category is required', 'warning');
     return false;
   }
-  if (!product.value.price) {
-    showNotification('Price is required', 'warning');
-    return false;
-  }
-  if (!product.value.stock && product.value.stock !== 0) {
-    showNotification('Stock quantity is required', 'warning');
+  if (selectedUnits.value.length === 0) {
+    showNotification('At least one selling unit is required', 'warning');
     return false;
   }
   if (!product.value.status) {
@@ -392,6 +768,7 @@ const fetchProduct = async (productId) => {
         id: productSnap.id,
         productId: productSnap.id
       };
+      selectedUnits.value = data.availableUnits || [];
     } else {
       showNotification('Product not found', 'error');
       router.push('/products');
@@ -417,7 +794,8 @@ const saveProduct = async () => {
     const productData = {
       ...product.value,
       sellerId: user.uid,
-      updatedAt: new Date()
+      updatedAt: serverTimestamp(),
+      availableUnits: selectedUnits.value
     };
 
     const { id, ...dataToSave } = productData;
@@ -425,24 +803,23 @@ const saveProduct = async () => {
     if (isEditing.value) {
       await updateDoc(doc(db, 'products', id), dataToSave);
       showNotification('Product updated successfully!', 'success');
-      setTimeout(() => router.push('/products'), 1500);
     } else {
-      const docRef = await addDoc(collection(db, 'products'), {
-        ...dataToSave,
-        createdAt: new Date()
-      });
-      // Increment productCount in the selected category
+      dataToSave.createdAt = serverTimestamp();
+      const docRef = await addDoc(collection(db, 'products'), dataToSave);
+      
+      // Increment product count in category
       const categorySnapshot = await getDocs(collection(db, 'categories'));
       const matchedCategory = categorySnapshot.docs.find(doc => doc.data().category === product.value.category);
       if (matchedCategory) {
         await updateDoc(matchedCategory.ref, { productCount: increment(1) });
       }
-    
+      
       product.value.productId = docRef.id;
       await updateDoc(docRef, { productId: docRef.id });
       showNotification('Product saved successfully!', 'success');
-      setTimeout(() => router.push('/products'), 1500);
     }
+
+    setTimeout(() => router.push('/products'), 1500);
   } catch (error) {
     console.error('Error saving product:', error);
     showNotification('Failed to save product. Please try again.', 'error');
@@ -456,23 +833,28 @@ const cancelEdit = () => {
   setTimeout(() => router.push('/products'), 1500);
 };
 
+const handleSidebarToggle = (collapsed) => {
+  sidebarCollapsed.value = collapsed;
+};
 
-const categories = ref([]);
+// Watch for changes to generate product code
+watch([() => product.value.category, () => product.value.productName], () => {
+  if (product.value.category && product.value.productName) {
+    generateProductCode();
+  }
+}, { immediate: false });
 
-// Fetch category options from Firestore
+// Initialize
 onMounted(async () => {
+  const user = auth.currentUser;
+  if (user) product.value.sellerId = user.uid;
+
+  // Fetch categories
   const snapshot = await getDocs(collection(db, 'categories'));
   categories.value = snapshot.docs.map(doc => ({
     id: doc.id,
     category: doc.data().category
   }));
-});
-
-onMounted(() => {
-  // Test notification to verify component is working
-  setTimeout(() => {
-    showNotification('Product form loaded successfully', 'success');
-  }, 1000);
 
   const savedSidebarState = localStorage.getItem('sidebar-collapsed');
   if (savedSidebarState === 'true') {
@@ -482,19 +864,13 @@ onMounted(() => {
   if (isEditing.value && route.params.id) {
     fetchProduct(route.params.id);
   } else {
-    const user = auth.currentUser;
-    if (user) {
-      product.value.sellerId = user.uid;
-    }
+    generateProductCode();
   }
 });
 </script>
 
-<script setup>
-
-</script>
-
 <style scoped>
+/* Dashboard Layout */
 .dashboard-container {
   display: flex;
   min-height: 100vh;
@@ -513,23 +889,64 @@ onMounted(() => {
   margin-left: 60px;
 }
 
+/* Header */
 .header {
   margin-bottom: 20px;
 }
 
 .page-title h1 {
-  font-size: 1.5rem;
+  font-size: 1.875rem;
   font-weight: 700;
   color: #111827;
-  margin: 0 0 5px 0;
+  margin: 0 0 0.5rem 0;
 }
 
 .page-title p {
-  font-size: 0.9rem;
+  font-size: 1rem;
   color: #6b7280;
   margin: 0;
 }
 
+/* Status Ribbons */
+.status-ribbons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.375rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.status-badge.limited {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
+.status-badge.sale {
+  background-color: #ef4444;
+  color: white;
+}
+
+.status-badge.pre-order {
+  background-color: #ffedd5;
+  color: #9a3412;
+  border: 1px solid #f97316;
+}
+
+.badge-icon {
+  width: 0.75rem;
+  height: 0.75rem;
+  margin-right: 0.25rem;
+}
+
+/* Form Layout */
 .product-form {
   background-color: #fff;
   border-radius: 8px;
@@ -550,16 +967,36 @@ onMounted(() => {
   border: 1px solid #e5e7eb;
 }
 
+.form-section.wide {
+  grid-column: span 1;
+}
+
+@media (min-width: 768px) {
+  .form-section.wide {
+    grid-column: span 2;
+  }
+}
+
 .form-section h2 {
-  font-size: 1.1rem;
+  font-size: 1.125rem;
   font-weight: 600;
   color: #374151;
   margin-top: 0;
   margin-bottom: 15px;
   padding-bottom: 8px;
   border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  align-items: center;
 }
 
+.form-section h3 {
+  font-size: 1rem;
+  font-weight: 500;
+  color: #111827;
+  margin: 0 0 1rem 0;
+}
+
+/* Form Fields */
 .form-group {
   display: flex;
   flex-direction: column;
@@ -567,27 +1004,24 @@ onMounted(() => {
 }
 
 .form-group label {
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   font-weight: 500;
   color: #374151;
   margin-bottom: 5px;
 }
 
-.form-group input[type="text"],
-.form-group input[type="number"],
-.form-group input[type="file"],
+.form-group input,
 .form-group select,
 .form-group textarea {
   padding: 8px 12px;
   border: 1px solid #d1d5db;
   border-radius: 4px;
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   color: #111827;
   transition: border-color 0.2s;
 }
 
-.form-group input[type="text"]:focus,
-.form-group input[type="number"]:focus,
+.form-group input:focus,
 .form-group select:focus,
 .form-group textarea:focus {
   outline: none;
@@ -595,26 +1029,19 @@ onMounted(() => {
   box-shadow: 0 0 0 2px rgba(46, 92, 49, 0.1);
 }
 
-.input-group {
-  display: flex;
-  align-items: center;
+.readonly-input {
+  background-color: #f9fafb;
+  cursor: not-allowed;
 }
 
-.input-group-text {
-  background-color: #f3f4f6;
-  border: 1px solid #d1d5db;
-  border-right: none;
-  padding: 8px 12px;
-  border-radius: 4px 0 0 4px;
-  color: #6b7280;
-  font-size: 0.9rem;
+.sale-price {
+  font-size: 0.875rem;
+  color: #16a34a;
+  margin-top: 0.25rem;
+  margin-bottom: 0;
 }
 
-.input-group input {
-  border-radius: 0 4px 4px 0;
-  flex-grow: 1;
-}
-
+/* Checkbox Styles */
 .checkbox-group {
   flex-direction: row;
   align-items: center;
@@ -628,6 +1055,100 @@ onMounted(() => {
   user-select: none;
 }
 
+.unit-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.unit-checkboxes label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: #f3f4f6;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+/* Unit Details */
+.unit-selection {
+  margin-bottom: 1.5rem;
+}
+
+.unit-details {
+  background: white;
+  padding: 15px;
+  border-radius: 8px;
+  margin-top: 10px;
+  border: 1px solid #e5e7eb;
+}
+
+.cost-profit-section {
+  display: grid;
+  grid-template-columns: repeat(1, 1fr);
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+@media (min-width: 768px) {
+  .cost-profit-section {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Info Tooltip */
+.with-tooltip {
+  display: flex;
+  align-items: center;
+}
+
+.info-tooltip {
+  position: relative;
+  margin-left: 0.5rem;
+}
+
+.info-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  background-color: white;
+  border: 2px solid #2e5c31;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: bold;
+  color: #2e5c31;
+  cursor: help;
+}
+
+.tooltip-content {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background-color: #1f2937;
+  color: white;
+  font-size: 0.75rem;
+  border-radius: 0.375rem;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s, visibility 0.2s;
+  z-index: 10;
+  width: max-content;
+  max-width: 200px;
+}
+
+.info-tooltip:hover .tooltip-content {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Image Upload */
 .image-upload-input {
   width: 100%;
   padding: 8px;
@@ -640,12 +1161,6 @@ onMounted(() => {
 .image-upload-input:hover {
   border-color: #2e5c31;
   background-color: #f0fdf4;
-}
-
-.upload-hint {
-  font-size: 0.75rem;
-  color: #6b7280;
-  margin-top: 4px;
 }
 
 .image-preview {
@@ -719,6 +1234,37 @@ onMounted(() => {
   margin: 0;
 }
 
+/* Info Panel */
+.info-panel {
+  background-color: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  margin-top: 1.5rem;
+}
+
+.info-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.info-label {
+  font-weight: 500;
+  color: #1e40af;
+}
+
+.info-value {
+  color: #1e40af;
+}
+
+/* Form Actions */
 .form-actions {
   display: flex;
   justify-content: flex-end;

@@ -99,6 +99,10 @@
                 <input type="checkbox" v-model="typeFilter" value="trending">
                 <span>Trending</span>
               </label>
+              <label class="type-option">
+                <input type="checkbox" v-model="typeFilter" value="wholesale">
+                <span>Wholesale</span>
+              </label>
             </div>
           </div>
           
@@ -226,7 +230,7 @@
             @error="$event.target.src = getCategoryFallbackImage('Farm Fresh')"
           >
         </div>
-        <div class="delivery-card wholesale" @click="navigateToPath('/wholesale')">
+        <div class="delivery-card wholesale" @click="filterByWholesale">
           <div class="delivery-content">
             <h3>Wholesale</h3>
             <p>Bulk orders at better prices</p>
@@ -348,6 +352,16 @@
               </div>
               <div class="product-badge" v-if="product.isOrganic && !product.ribbon">Organic</div>
               
+              <div class="wholesale-badge" v-if="product.wholesale">
+                <Package size="12" />
+                Wholesale
+              </div>
+              
+              <div class="preorder-badge" v-if="product.preorder">
+                <Calendar size="12" />
+                Pre-order
+              </div>
+              
               <div class="trending-badge" v-if="product.isTrending">
                 <TrendingUp size="12" />
                 Trending
@@ -371,12 +385,123 @@
                   <span>{{ product.sold || 0 }}</span>
                 </div>
               </div>
-              <p class="price">₱{{ formatPrice(product.price) }}<span class="unit">/kg</span></p>
+              <div class="price">
+                <span v-if="product.wholesalePrice">₱{{ formatPrice(product.wholesalePrice) }}</span>
+                <span v-else>₱{{ formatPrice(product.price) }}</span>
+                <span v-if="product.minOrderQuantity" class="min-order">
+                  Min: {{ product.minOrderQuantity }} units
+                </span>
+                <span class="unit">/kg</span>
+              </div>
             </div>
             <button class="add-to-cart-button" @click.stop="addToCart(product)" :disabled="product.stock <= 0">
               <ShoppingCart size="14" />
               <span class="add-text">Add</span>
             </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Wholesale Products Section -->
+      <div class="wholesale-section" v-if="showWholesaleSection">
+        <div class="section-header">
+          <h2>Wholesale Products</h2>
+          <div class="section-actions">
+            <span class="product-count">{{ wholesaleProducts.length }} products</span>
+          </div>
+        </div>
+        
+        <div class="wholesale-info">
+          <div class="info-card">
+            <Package size="24" />
+            <h3>Bulk Orders</h3>
+            <p>Get better prices when you order in bulk</p>
+          </div>
+          <div class="info-card">
+            <Truck size="24" />
+            <h3>Free Delivery</h3>
+            <p>Free delivery for wholesale orders</p>
+          </div>
+          <div class="info-card">
+            <Percent size="24" />
+            <h3>Special Discounts</h3>
+            <p>Additional discounts for large orders</p>
+          </div>
+        </div>
+
+        <div class="products-grid">
+          <div v-if="isLoading" class="loading-state">
+            <div class="spinner"></div>
+            <p>Loading wholesale products...</p>
+          </div>
+          <div v-else-if="wholesaleProducts.length === 0" class="no-products">
+            <img src="https://cdn-icons-png.flaticon.com/512/5445/5445197.png" alt="No products" class="no-products-icon">
+            <p>No wholesale products available.</p>
+          </div>
+          <div v-else class="products-container">
+            <div class="product-card" v-for="(product, index) in wholesaleProducts" :key="index" @click="viewProduct(product)">
+              <div class="product-image">
+                <img 
+                  :src="product.image" 
+                  :alt="product.productName || product.name"
+                  @error="handleProductImageError($event, product)"
+                >
+                <div v-if="product.ribbon" :class="['product-ribbon', `ribbon-${product.ribbon}`]">
+                  <span v-if="product.ribbon === 'new'">NEW</span>
+                  <span v-else-if="product.ribbon === 'sale'">{{ product.discount }}% OFF</span>
+                  <span v-else-if="product.ribbon === 'pre-order'">PRE-ORDER</span>
+                  <span v-else-if="product.ribbon === 'organic'">ORGANIC</span>
+                  <span v-else-if="product.ribbon === 'limited'">LIMITED</span>
+                </div>
+                <div class="product-badge" v-if="product.isOrganic && !product.ribbon">Organic</div>
+                
+                <div class="wholesale-badge" v-if="product.wholesale">
+                  <Package size="12" />
+                  Wholesale
+                </div>
+                
+                <div class="preorder-badge" v-if="product.preorder">
+                  <Calendar size="12" />
+                  Pre-order
+                </div>
+                
+                <div class="trending-badge" v-if="product.isTrending">
+                  <TrendingUp size="12" />
+                  Trending
+                </div>
+                
+                <div class="hot-seller-badge" v-if="product.isHotSeller && !product.isTrending">
+                  <Flame size="12" />
+                  Hot Seller
+                </div>
+              </div>
+              <div class="product-info">
+                <h3>{{ product.productName || product.name }}</h3>
+                <div class="product-meta">
+                  <ProductRating :productId="product.id" />
+                  <div class="product-stats">
+                    <Eye size="12" />
+                    <span>{{ product.views || 0 }}</span>
+                  </div>
+                  <div class="product-stats">
+                    <ShoppingBag size="12" />
+                    <span>{{ product.sold || 0 }}</span>
+                  </div>
+                </div>
+                <div class="price">
+                  <span v-if="product.wholesalePrice">₱{{ formatPrice(product.wholesalePrice) }}</span>
+                  <span v-else>₱{{ formatPrice(product.price) }}</span>
+                  <span v-if="product.minOrderQuantity" class="min-order">
+                    Min: {{ product.minOrderQuantity }} units
+                  </span>
+                  <span class="unit">/kg</span>
+                </div>
+              </div>
+              <button class="add-to-cart-button" @click.stop="addToCart(product)" :disabled="product.stock <= 0">
+                <ShoppingCart size="14" />
+                <span class="add-text">Add</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -407,7 +532,11 @@ import {
   SlidersHorizontal,
   X,
   TrendingUp,
-  Flame
+  Flame,
+  Package,
+  Calendar,
+  Truck,
+  Percent
 } from 'lucide-vue-next';
 import { onMounted, onUnmounted, ref, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
@@ -444,7 +573,11 @@ export default {
     SlidersHorizontal,
     X,
     TrendingUp,
-    Flame
+    Flame,
+    Package,
+    Calendar,
+    Truck,
+    Percent
   },
   setup() {
     const router = useRouter();
@@ -465,6 +598,7 @@ export default {
     const isPriceFiltered = ref(false);
     const sortOption = ref('default');
     const categories = ref([]);
+    const showWholesaleSection = ref(false);
 
     // Fallback images for categories
     const categoryFallbackImages = {
@@ -540,7 +674,8 @@ const filteredProducts = computed(() => {
             (typeFilter.value.includes('organic') && product.isOrganic) ||
             (typeFilter.value.includes('new') && product.ribbon === 'new') ||
             (typeFilter.value.includes('sale') && product.ribbon === 'sale') ||
-            (typeFilter.value.includes('trending') && product.isTrending)
+            (typeFilter.value.includes('trending') && product.isTrending) ||
+            (typeFilter.value.includes('wholesale') && product.wholesale === true)
           );
         });
       }
@@ -798,7 +933,12 @@ const filteredProducts = computed(() => {
             ribbon: ribbon,
             discount: discount,
             isTrending,
-            isHotSeller
+            isHotSeller,
+            // Add wholesale fields
+            wholesale: productData.wholesale === true,
+            wholesalePrice: productData.wholesalePrice ?? null,
+            minOrderQuantity: productData.minOrderQuantity ?? null,
+            wholesaleMessage: productData.wholesaleMessage ?? ''
           };
         });
         
@@ -809,6 +949,28 @@ const filteredProducts = computed(() => {
         isLoading.value = false;
       }
     };
+
+    // Add computed property for wholesale products
+    const wholesaleProducts = computed(() => {
+      return products.value.filter(product => product.wholesale === true);
+    });
+
+    // Add method to filter by wholesale
+    const filterByWholesale = () => {
+      showWholesaleSection.value = true;
+      typeFilter.value = ['wholesale'];
+      selectedCategory.value = '';
+      searchQuery.value = '';
+      isPriceFiltered.value = false;
+      sortOption.value = 'default';
+    };
+
+    // Reset showWholesaleSection when filters change
+    watch([selectedCategory, searchQuery, typeFilter], ([cat, search, type]) => {
+      if (!(type && type.includes('wholesale'))) {
+        showWholesaleSection.value = false;
+      }
+    });
 
     return {
       router,
@@ -849,7 +1011,10 @@ const filteredProducts = computed(() => {
       handleProductImageError,
       fetchProducts,
       fetchTrendingProducts,
-      calculatePopularityScore
+      calculatePopularityScore,
+      showWholesaleSection,
+      wholesaleProducts,
+      filterByWholesale
     };
   },
   data() {
@@ -1259,10 +1424,48 @@ const filteredProducts = computed(() => {
   font-weight: bold;
 }
 
-.profile-icon img {
+.profile-icon {
+  padding: 0;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  background-color: #f5f5f5;
+  border: 2px solid #e0e0e0;
+  border-bottom: 3px solid #ffcc00;
+  border-radius: 50%;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+  overflow: hidden;
+}
+
+.profile-icon:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  border-color: #2e5c31;
+}
+
+.profile-icon-container {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f5f5f5;
+}
+
+.profile-avatar-icon {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.default-profile-icon {
+  color: #666;
 }
 
 /* Profile Dropdown Menu */
@@ -1925,7 +2128,7 @@ const filteredProducts = computed(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
-  border-bottom: 2px solid yellow;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   line-height: 1.3;
   min-height: 36px;
@@ -1954,13 +2157,26 @@ const filteredProducts = computed(() => {
   margin: 5px 0 0 0;
   display: flex;
   align-items: baseline;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.wholesale-price {
+  font-size: 14px;
+  color: #666;
+  font-weight: 500;
+}
+
+.min-order {
+  font-size: 12px;
+  color: #666;
+  font-weight: normal;
 }
 
 .unit {
   font-size: 12px;
   color: #666;
   font-weight: normal;
-  margin-left: 2px;
 }
 
 .add-to-cart-button {
@@ -2187,5 +2403,57 @@ html {
   min-zoom: 1.0;
   max-zoom: 1.0;
   user-zoom: fixed;
+}
+
+/* Wholesale Section Styles */
+.wholesale-section {
+  margin-top: 20px;
+  padding: 20px;
+  background-color: #f8f9fa;
+  border-radius: 15px;
+}
+
+.wholesale-info {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
+  margin: 20px 0;
+}
+
+.info-card {
+  background-color: white;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+}
+
+.info-card svg {
+  color: #2e5c31;
+  margin-bottom: 10px;
+}
+
+.info-card h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+}
+
+.info-card p {
+  font-size: 14px;
+  color: #666;
+  margin: 0;
+}
+
+/* Wholesale Section Responsive Design */
+@media (max-width: 768px) {
+  .wholesale-info {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
