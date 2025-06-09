@@ -98,30 +98,70 @@
       
       <!-- Sales & Inventory Charts -->
       <div class="charts-container">
-        <div class="chart-card">
+        <div class="chart-card main-chart">
           <div class="chart-header">
             <h2>Sales Performance</h2>
-            <div class="chart-legend">
-              <div class="legend-item">
-                <span class="legend-color" style="background-color: #2e5c31;"></span>
-                <span>Revenue</span>
+            <div class="chart-controls">
+              <div class="chart-legend">
+                <div class="legend-item">
+                  <span class="legend-color" style="background-color: #2e5c31;"></span>
+                  <span>Revenue</span>
+                </div>
+                <div class="legend-item">
+                  <span class="legend-color" style="background-color: #4a8f4d;"></span>
+                  <span>Profit</span>
+                </div>
               </div>
-              <div class="legend-item">
-                <span class="legend-color" style="background-color: #4a8f4d;"></span>
-                <span>Profit</span>
+              <div class="chart-actions">
+                <select v-model="chartTimeRange" @change="updateChartData" class="chart-time-filter">
+                  <option value="week">This Week</option>
+                  <option value="month">This Month</option>
+                  <option value="quarter">This Quarter</option>
+                  <option value="year">This Year</option>
+                </select>
+                <div class="chart-export-dropdown">
+                  <button class="chart-export-btn" @click="toggleChartExportMenu">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="7 10 12 15 17 10"></polyline>
+                      <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Export
+                  </button>
+                  <div class="chart-export-menu" v-if="showChartExportMenu">
+                    <button class="chart-export-option" @click="exportChart('png')">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                        <circle cx="9" cy="9" r="2"></circle>
+                        <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path>
+                      </svg>
+                      Export as PNG
+                    </button>
+                    <button class="chart-export-option" @click="exportChart('pdf')">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                        <polyline points="10 9 9 9 8 9"></polyline>
+                      </svg>
+                      Export as PDF
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-          <div class="chart-wrapper">
+          <div class="chart-wrapper main-chart-wrapper">
             <canvas ref="salesChart"></canvas>
           </div>
         </div>
         
-        <div class="chart-card">
+        <div class="chart-card category-chart">
           <div class="chart-header">
             <h2>Category Distribution</h2>
           </div>
-          <div class="chart-wrapper">
+          <div class="chart-wrapper category-chart-wrapper">
             <canvas ref="categoryChart"></canvas>
           </div>
         </div>
@@ -137,7 +177,7 @@
         <div class="top-products">
           <div v-for="(product, index) in topProducts" :key="index" class="product-card">
             <div class="product-image">
-              <img :src="product.image || '/placeholder.jpg'" alt="Product image">
+              <img :src="getProductImage(product)" alt="Product image">
               <span v-if="product.ribbon" class="product-ribbon">{{ product.ribbon }}</span>
             </div>
             <div class="product-details">
@@ -145,16 +185,16 @@
               <p class="product-category">{{ product.category }}</p>
               <div class="product-stats">
                 <div class="stat">
-                  <span class="stat-label">Price</span>
-                  <span class="stat-value">₱{{ product.price }}</span>
+                  <span class="stat-label">Unit Price</span>
+                  <span class="stat-value">₱{{ formatNumber(product.unitPrice) }}</span>
                 </div>
                 <div class="stat">
                   <span class="stat-label">Profit</span>
-                  <span class="stat-value">₱{{ product.profit }}</span>
+                  <span class="stat-value">₱{{ formatNumber(product.profit) }}</span>
                 </div>
                 <div class="stat">
                   <span class="stat-label">Sold</span>
-                  <span class="stat-value">{{ product.sold }}</span>
+                  <span class="stat-value">{{ product.sold }} {{ getUnitDisplay(product.unit) }}</span>
                 </div>
               </div>
             </div>
@@ -180,11 +220,13 @@
             <label for="categoryFilter">Category</label>
             <select id="categoryFilter" v-model="filters.category">
               <option value="">All Categories</option>
-              <option value="All Products">All Products</option>
               <option value="Vegetables">Vegetables</option>
               <option value="Fruits">Fruits</option>
               <option value="Grains">Grains</option>
               <option value="Herbs & Spices">Herbs & Spices</option>
+              <option value="Livestock & Poultry">Livestock & Poultry</option>
+              <option value="Dairy Products">Dairy Products</option>
+              <option value="Processed Foods">Processed Foods</option>
             </select>
           </div>
           
@@ -192,9 +234,9 @@
             <label for="statusFilter">Status</label>
             <select id="statusFilter" v-model="filters.status">
               <option value="">All Statuses</option>
-              <option value="Active">Active</option>
-              <option value="Inactive">Inactive</option>
-              <option value="Scheduled">Scheduled</option>
+              <option value="available">Available</option>
+              <option value="limited">Limited</option>
+              <option value="preorder">Pre-order</option>
             </select>
           </div>
           
@@ -220,11 +262,8 @@
               <tr>
                 <th>Product</th>
                 <th>Category</th>
-                <th>Price</th>
-                <th>Cost</th>
-                <th>Profit</th>
-                <th>Stock</th>
-                <th>Weight</th>
+                <th>Available Units</th>
+                <th>Stock Levels</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
@@ -233,20 +272,57 @@
               <tr v-for="product in paginatedProducts" :key="product.id">
                 <td class="product-cell">
                   <div class="product-image-small">
-                    <img :src="product.images && product.images.length > 0 ? product.images[0] : '/placeholder.jpg'" alt="Product thumbnail">
+                    <img :src="getProductImage(product)" alt="Product thumbnail">
                   </div>
                   <span>{{ product.productName }}</span>
                 </td>
                 <td>{{ product.category }}</td>
-                <td>₱{{ product.price }}</td>
-                <td>₱{{ product.cost }}</td>
-                <td>₱{{ product.profit }}</td>
                 <td>
-                  <span class="stock-badge" :class="getStockLevelClass(product.stock)">
-                    {{ product.stock }}
-                  </span>
+                  <div class="available-units">
+                    <span v-for="unit in product.availableUnits" :key="unit" class="unit-badge">
+                      {{ getUnitDisplay(unit) }}
+                    </span>
+                  </div>
                 </td>
-                <td>{{ product.weight }} {{ product.unit }}</td>
+                <td>
+                  <div class="stock-levels">
+                    <div v-if="product.availableUnits?.includes('perKilo') && product.stockPerKilo > 0" class="stock-item">
+                      <span class="stock-badge" :class="getStockLevelClass(product.stockPerKilo)">
+                        {{ product.stockPerKilo }}
+                      </span>
+                    </div>
+                    <div v-if="product.availableUnits?.includes('perSack') && product.stockPerSack > 0" class="stock-item">
+                      <span class="stock-badge" :class="getStockLevelClass(product.stockPerSack)">
+                        {{ product.stockPerSack }}
+                      </span>
+                    </div>
+                    <div v-if="product.availableUnits?.includes('perTali') && product.stockPerTali > 0" class="stock-item">
+                      <span class="stock-badge" :class="getStockLevelClass(product.stockPerTali)">
+                        {{ product.stockPerTali }}
+                      </span>
+                    </div>
+                    <div v-if="product.availableUnits?.includes('perKaing') && product.stockPerKaing > 0" class="stock-item">
+                      <span class="stock-badge" :class="getStockLevelClass(product.stockPerKaing)">
+                        {{ product.stockPerKaing }}
+                      </span>
+                    </div>
+                    <div v-if="product.availableUnits?.includes('perBundle') && product.stockPerBundle > 0" class="stock-item">
+                      <span class="stock-badge" :class="getStockLevelClass(product.stockPerBundle)">
+                        {{ product.stockPerBundle }}
+                      </span>
+                    </div>
+                    <div v-if="product.availableUnits?.includes('perTray') && product.stockPerTray > 0" class="stock-item">
+                      <span class="stock-badge" :class="getStockLevelClass(product.stockPerTray)">
+                        {{ product.stockPerTray }}
+                      </span>
+                    </div>
+                    <div v-if="product.availableUnits?.includes('perPiece') && product.stockPerPiece > 0" class="stock-item">
+                      <span class="stock-badge" :class="getStockLevelClass(product.stockPerPiece)">
+                        {{ product.stockPerPiece }}
+                      </span>
+                    </div>
+                  </div>
+                </td>
                 <td>
                   <span class="status-badge" :class="getStatusClass(product.status)">
                     {{ product.status }}
@@ -287,6 +363,7 @@
           </button>
         </div>
       </div>
+      
       <!-- Low Stock Alert -->
       <div class="section-container" v-if="lowStockProducts.length > 0">
         <div class="section-header">
@@ -304,7 +381,7 @@
             </div>
             <div class="alert-content">
               <h3>{{ product.productName }}</h3>
-              <p>Only {{ product.stock }} units left in stock</p>
+              <p>Low stock in multiple units</p>
             </div>
             <button class="restock-btn" @click="editProduct(product.id)">Restock</button>
           </div>
@@ -315,7 +392,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, onMounted, computed, watch, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { db, auth } from '@/firebase/firebaseConfig';
 import { collection, getDocs, query, where } from 'firebase/firestore';
@@ -366,6 +443,248 @@ const filters = ref({
   search: ''
 });
 
+// Unit display mapping
+const unitDisplayMap = {
+  'kg': 'Kilogram',
+  'sack': 'Sack',
+  'tali': 'Tali',
+  'kaing': 'Kaing',
+  'bundle': 'Bundle',
+  'tray': 'Tray',
+  'piece': 'Piece',
+  'perKilo': 'Kilogram',
+  'perSack': 'Sack',
+  'perTali': 'Tali',
+  'perKaing': 'Kaing',
+  'perBundle': 'Bundle',
+  'perTray': 'Tray',
+  'perPiece': 'Piece'
+};
+
+// Chart filtering and export
+const chartTimeRange = ref('week');
+const showChartExportMenu = ref(false);
+
+// Helper function to get unit display name
+const getUnitDisplay = (unit) => {
+  return unitDisplayMap[unit] || unit || 'Unit';
+};
+
+// Helper function to get product image
+const getProductImage = (product) => {
+  // Check for image field first
+  if (product.image && product.image.trim() !== '') {
+    return product.image;
+  }
+  
+  // Check for images array
+  if (product.images && Array.isArray(product.images) && product.images.length > 0) {
+    return product.images[0];
+  }
+  
+  // Check for productImage field
+  if (product.productImage && product.productImage.trim() !== '') {
+    return product.productImage;
+  }
+  
+  // Return placeholder
+  return '/placeholder.svg?height=200&width=200';
+};
+
+// Chart time filtering
+const updateChartData = () => {
+  if (!chartsInitialized.value || orders.value.length === 0) return;
+  
+  const now = new Date();
+  let startDate = new Date();
+  
+  switch (chartTimeRange.value) {
+    case 'week':
+      startDate.setDate(now.getDate() - 7);
+      break;
+    case 'month':
+      startDate.setMonth(now.getMonth() - 1);
+      break;
+    case 'quarter':
+      startDate.setMonth(now.getMonth() - 3);
+      break;
+    case 'year':
+      startDate.setFullYear(now.getFullYear() - 1);
+      break;
+  }
+  
+  // Filter orders by date range
+  const filteredOrders = orders.value.filter(order => {
+    let orderDate;
+    if (order.createdAt && typeof order.createdAt.toDate === 'function') {
+      orderDate = order.createdAt.toDate();
+    } else if (order.timestamp && typeof order.timestamp.toDate === 'function') {
+      orderDate = order.timestamp.toDate();
+    } else {
+      orderDate = new Date();
+    }
+    return orderDate >= startDate;
+  });
+  
+  // Calculate category sales for filtered data
+  const categorySales = {};
+  filteredOrders.forEach(order => {
+    const category = order.category || 'Other';
+    if (!categorySales[category]) {
+      categorySales[category] = 0;
+    }
+    const itemPrice = order.itemPrice || (order.unitPrice * order.quantity) || order.totalPrice || 0;
+    categorySales[category] += itemPrice;
+  });
+  
+  updateChartsWithOrderData(filteredOrders, categorySales);
+};
+
+// Chart export functionality
+const toggleChartExportMenu = (event) => {
+  if (event) event.stopPropagation();
+  showChartExportMenu.value = !showChartExportMenu.value;
+};
+
+const exportChart = (format) => {
+  showChartExportMenu.value = false;
+  
+  if (format === 'png') {
+    exportChartAsPNG();
+  } else if (format === 'pdf') {
+    exportChartAsPDF();
+  }
+};
+
+const exportChartAsPNG = () => {
+  if (!salesChartInstance) return;
+  
+  const canvas = salesChart.value;
+  const url = canvas.toDataURL('image/png');
+  const link = document.createElement('a');
+  link.download = `sales-chart-${chartTimeRange.value}-${new Date().toISOString().slice(0, 10)}.png`;
+  link.href = url;
+  link.click();
+};
+
+const exportChartAsPDF = () => {
+  if (!salesChartInstance) return;
+  
+  // Create a new window for PDF content
+  const printWindow = window.open('', '_blank');
+  
+  if (!printWindow) {
+    alert('Please allow pop-ups to export as PDF');
+    return;
+  }
+  
+  const canvas = salesChart.value;
+  const chartImageUrl = canvas.toDataURL('image/png');
+  
+  const pdfContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Sales Performance Chart</title>
+      <style>
+        body { 
+          font-family: Arial, sans-serif; 
+          margin: 20px; 
+          text-align: center;
+        }
+        h1 { 
+          color: #2e5c31; 
+          margin-bottom: 20px; 
+        }
+        .chart-container {
+          margin: 20px 0;
+          display: flex;
+          justify-content: center;
+        }
+        .chart-image {
+          max-width: 100%;
+          height: auto;
+          border: 1px solid #ddd;
+          border-radius: 8px;
+        }
+        .export-info { 
+          margin-top: 20px; 
+          font-size: 12px; 
+          color: #666; 
+        }
+        .summary-stats {
+          display: flex;
+          justify-content: space-around;
+          margin: 20px 0;
+          padding: 20px;
+          background-color: #f9f9f9;
+          border-radius: 8px;
+        }
+        .stat-item {
+          text-align: center;
+        }
+        .stat-value {
+          font-size: 24px;
+          font-weight: bold;
+          color: #2e5c31;
+        }
+        .stat-label {
+          font-size: 14px;
+          color: #666;
+        }
+      </style>
+    </head>
+    <body>
+      <h1>Sales Performance Report</h1>
+      <p>Period: ${chartTimeRange.value.charAt(0).toUpperCase() + chartTimeRange.value.slice(1)}</p>
+      
+      <div class="summary-stats">
+        <div class="stat-item">
+          <div class="stat-value">₱${formatNumber(totalSales.value)}</div>
+          <div class="stat-label">Total Sales</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value">${profitMargin.value}%</div>
+          <div class="stat-label">Profit Margin</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value">${totalOrders.value}</div>
+          <div class="stat-label">Total Orders</div>
+        </div>
+      </div>
+      
+      <div class="chart-container">
+        <img src="${chartImageUrl}" alt="Sales Performance Chart" class="chart-image">
+      </div>
+      
+      <div class="export-info">
+        <p>Generated on: ${new Date().toLocaleString()}</p>
+        <p>FarmXpress Analytics Dashboard</p>
+      </div>
+      
+      <script>
+        window.onload = function() { 
+          setTimeout(function() {
+            window.print(); 
+          }, 500);
+        };
+      <\/script>
+    </body>
+    </html>
+  `;
+  
+  printWindow.document.open();
+  printWindow.document.write(pdfContent);
+  printWindow.document.close();
+};
+
+// Close export menu when clicking outside
+const closeChartExportMenu = (event) => {
+  if (showChartExportMenu.value && !event.target.closest('.chart-export-dropdown')) {
+    showChartExportMenu.value = false;
+  }
+};
+
 // Computed properties
 const filteredProducts = computed(() => {
   let result = [...products.value];
@@ -379,20 +698,21 @@ const filteredProducts = computed(() => {
   }
   
   if (filters.value.stockLevel) {
-    switch (filters.value.stockLevel) {
-      case 'out':
-        result = result.filter(product => product.stock === 0);
-        break;
-      case 'low':
-        result = result.filter(product => product.stock > 0 && product.stock <= 10);
-        break;
-      case 'normal':
-        result = result.filter(product => product.stock > 10 && product.stock <= 50);
-        break;
-      case 'high':
-        result = result.filter(product => product.stock > 50);
-        break;
-    }
+    result = result.filter(product => {
+      const totalStock = getTotalStock(product);
+      switch (filters.value.stockLevel) {
+        case 'out':
+          return totalStock === 0;
+        case 'low':
+          return totalStock > 0 && totalStock <= 10;
+        case 'normal':
+          return totalStock > 10 && totalStock <= 50;
+        case 'high':
+          return totalStock > 50;
+        default:
+          return true;
+      }
+    });
   }
   
   if (filters.value.search) {
@@ -407,6 +727,19 @@ const filteredProducts = computed(() => {
   return result;
 });
 
+// Helper function to get total stock across all units
+const getTotalStock = (product) => {
+  let total = 0;
+  if (product.stockPerKilo) total += product.stockPerKilo;
+  if (product.stockPerSack) total += product.stockPerSack;
+  if (product.stockPerTali) total += product.stockPerTali;
+  if (product.stockPerKaing) total += product.stockPerKaing;
+  if (product.stockPerBundle) total += product.stockPerBundle;
+  if (product.stockPerTray) total += product.stockPerTray;
+  if (product.stockPerPiece) total += product.stockPerPiece;
+  return total;
+};
+
 // Update totalItems when filteredProducts changes
 watch(filteredProducts, (newValue) => {
   totalItems.value = newValue.length;
@@ -419,12 +752,15 @@ const paginatedProducts = computed(() => {
 });
 
 const lowStockProducts = computed(() => {
-  return products.value.filter(product => product.stock > 0 && product.stock <= 10);
+  return products.value.filter(product => {
+    const totalStock = getTotalStock(product);
+    return totalStock > 0 && totalStock <= 10;
+  });
 });
 
-// Format number with commas
+// Format number with commas and two decimals for currency
 const formatNumber = (num) => {
-  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return parseFloat(num).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 };
 
 // Get stock level class
@@ -438,11 +774,11 @@ const getStockLevelClass = (stock) => {
 // Get status class
 const getStatusClass = (status) => {
   switch (status) {
-    case 'Active':
+    case 'available':
       return 'status-active';
-    case 'Inactive':
+    case 'limited':
       return 'status-inactive';
-    case 'Scheduled':
+    case 'preorder':
       return 'status-scheduled';
     default:
       return '';
@@ -474,23 +810,28 @@ const fetchOrders = async () => {
         ...orderData
       });
       
-      // Calculate total sales
-      totalSalesValue += orderData.totalPrice || 0;
+      // Calculate total sales using new order structure
+      const itemPrice = orderData.itemPrice || (orderData.unitPrice * orderData.quantity) || orderData.totalPrice || 0;
+      totalSalesValue += itemPrice;
       
-      // Calculate profit (using actual cost if available, otherwise 30% margin)
-      const cost = orderData.cost || (orderData.totalPrice * 0.7);
-      const profit = orderData.totalPrice - cost;
+      // Calculate profit using cost data if available
+      let profit = 0;
+      if (orderData.tax && orderData.deliveryFee) {
+        // New structure with detailed breakdown
+        profit = itemPrice - (itemPrice * 0.7); // Assume 30% cost margin if no cost data
+      } else {
+        profit = itemPrice * 0.3; // Default 30% profit margin
+      }
       totalProfitValue += profit;
       
       totalOrdersCount++;
       
-      // Track sales by category
-      if (orderData.category) {
-        if (!categorySales[orderData.category]) {
-          categorySales[orderData.category] = 0;
-        }
-        categorySales[orderData.category] += orderData.totalPrice || 0;
+      // Track sales by category using product category
+      const category = orderData.category || 'Other';
+      if (!categorySales[category]) {
+        categorySales[category] = 0;
       }
+      categorySales[category] += itemPrice;
     });
     
     orders.value = ordersList;
@@ -529,17 +870,13 @@ const fetchProducts = async () => {
       const productData = doc.data();
       const product = {
         id: doc.id,
-        ...productData,
-        // Calculate current stock
-        currentStock: productData.remainingStock !== undefined ? 
-                     productData.remainingStock : 
-                     productData.stock || 0
+        ...productData
       };
       
       productsList.push(product);
       
-      // Calculate total inventory
-      totalInventoryValue += product.currentStock;
+      // Calculate total inventory across all units
+      totalInventoryValue += getTotalStock(product);
     });
     
     products.value = productsList;
@@ -553,36 +890,34 @@ const fetchProducts = async () => {
   }
 };
 
-// Calculate top selling products
+// Calculate top selling products based on orders
 const calculateTopProducts = () => {
-  // Create a map of product sales
   const productSales = {};
   
   orders.value.forEach(order => {
-    if (!productSales[order.productName]) {
-      const cost = order.cost || (order.totalPrice * 0.7);
-      const profit = order.totalPrice - cost;
-      
-      productSales[order.productName] = {
-        productName: order.productName,
-        category: order.category,
-        price: order.totalPrice,
-        sold: (order.stock || 0) - (order.remainingStock || 0),
-        image: order.productImage,
-        stock: order.remainingStock || order.stock || 0,
-        profit: profit
+    const productName = order.productName;
+    if (!productSales[productName]) {
+      productSales[productName] = {
+        productName: productName,
+        category: order.category || 'Other',
+        unitPrice: order.unitPrice || 0,
+        unit: order.unit || 'piece',
+        sold: 0,
+        profit: 0,
+        image: order.productImage || '',
+        productImage: order.productImage || ''
       };
-    } else {
-      const sold = (order.stock || 0) - (order.remainingStock || 0);
-      const cost = order.cost || (order.totalPrice * 0.7);
-      const profit = order.totalPrice - cost;
-      
-      productSales[order.productName].sold += sold;
-      productSales[order.productName].profit += profit;
     }
+    
+    // Add quantity sold
+    productSales[productName].sold += order.quantity || 0;
+    
+    // Add profit (simplified calculation)
+    const itemPrice = order.itemPrice || (order.unitPrice * order.quantity) || 0;
+    productSales[productName].profit += itemPrice * 0.3; // Assume 30% profit margin
   });
   
-  // Convert to array and sort by sales
+  // Convert to array and sort by quantity sold
   topProducts.value = Object.values(productSales)
     .sort((a, b) => b.sold - a.sold)
     .slice(0, 4);
@@ -623,7 +958,7 @@ const initSalesChart = (labels, revenueData, profitData) => {
     },
     options: {
       responsive: true,
-      maintainAspectRatio: true,
+      maintainAspectRatio: false,
       plugins: {
         legend: {
           display: false
@@ -633,7 +968,7 @@ const initSalesChart = (labels, revenueData, profitData) => {
           intersect: false,
           callbacks: {
             label: function(context) {
-              return `${context.dataset.label}: ₱${formatNumber(context.raw)}`;
+              return `${context.dataset.label}: ₱${parseFloat(context.raw).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
             }
           }
         }
@@ -682,10 +1017,14 @@ const initCategoryChart = (labels, data) => {
     },
     options: {
       responsive: true,
-      maintainAspectRatio: true,
+      maintainAspectRatio: false,
       plugins: {
         legend: {
-          position: 'right'
+          position: 'bottom',
+          labels: {
+            boxWidth: 12,
+            padding: 10
+          }
         },
         tooltip: {
           callbacks: {
@@ -703,41 +1042,144 @@ const initCategoryChart = (labels, data) => {
 const updateChartsWithOrderData = (orders, categorySales) => {
   if (!chartsInitialized.value) return;
   
-  // Group orders by month for sales chart
-  const monthlySales = {};
-  const monthlyProfit = {};
+  // Prepare data based on selected time range
+  let labels = [];
+  let revenueData = [];
+  let profitData = [];
   
-  orders.forEach(order => {
-    if (order.createdAt) {
-      const date = order.createdAt.toDate();
-      const month = date.getMonth();
-      const year = date.getFullYear();
-      const key = `${year}-${month}`;
-      
-      if (!monthlySales[key]) {
-        monthlySales[key] = 0;
-        monthlyProfit[key] = 0;
+  const now = new Date();
+  
+  // Generate appropriate labels and data structure based on time range
+  if (chartTimeRange.value === 'week') {
+    // For week view: show last 7 days with actual dates
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(now.getDate() - i);
+      labels.push(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+      revenueData.push(0);
+      profitData.push(0);
+    }
+    
+    // Populate data for each day
+    orders.forEach(order => {
+      let orderDate;
+      if (order.createdAt && typeof order.createdAt.toDate === 'function') {
+        orderDate = order.createdAt.toDate();
+      } else if (order.timestamp && typeof order.timestamp.toDate === 'function') {
+        orderDate = order.timestamp.toDate();
+      } else {
+        orderDate = new Date();
       }
       
-      monthlySales[key] += order.totalPrice;
-      const cost = order.cost || (order.totalPrice * 0.7);
-      monthlyProfit[key] += order.totalPrice - cost;
+      // Check if order is within the last 7 days
+      const daysDiff = Math.floor((now - orderDate) / (1000 * 60 * 60 * 24));
+      if (daysDiff >= 0 && daysDiff < 7) {
+        const index = 6 - daysDiff; // Reverse index (newest date at the end)
+        const itemPrice = order.itemPrice || (order.unitPrice * order.quantity) || order.totalPrice || 0;
+        revenueData[index] += itemPrice;
+        profitData[index] += itemPrice * 0.3; // Assume 30% profit margin
+      }
+    });
+  } else if (chartTimeRange.value === 'month') {
+    // For month view: show last 4 weeks
+    for (let i = 3; i >= 0; i--) {
+      const weekStart = new Date();
+      weekStart.setDate(now.getDate() - (i * 7) - 6);
+      const weekEnd = new Date();
+      weekEnd.setDate(now.getDate() - (i * 7));
+      
+      labels.push(`${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`);
+      revenueData.push(0);
+      profitData.push(0);
     }
-  });
+    
+    // Populate data for each week
+    orders.forEach(order => {
+      let orderDate;
+      if (order.createdAt && typeof order.createdAt.toDate === 'function') {
+        orderDate = order.createdAt.toDate();
+      } else if (order.timestamp && typeof order.timestamp.toDate === 'function') {
+        orderDate = order.timestamp.toDate();
+      } else {
+        orderDate = new Date();
+      }
+      
+      // Check which week the order belongs to
+      const daysDiff = Math.floor((now - orderDate) / (1000 * 60 * 60 * 24));
+      if (daysDiff >= 0 && daysDiff < 28) {
+        const weekIndex = Math.floor(daysDiff / 7);
+        if (weekIndex < 4) {
+          const index = 3 - weekIndex; // Reverse index (newest week at the end)
+          const itemPrice = order.itemPrice || (order.unitPrice * order.quantity) || order.totalPrice || 0;
+          revenueData[index] += itemPrice;
+          profitData[index] += itemPrice * 0.3;
+        }
+      }
+    });
+  } else if (chartTimeRange.value === 'quarter') {
+    // For quarter view: show last 3 months
+    for (let i = 2; i >= 0; i--) {
+      const date = new Date();
+      date.setMonth(now.getMonth() - i);
+      labels.push(date.toLocaleDateString('en-US', { month: 'long' }));
+      revenueData.push(0);
+      profitData.push(0);
+    }
+    
+    // Populate data for each month
+    orders.forEach(order => {
+      let orderDate;
+      if (order.createdAt && typeof order.createdAt.toDate === 'function') {
+        orderDate = order.createdAt.toDate();
+      } else if (order.timestamp && typeof order.timestamp.toDate === 'function') {
+        orderDate = new Date();
+      } else {
+        orderDate = new Date();
+      }
+      
+      // Check which month the order belongs to
+      const monthDiff = (now.getMonth() - orderDate.getMonth()) + 
+                        (now.getFullYear() - orderDate.getFullYear()) * 12;
+      
+      if (monthDiff >= 0 && monthDiff < 3) {
+        const index = 2 - monthDiff; // Reverse index (newest month at the end)
+        const itemPrice = order.itemPrice || (order.unitPrice * order.quantity) || order.totalPrice || 0;
+        revenueData[index] += itemPrice;
+        profitData[index] += itemPrice * 0.3;
+      }
+    });
+  } else {
+    // For year view: show all 12 months
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    labels = [...months];
+    revenueData = Array(12).fill(0);
+    profitData = Array(12).fill(0);
+    
+    const currentYear = now.getFullYear();
+    
+    // Populate data for each month
+    orders.forEach(order => {
+      let orderDate;
+      if (order.createdAt && typeof order.createdAt.toDate === 'function') {
+        orderDate = order.createdAt.toDate();
+      } else if (order.timestamp && typeof order.timestamp.toDate === 'function') {
+        orderDate = order.timestamp.toDate();
+      } else {
+        orderDate = new Date();
+      }
+      
+      // Only include orders from current year
+      if (orderDate.getFullYear() === currentYear) {
+        const month = orderDate.getMonth();
+        const itemPrice = order.itemPrice || (order.unitPrice * order.quantity) || order.totalPrice || 0;
+        revenueData[month] += itemPrice;
+        profitData[month] += itemPrice * 0.3;
+      }
+    });
+  }
   
-  // Prepare data for sales chart
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const revenueData = months.map((_, index) => {
-    const key = `2025-${index}`;
-    return monthlySales[key] || 0;
-  });
-  
-  const profitData = months.map((_, index) => {
-    const key = `2025-${index}`;
-    return monthlyProfit[key] || 0;
-  });
-  
-  initSalesChart(months, revenueData, profitData);
+  // Initialize charts with the prepared data
+  initSalesChart(labels, revenueData, profitData);
   
   // Prepare data for category chart
   const categoryLabels = Object.keys(categorySales);
@@ -775,12 +1217,12 @@ watch(orders, (newOrders) => {
     const categorySales = {};
     
     newOrders.forEach(order => {
-      if (order.category) {
-        if (!categorySales[order.category]) {
-          categorySales[order.category] = 0;
-        }
-        categorySales[order.category] += order.totalPrice || 0;
+      const category = order.category || 'Other';
+      if (!categorySales[category]) {
+        categorySales[category] = 0;
       }
+      const itemPrice = order.itemPrice || (order.unitPrice * order.quantity) || order.totalPrice || 0;
+      categorySales[category] += itemPrice;
     });
     
     updateChartsWithOrderData(newOrders, categorySales);
@@ -801,13 +1243,27 @@ onMounted(() => {
       }, 100);
     }
   });
+  
+  // Add event listeners
+  document.addEventListener('click', closeExportMenu);
+  document.addEventListener('click', closeChartExportMenu);
+});
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeExportMenu);
+  document.removeEventListener('click', closeChartExportMenu);
 });
 
 defineOptions({
   name: 'SellerAnalytics'
 });
-</script>
 
+const closeExportMenu = (event) => {
+  if (showChartExportMenu.value && !event.target.closest('.chart-export-dropdown')) {
+    showChartExportMenu.value = false;
+  }
+};
+</script>
 
 <style scoped>
 .dashboard-container {
@@ -820,7 +1276,7 @@ defineOptions({
   flex: 1;
   padding: 20px;
   overflow-y: auto;
-  margin-left: 230px; /* Match the sidebar width exactly */
+  margin-left: 230px;
 }
 
 .header {
@@ -911,7 +1367,7 @@ defineOptions({
 /* Charts */
 .charts-container {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  grid-template-columns: 2fr 1fr;
   gap: 20px;
   margin-bottom: 20px;
 }
@@ -921,6 +1377,14 @@ defineOptions({
   border-radius: 8px;
   padding: 20px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.main-chart {
+  grid-column: 1;
+}
+
+.category-chart {
+  grid-column: 2;
 }
 
 .chart-header {
@@ -956,11 +1420,18 @@ defineOptions({
   margin-right: 5px;
 }
 
-/* Chart wrapper to fix the expanding chart issue */
+/* Chart wrapper with different sizes */
 .chart-wrapper {
   position: relative;
-  height: 250px; /* Fixed height */
   width: 100%;
+}
+
+.main-chart-wrapper {
+  height: 350px;
+}
+
+.category-chart-wrapper {
+  height: 250px;
 }
 
 /* Section Container */
@@ -1116,7 +1587,12 @@ defineOptions({
 }
 
 .search-filter input {
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.9rem;
   width: 100%;
+  height: 40px; /* Match height with other filter elements */
 }
 
 /* Inventory Table */
@@ -1135,6 +1611,7 @@ defineOptions({
   padding: 12px 15px;
   text-align: left;
   border-bottom: 1px solid #e5e7eb;
+  vertical-align: middle; /* Ensure proper alignment */
 }
 
 .inventory-table th {
@@ -1148,6 +1625,7 @@ defineOptions({
   display: flex;
   align-items: center;
   gap: 10px;
+  min-height: 60px; /* Ensure consistent row height */
 }
 
 .product-image-small {
@@ -1155,6 +1633,7 @@ defineOptions({
   height: 40px;
   border-radius: 4px;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .product-image-small img {
@@ -1163,55 +1642,54 @@ defineOptions({
   object-fit: cover;
 }
 
-.stock-badge {
-  display: inline-block;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 0.8rem;
+.available-units {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.unit-badge {
+  background-color: rgba(46, 92, 49, 0.1);
+  color: #2e5c31;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.85rem;
   font-weight: 500;
 }
 
-.stock-badge.out-of-stock {
-  background-color: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
+.stock-levels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
 }
 
-.stock-badge.low-stock {
-  background-color: rgba(245, 158, 11, 0.1);
-  color: #f59e0b;
+.stock-item {
+  display: inline-block;
+  margin-right: 4px;
+  margin-bottom: 4px;
 }
 
-.stock-badge.normal-stock {
-  background-color: rgba(46, 92, 49, 0.1);
-  color: #2e5c31;
+.stock-label {
+  font-size: 0.7rem;
+  color: #6b7280;
+  min-width: 40px;
 }
 
-.stock-badge.high-stock {
-  background-color: rgba(16, 185, 129, 0.1);
-  color: #10b981;
+.stock-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 500;
 }
 
 .status-badge {
   display: inline-block;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 0.8rem;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 0.9rem;
   font-weight: 500;
-}
-
-.status-badge.status-active {
-  background-color: rgba(46, 92, 49, 0.1);
-  color: #2e5c31;
-}
-
-.status-badge.status-inactive {
-  background-color: rgba(107, 114, 128, 0.1);
-  color: #6b7280;
-}
-
-.status-badge.status-scheduled {
-  background-color: rgba(59, 130, 246, 0.1);
-  color: #3b82f6;
 }
 
 .actions-cell {
@@ -1314,9 +1792,23 @@ defineOptions({
 }
 
 /* Responsive adjustments */
+@media (max-width: 1200px) {
+  .charts-container {
+    grid-template-columns: 1fr;
+  }
+  
+  .main-chart-wrapper {
+    height: 300px;
+  }
+  
+  .category-chart-wrapper {
+    height: 200px;
+  }
+}
+
 @media (max-width: 768px) {
   .main-content {
-    margin-left: 0; /* Remove margin on mobile */
+    margin-left: 0;
   }
   
   .charts-container {
@@ -1326,9 +1818,13 @@ defineOptions({
   .top-products {
     grid-template-columns: 1fr;
   }
-
-  .charts-container {
-    grid-template-columns: 1fr;
+  
+  .main-chart-wrapper {
+    height: 250px;
+  }
+  
+  .category-chart-wrapper {
+    height: 180px;
   }
 }
 
@@ -1353,8 +1849,7 @@ defineOptions({
 
 :global(.dark) .summary-card,
 :global(.dark) .chart-card,
-:global(.dark) .section-container,
-:global(.dark) .alert-card-container {
+:global(.dark) .section-container {
   background-color: #1f2937;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
@@ -1415,5 +1910,128 @@ defineOptions({
   background-color: #374151;
   border-color: #4a8f4d;
   color: #4a8f4d;
+}
+
+/* Chart Controls */
+.chart-controls {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.chart-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.chart-time-filter {
+  padding: 6px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  background-color: #fff;
+  color: #111827;
+  min-width: 120px;
+}
+
+.chart-export-dropdown {
+  position: relative;
+}
+
+.chart-export-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background-color: #2e5c31;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.chart-export-btn:hover {
+  background-color: #234425;
+}
+
+.chart-export-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 5px;
+  background-color: white;
+  border-radius: 6px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  z-index: 10;
+  min-width: 160px;
+  overflow: hidden;
+}
+
+.chart-export-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: #4b5563;
+  transition: background-color 0.2s;
+}
+
+.chart-export-option:hover {
+  background-color: #f9fafb;
+}
+
+/* Dark mode styles for chart controls */
+:global(.dark) .chart-time-filter {
+  background-color: #374151;
+  border-color: #4b5563;
+  color: #e5e7eb;
+}
+
+:global(.dark) .chart-export-btn {
+  background-color: #3b7a3f;
+}
+
+:global(.dark) .chart-export-btn:hover {
+  background-color: #2e5c31;
+}
+
+:global(.dark) .chart-export-menu {
+  background-color: #1f2937;
+  border: 1px solid #4b5563;
+}
+
+:global(.dark) .chart-export-option {
+  color: #e5e7eb;
+}
+
+:global(.dark) .chart-export-option:hover {
+  background-color: #374151;
+}
+
+/* Responsive adjustments for chart controls */
+@media (max-width: 768px) {
+  .chart-controls {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  
+  .chart-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+  
+  .chart-time-filter {
+    min-width: 100px;
+  }
 }
 </style>

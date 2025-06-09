@@ -126,6 +126,14 @@
                     step="0.01"
                     @input="calculateProfit"
                   >
+                    <label>Production Cost per Kilo (₱)</label>
+                  <input 
+                    type="number" 
+                    v-model="product.costPerKilo" 
+                    min="0"
+                    step="0.01"
+                    @input="calculateProfit"
+                  >
                   <p v-if="product.isOnSale" class="sale-price">
                     Sale Price: ₱{{ calculateSalePrice(product.pricePerKilo).toFixed(2) }}
                   </p>
@@ -148,6 +156,14 @@
                     step="0.01"
                     @input="calculateProfit"
                   >
+                    <label>Production Cost per Sack (₱)</label>
+                    <input 
+                      type="number" 
+                      v-model="product.costPerSack" 
+                      min="0"
+                      step="0.01"
+                      @input="calculateProfit"
+                    >
                   <p v-if="product.isOnSale" class="sale-price">
                     Sale Price: ₱{{ calculateSalePrice(product.pricePerSack).toFixed(2) }}
                   </p>
@@ -177,6 +193,14 @@
                     step="0.01"
                     @input="calculateProfit"
                   >
+                    <label>Production Cost per Tali (₱)</label>
+                    <input 
+                      type="number" 
+                      v-model="product.costPerTali" 
+                      min="0"
+                      step="0.01"
+                      @input="calculateProfit"
+                    >
                   <p v-if="product.isOnSale" class="sale-price">
                     Sale Price: ₱{{ calculateSalePrice(product.pricePerTali).toFixed(2) }}
                   </p>
@@ -206,6 +230,14 @@
                     step="0.01"
                     @input="calculateProfit"
                   >
+                    <label>Production Cost per Kaing (₱)</label>
+                    <input 
+                      type="number" 
+                      v-model="product.costPerKaing" 
+                      min="0"
+                      step="0.01"
+                      @input="calculateProfit"
+                    >
                   <p v-if="product.isOnSale" class="sale-price">
                     Sale Price: ₱{{ calculateSalePrice(product.pricePerKaing).toFixed(2) }}
                   </p>
@@ -225,6 +257,43 @@
                   >
                 </div>
                 
+                <!-- Per Bundle -->
+                <div v-if="unit === 'perBundle'" class="form-group">
+                  <label>Price per Bundle (₱)</label>
+                  <input 
+                    type="number" 
+                    v-model="product.pricePerBundle" 
+                    min="0"
+                    step="0.01"
+                    @input="calculateProfit"
+                  >
+                    <label>Production Cost per Bundle (₱)</label>
+                    <input 
+                      type="number" 
+                      v-model="product.costPerBundle" 
+                      min="0"
+                      step="0.01"
+                      @input="calculateProfit"
+                    >
+                  <p v-if="product.isOnSale" class="sale-price">
+                    Sale Price: ₱{{ calculateSalePrice(product.pricePerBundle).toFixed(2) }}
+                  </p>
+                  <label>Weight per Bundle (kg)</label>
+                  <input 
+                    type="number" 
+                    v-model="product.bundleWeight" 
+                    min="0"
+                    @input="calculateProfit"
+                  >
+                  <label>Available Bundles</label>
+                  <input 
+                    type="number" 
+                    v-model="product.stockPerBundle" 
+                    min="0"
+                    @input="calculateProfit"
+                  >
+                </div>
+                
                 <!-- Per Tray -->
                 <div v-if="unit === 'perTray'" class="form-group">
                   <label>Price per Tray (₱)</label>
@@ -235,6 +304,14 @@
                     step="0.01"
                     @input="calculateProfit"
                   >
+                    <label>Production Cost per Tray (₱)</label>
+                    <input 
+                      type="number" 
+                      v-model="product.costPerTray" 
+                      min="0"
+                      step="0.01"
+                      @input="calculateProfit"
+                    >
                   <p v-if="product.isOnSale" class="sale-price">
                     Sale Price: ₱{{ calculateSalePrice(product.pricePerTray).toFixed(2) }}
                   </p>
@@ -264,6 +341,14 @@
                     step="0.01"
                     @input="calculateProfit"
                   >
+                    <label>Production Cost per Piece (₱)</label>
+                    <input 
+                      type="number" 
+                      v-model="product.costPerPiece" 
+                      min="0"
+                      step="0.01"
+                      @input="calculateProfit"
+                    >
                   <p v-if="product.isOnSale" class="sale-price">
                     Sale Price: ₱{{ calculateSalePrice(product.pricePerPiece).toFixed(2) }}
                   </p>
@@ -280,24 +365,6 @@
 
             <!-- Cost & Profit -->
             <div class="cost-profit-section">
-              <div class="form-group">
-                <label class="with-tooltip">
-                  Production Cost per Unit (₱)
-                  <div class="info-tooltip">
-                    <div class="info-icon">i</div>
-                    <div class="tooltip-content">
-                      Cost to produce one unit including materials and labor
-                    </div>
-                  </div>
-                </label>
-                <input 
-                  type="number" 
-                  v-model="product.cost" 
-                  min="0"
-                  step="0.01"
-                  @input="calculateProfit"
-                >
-              </div>
 
               <div class="form-group">
                 <label class="with-tooltip">
@@ -546,6 +613,7 @@ const availableUnits = ref([
   { value: 'perSack', label: 'Per Sack' },
   { value: 'perTali', label: 'Per Tali' },
   { value: 'perKaing', label: 'Per Kaing' },
+  { value: 'perBundle', label: 'Per Bundle' },
   { value: 'perTray', label: 'Per Tray' },
   { value: 'perPiece', label: 'Per Piece' }
 ]);
@@ -565,8 +633,13 @@ const product = ref({
   code: '',
   
   // Pricing
-  cost: 0,
-  profit: 0,
+  costPerKilo: 0,
+  costPerSack: 0,
+  costPerTali: 0,
+  costPerKaing: 0,
+  costPerBundle: 0,
+  costPerTray: 0,
+  costPerPiece: 0,
   
   // Units
   pricePerKilo: 0,
@@ -580,6 +653,9 @@ const product = ref({
   pricePerKaing: 0,
   kaingWeight: 12,
   stockPerKaing: 0,
+  pricePerBundle: 0,
+  bundleWeight: 12,
+  stockPerBundle: 0,
   pricePerTray: 0,
   itemsPerTray: 30,
   stockPerTray: 0,
@@ -643,45 +719,49 @@ const calculateProfit = () => {
       case 'perKilo':
         price = product.value.isOnSale ? calculateSalePrice(product.value.pricePerKilo) : product.value.pricePerKilo;
         stock = product.value.stockPerKilo;
-        unitCost = product.value.cost;
+        unitCost = product.value.costPerKilo;
         unitProfit = (price - unitCost) * stock;
         break;
         
       case 'perSack':
         price = product.value.isOnSale ? calculateSalePrice(product.value.pricePerSack) : product.value.pricePerSack;
         stock = product.value.stockPerSack;
-        // For sacks, the cost should be per sack, not per kg
-        unitCost = product.value.cost;
+        unitCost = product.value.costPerSack;
         unitProfit = (price - unitCost) * stock;
         break;
         
       case 'perTali':
         price = product.value.isOnSale ? calculateSalePrice(product.value.pricePerTali) : product.value.pricePerTali;
         stock = product.value.stockPerTali;
-        // For tali, the cost should be per tali, not per bunch
-        unitCost = product.value.cost;
+        unitCost = product.value.costPerTali;
         unitProfit = (price - unitCost) * stock;
         break;
         
       case 'perKaing':
         price = product.value.isOnSale ? calculateSalePrice(product.value.pricePerKaing) : product.value.pricePerKaing;
         stock = product.value.stockPerKaing;
-        unitCost = product.value.cost;
+        unitCost = product.value.costPerKaing;
+        unitProfit = (price - unitCost) * stock;
+        break;
+        
+      case 'perBundle':
+        price = product.value.isOnSale ? calculateSalePrice(product.value.pricePerBundle) : product.value.pricePerBundle;
+        stock = product.value.stockPerBundle;
+        unitCost = product.value.costPerBundle;
         unitProfit = (price - unitCost) * stock;
         break;
         
       case 'perTray':
         price = product.value.isOnSale ? calculateSalePrice(product.value.pricePerTray) : product.value.pricePerTray;
         stock = product.value.stockPerTray;
-        // For trays, the cost should be per tray, not per item
-        unitCost = product.value.cost;
+        unitCost = product.value.costPerTray;
         unitProfit = (price - unitCost) * stock;
         break;
         
       case 'perPiece':
         price = product.value.isOnSale ? calculateSalePrice(product.value.pricePerPiece) : product.value.pricePerPiece;
         stock = product.value.stockPerPiece;
-        unitCost = product.value.cost;
+        unitCost = product.value.costPerPiece;
         unitProfit = (price - unitCost) * stock;
         break;
     }
@@ -703,6 +783,9 @@ const handleUnitSelection = (unit) => {
         break;
       case 'perKaing':
         if (!product.value.kaingWeight) product.value.kaingWeight = 12;
+        break;
+      case 'perBundle':
+        if (!product.value.bundleWeight) product.value.bundleWeight = 12;
         break;
       case 'perTray':
         if (!product.value.itemsPerTray) product.value.itemsPerTray = 30;

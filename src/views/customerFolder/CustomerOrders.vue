@@ -8,7 +8,6 @@
       <div class="header-spacer"></div>
     </div>
 
-    
     <div class="content">
       <div class="tabs">
         <button 
@@ -34,20 +33,20 @@
         </button>
       </div>
       
-        <div v-if="loading" class="loading-state">
-    <p>Loading your orders...</p>
-  </div>
-     <div v-else-if="!sortedFilteredOrders || sortedFilteredOrders.length === 0" class="empty-state">
-    <div class="empty-icon">
-      <Package size="60" />
-    </div>
-    <h2>No {{ activeTab }} orders</h2>
-    <p>Your {{ activeTab }} orders will appear here</p>
-    <button v-if="activeTab === 'active'" class="shop-now-btn" @click="$emit('navigate', 'HomePage')">Shop Now</button>
-  </div>
+      <div v-if="loading" class="loading-state">
+        <p>Loading your orders...</p>
+      </div>
+      <div v-else-if="!sortedFilteredOrders || sortedFilteredOrders.length === 0" class="empty-state">
+        <div class="empty-icon">
+          <Package size="60" />
+        </div>
+        <h2>No {{ activeTab }} orders</h2>
+        <p>Your {{ activeTab }} orders will appear here</p>
+        <button v-if="activeTab === 'active'" class="shop-now-btn" @click="$emit('navigate', 'HomePage')">Shop Now</button>
+      </div>
       
       <div v-else class="orders-list">
-    <div class="order-card" v-for="(order, index) in sortedFilteredOrders" :key="index">
+        <div class="order-card" v-for="(order, index) in sortedFilteredOrders" :key="index">
           <div class="order-header">
             <div>
               <h3>Order #{{ order.orderCode }}</h3>
@@ -65,7 +64,7 @@
               </div>
               <div class="item-details">
                 <h4>{{ order.productName }}</h4>
-                <p class="item-quantity">{{ order.weight }} x ₱{{ order.price }}</p>
+                <p class="item-quantity">{{ order.quantity }} {{ order.unit }} x ₱{{ order.unitPrice }}</p>
               </div>
               <p class="item-total">₱{{ order.totalPrice.toFixed(2) }}</p>
             </div>
@@ -107,7 +106,7 @@
                 Reviewed
               </button>
 
-                            <div v-if="order.status === 'Processing'" class="cancel-section">
+              <div v-if="order.status === 'Processing'" class="cancel-section">
                 <div v-if="getTimeRemaining(order.createdAt)" class="countdown-notice">
                   <p>Cancel within: {{ formatTime(getTimeRemaining(order.createdAt)) }}</p>
                 </div>
@@ -218,7 +217,7 @@ export default {
     AlertCircle
   },
   setup() {
-     const loading = ref(true);
+    const loading = ref(true);
     const activeTab = ref('active');
     const orders = ref([]);
     const db = getFirestore();
@@ -239,7 +238,6 @@ export default {
       type: 'success'
     });
 
-    // Define formatDate function before it's used
     const formatDate = (timestamp) => {
       if (!timestamp) return '';
       const date = timestamp.toDate();
@@ -250,9 +248,9 @@ export default {
       });
     };
     
-const fetchOrders = async () => {
+    const fetchOrders = async () => {
       try {
-        loading.value = true; // Set loading to true when starting fetch
+        loading.value = true;
         const userId = auth.currentUser?.uid;
         if (!userId) return;
         
@@ -267,8 +265,9 @@ const fetchOrders = async () => {
             productId: data.productId,
             productImage: data.productImage,
             productName: data.productName,
-            weight: data.weight,
-            price: data.price,
+            quantity: data.quantity,
+            unit: data.unit,
+            unitPrice: data.unitPrice,
             totalPrice: data.totalPrice,
             status: data.status,
             createdAt: data.createdAt,
@@ -281,7 +280,7 @@ const fetchOrders = async () => {
         console.error('Error fetching orders:', error);
         showNotification('Failed to load orders. Please try again.', 'error');
       } finally {
-        loading.value = false; // Set loading to false when done
+        loading.value = false;
       }
     };
     
@@ -369,10 +368,9 @@ const fetchOrders = async () => {
       closeTracking();
     };
     
- const sortedFilteredOrders = computed(() => {
-      if (!orders.value) return []; // Handle undefined case
+    const sortedFilteredOrders = computed(() => {
+      if (!orders.value) return [];
       
-      // First filter the orders by active tab
       const filtered = orders.value.filter(order => {
         if (activeTab.value === 'active') {
           return order.status === 'Processing' || order.status === 'Shipped';
@@ -383,7 +381,7 @@ const fetchOrders = async () => {
         }
         return true;
       });
-       // Then sort by createdAt in descending order (newest first)
+      
       return filtered.sort((a, b) => {
         const dateA = a.createdAt?.toDate()?.getTime() || 0;
         const dateB = b.createdAt?.toDate()?.getTime() || 0;
@@ -395,25 +393,35 @@ const fetchOrders = async () => {
   try {
     if (!auth.currentUser) throw new Error('User not authenticated');
     
-    // Update the order status to 'Cancelled'
     const orderRef = doc(db, 'orders', order.id);
     await updateDoc(orderRef, {
       status: 'Cancelled',
       cancelledAt: serverTimestamp()
     });
     
-    // Update the product stock if needed
     const productRef = doc(db, 'products', order.productId);
     await runTransaction(db, async (transaction) => {
       const productDoc = await transaction.get(productRef);
       if (productDoc.exists()) {
+        // Determine which stock field to update based on unit
+        let stockField;
+        switch(order.unit) {
+          case 'kg': stockField = 'stockPerKilo'; break;
+          case 'sack': stockField = 'stockPerSack'; break;
+          case 'tali': stockField = 'stockPerTali'; break;
+          case 'kaing': stockField = 'stockPerKaing'; break;
+          case 'bundle': stockField = 'stockPerBundle'; break;
+          case 'tray': stockField = 'stockPerTray'; break;
+          case 'piece': stockField = 'stockPerPiece'; break;
+          default: stockField = 'stockPerPiece';
+        }
+        
         transaction.update(productRef, {
-          stock: increment(order.weight)
+          [stockField]: increment(order.quantity)
         });
       }
     });
     
-    // Update the sales record if needed
     const salesQuery = query(
       collection(db, 'sales'),
       where('orderCode', '==', order.orderCode)
@@ -425,7 +433,6 @@ const fetchOrders = async () => {
       });
     });
     
-    // Refresh orders
     await fetchOrders();
     showNotification('Order cancelled successfully', 'success');
   } catch (error) {
@@ -434,41 +441,42 @@ const fetchOrders = async () => {
   }
 };
 
-const getTimeRemaining = (createdAt) => {
-  if (!createdAt) return null;
-  
-  const orderDate = createdAt.toDate();
-  const cancelDeadline = new Date(orderDate.getTime() + 5 * 60 * 1000); // 5 minutes
-  const now = new Date();
-  
-  if (now > cancelDeadline) return null;
-  
-  const diff = cancelDeadline - now;
-  const minutes = Math.floor(diff / (1000 * 60));
-  const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-  
-  return {
-    minutes,
-    seconds,
-    canCancel: true
-  };
-};
+    const getTimeRemaining = (createdAt) => {
+      if (!createdAt) return null;
+      
+      const orderDate = createdAt.toDate();
+      const cancelDeadline = new Date(orderDate.getTime() + 5 * 60 * 1000); // 5 minutes
+      const now = new Date();
+      
+      if (now > cancelDeadline) return null;
+      
+      const diff = cancelDeadline - now;
+      const minutes = Math.floor(diff / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+      
+      return {
+        minutes,
+        seconds,
+        canCancel: true
+      };
+    };
 
-const formatTime = (time) => {
-  if (!time) return '';
-  return `${time.minutes}:${time.seconds.toString().padStart(2, '0')}`;
-};
+    const formatTime = (time) => {
+      if (!time) return '';
+      return `${time.minutes}:${time.seconds.toString().padStart(2, '0')}`;
+    };
+
     onMounted(async () => {
       await fetchUserInfo();
       await fetchOrders();
       await fetchUserReviews();
     });
     
- return {
+    return {
       loading,
       activeTab,
       orders,
-      sortedFilteredOrders, // Make sure to return the correct name
+      sortedFilteredOrders,
       formatDate,
       trackingOrderId,
       showTracking,
@@ -485,9 +493,9 @@ const formatTime = (time) => {
       userId,
       username,
       notification,
-        cancelOrder,
-  getTimeRemaining,
-  formatTime
+      cancelOrder,
+      getTimeRemaining,
+      formatTime
     };
   }
 }
@@ -552,15 +560,15 @@ const formatTime = (time) => {
   align-items: center;
   justify-content: center;
   color: white;
-  background: none; /* Remove background color */
-  border: none; /* Remove border if any */
-  padding: 0; /* Remove padding if any */
+  background: none;
+  border: none;
+  padding: 0;
 }
 
 .header h1 {
   font-size: 18px;
   font-weight: 600;
-  margin: 0; /* Added to ensure proper centering */
+  margin: 0;
 }
 
 .header-buttons {
@@ -568,7 +576,7 @@ const formatTime = (time) => {
   gap: 8px;
 }
 .header-spacer {
-  width: 40px; /* Matches the back button width for symmetry */
+  width: 40px;
 }
 
 .icon-button {
@@ -732,23 +740,23 @@ const formatTime = (time) => {
   margin-bottom: 0;
 }
 
-  .item-image {
-    width: 60px;  /* Increased from 40px */
-    height: 60px; /* Increased from 40px */
-    background-color: #f9f9f9;
-    border-radius: 5px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-right: 10px;
-    overflow: hidden; /* Ensure image doesn't overflow rounded corners */
-  }
+.item-image {
+  width: 60px;
+  height: 60px;
+  background-color: #f9f9f9;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 10px;
+  overflow: hidden;
+}
 
-  .item-image img {
-    width: 100%;  /* Changed from fixed 25px to 100% of container */
-    height: 100%; /* Changed from fixed 25px to 100% of container */
-    object-fit: cover; /* Ensures image covers the space while maintaining aspect ratio */
-  }
+.item-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 
 .item-details {
   flex: 1;

@@ -38,26 +38,41 @@
         </div>
       </div>
       
-      
-<div class="product-categories">
-  <button 
-    v-for="category in categories" 
-    :key="category.id"
-    :class="['category-btn', { active: activeCategory === category.name }]"
-    @click="setActiveCategory(category.name)"
-  >
-    {{ category.name }}
-  </button>
-</div>
+      <div class="product-categories">
+        <button 
+          v-for="category in categories" 
+          :key="category.id"
+          :class="['category-btn', { active: activeCategory === category.name }]"
+          @click="setActiveCategory(category.name)"
+        >
+          {{ category.name }}
+        </button>
+      </div>
 
-<div class="products-grid">
+      <div class="products-grid">
         <div v-if="isLoading" class="loading-state">Loading products...</div>
         <template v-else-if="filteredProducts.length > 0">
           <div class="product-card" v-for="product in filteredProducts" :key="product.id">
             <div class="product-image">
               <img :src="product.image || '/placeholder.svg?height=180&width=180'" alt="Product image" />
-              <div class="product-badge" v-if="product.ribbon">{{ product.ribbon }}</div>
-              <div class="product-status" :class="product.status?.toLowerCase() || ''">{{ product.status || 'No Status' }}</div>
+              <!-- Status Badges -->
+              <div v-if="product.isOnSale" class="product-badge sale">
+                Sale {{ product.discountPercentage }}%
+              </div>
+              <div v-else-if="product.isPreOrder" class="product-badge pre-order">
+                Pre-Order
+              </div>
+              <div v-else-if="product.wholesaleAvailable" class="product-badge wholesale">
+                Wholesale
+              </div>
+              <div v-else-if="product.status === 'limited'" class="product-badge limited">
+                Limited
+              </div>
+              
+              <!-- Status Indicator -->
+              <div class="product-status" :class="product.isActive ? 'active' : 'inactive'">
+                {{ product.isActive ? 'Active' : 'Inactive' }}
+              </div>
             </div>
             <div class="product-details">
               <div class="product-category">{{ product.category || 'No Category' }}</div>
@@ -76,21 +91,74 @@
                   {{ product.views || 0 }}
                 </div>
               </div>
+              
+              <!-- Price Display -->
               <div class="product-price">
-                <div class="current-price">₱{{ (Number(product.price) || 0).toFixed(2) }}/{{ product.unit }}</div>
-                <div class="profit">Profit: ₱{{ (Number(product.profit) || 0).toFixed(2) }}</div>
+                <div class="current-price">₱{{ getDisplayPrice(product) }}</div>
+                <div class="profit">Profit: ₱{{ Number(product.profit || 0).toFixed(2) }}</div>
               </div>
-              <div class="product-stock">
-                <div class="stock-label">Stock:</div>
-                <div class="stock-bar">
-                  <div 
-                    class="stock-progress" 
-                    :style="{ width: `${(product.stock / product.maxStock) * 100}%` }"
-                    :class="getStockClass(product.stock, product.maxStock)"
-                  ></div>
+
+              <div class="available-units" v-if="getAvailableUnits(product).length > 0">
+                <span class="units-label">Available as:</span>
+                <div class="unit-tags">
+                  <span class="unit-tag" v-for="unit in getAvailableUnits(product)" :key="unit">
+                    {{ unit }}
+                  </span>
                 </div>
-                <div class="stock-value">{{ product.stock }} {{ product.unit }}</div>
               </div>
+              
+              <!-- Stock Display with Dropdown -->
+              <div class="product-stock">
+                <div class="stock-header">
+                  <div class="stock-label">Stock:</div>
+                  <div class="stock-dropdown" v-if="getStockByUnit(product).length > 1">
+                    <button 
+                      class="stock-dropdown-btn" 
+                      @click="toggleStockDropdown(product.id)"
+                      :class="{ active: openStockDropdown === product.id }"
+                    >
+                      <ChevronDown size="14" />
+                    </button>
+                  </div>
+                </div>
+                
+                <!-- Main Stock Display -->
+                <div class="main-stock-display">
+                  <div class="stock-bar">
+                    <div 
+                      class="stock-progress" 
+                      :style="{ width: `${getMainStockPercentage(product)}%` }"
+                      :class="getStockClass(getMainStockPercentage(product))"
+                    ></div>
+                  </div>
+                  <div class="stock-value">{{ getMainStockDisplay(product) }}</div>
+                </div>
+                
+                <!-- Dropdown Stock Details -->
+                <div 
+                  v-if="openStockDropdown === product.id && getStockByUnit(product).length > 1" 
+                  class="stock-dropdown-content"
+                >
+                  <div 
+                    v-for="stockInfo in getStockByUnit(product)" 
+                    :key="stockInfo.unit" 
+                    class="stock-item"
+                  >
+                    <div class="stock-item-header">
+                      <span class="stock-unit">{{ stockInfo.unit }}:</span>
+                      <span class="stock-quantity">{{ stockInfo.quantity }} {{ stockInfo.unitLabel }}</span>
+                    </div>
+                    <div class="stock-item-bar">
+                      <div 
+                        class="stock-progress" 
+                        :style="{ width: `${stockInfo.percentage}%` }"
+                        :class="getStockClass(stockInfo.percentage)"
+                      ></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
               <div class="product-actions">
                 <router-link :to="`/edit-product/${product.id}`" class="edit-btn">
                   <Edit size="16" />
@@ -122,15 +190,12 @@
   </div>
 </template>
 
-
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useRouter } from 'vue-router';
 import { db } from '@/firebase/firebaseConfig';
-import { collection as fbCollection, query, where, getDocs, doc, deleteDoc } from 'firebase/firestore';
+import { collection as fbCollection, query, where, getDocs, doc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
-
-// ✅ Fixed Firestore imports for category fetching
 import { getFirestore, getDocs as getDocsCat, collection as catCollection } from 'firebase/firestore';
 import { getApp } from 'firebase/app';
 
@@ -160,9 +225,10 @@ const activeFilter = ref('All');
 const isLoading = ref(true);
 const showModal = ref(false);
 const productToDelete = ref(null);
+const openStockDropdown = ref(null);
 
 // Filter options
-const filterOptions = ['All', 'Active', 'Inactive', 'Scheduled'];
+const filterOptions = ['All', 'Active', 'Inactive', 'On Sale', 'Pre-Order', 'Wholesale', 'Limited'];
 
 // Dynamic categories and products
 const categories = ref([]);
@@ -193,40 +259,146 @@ const handleDeleteCancel = () => {
   productToDelete.value = null;
 };
 
-// Fetch products
-const fetchProducts = async () => {
-  const user = auth.currentUser;
-  if (!user) {
-    alert('You must be logged in to view products.');
-    router.push('/login');
-    return;
+// Stock dropdown toggle
+const toggleStockDropdown = (productId) => {
+  openStockDropdown.value = openStockDropdown.value === productId ? null : productId;
+};
+
+// Get display price based on available pricing options
+const getDisplayPrice = (product) => {
+  if (product.pricePerKilo > 0) return product.pricePerKilo.toFixed(2) + '/kg';
+  if (product.pricePerSack > 0) return product.pricePerSack.toFixed(2) + '/sack';
+  if (product.pricePerTali > 0) return product.pricePerTali.toFixed(2) + '/tali';
+  if (product.pricePerKaing > 0) return product.pricePerKaing.toFixed(2) + '/kaing';
+  if (product.pricePerTray > 0) return product.pricePerTray.toFixed(2) + '/tray';
+  if (product.pricePerPiece > 0) return product.pricePerPiece.toFixed(2) + '/piece';
+  if (product.pricePerBundle > 0) return product.pricePerBundle.toFixed(2) + '/bundle';
+  return '0.00';
+};
+
+// Get stock information by unit type
+const getStockByUnit = (product) => {
+  const stockInfo = [];
+
+  if (product.pricePerKilo > 0) {
+    const currentStock = product.stockPerKilo || 0;
+    // Dynamic percentage: 100% when stock >= 50kg, scales down proportionally
+    const optimalStock = Math.max(currentStock, 50);
+    const percentage = Math.min(100, (currentStock / optimalStock) * 100);
+    stockInfo.push({
+      unit: 'Kilo',
+      unitLabel: 'kg',
+      quantity: currentStock,
+      percentage: percentage
+    });
   }
 
-  try {
-    const q = query(fbCollection(db, 'products'), where('sellerId', '==', user.uid));
-    const querySnapshot = await getDocs(q);
-    products.value = querySnapshot.docs.map((doc) => {
-      const data = doc.data();
-      return {
-        id: doc.id,
-        productName: data.productName || 'No Name',
-        category: data.category || 'No Category',
-        status: data.status || 'No Status',
-        price: Number(data.price) || 0,
-        profit: Number(data.profit) || 0,
-        stock: Number(data.stock) || 0,
-        maxStock: Number(data.maxStock) || 0,
-        unit: data.unit || 'unit',
-        sellerId: data.sellerId || user.uid,
-        ...data,
-      };
+  if (product.pricePerSack > 0) {
+    const currentStock = product.stockPerSack || 0;
+    // Dynamic percentage: 100% when stock >= 20 sacks, scales down proportionally
+    const optimalStock = Math.max(currentStock, 20);
+    const percentage = Math.min(100, (currentStock / optimalStock) * 100);
+    stockInfo.push({
+      unit: 'Sack',
+      unitLabel: 'sacks',
+      quantity: currentStock,
+      percentage: percentage
     });
-  } catch (error) {
-    console.error('Error fetching products:', error);
-    alert('Failed to fetch products.');
-  } finally {
-    isLoading.value = false;
   }
+
+  if (product.pricePerBundle > 0) {
+    const currentStock = product.stockPerBundle || 0;
+    // Dynamic percentage: 100% when stock >= 15 bundles, scales down proportionally
+    const optimalStock = Math.max(currentStock, 15);
+    const percentage = Math.min(100, (currentStock / optimalStock) * 100);
+    stockInfo.push({
+      unit: 'Bundle',
+      unitLabel: 'bundles',
+      quantity: currentStock,
+      percentage: percentage
+    });
+  }
+
+  if (product.pricePerTali > 0) {
+    const currentStock = product.stockPerTali || 0;
+    // Dynamic percentage: 100% when stock >= 30 tali, scales down proportionally
+    const optimalStock = Math.max(currentStock, 30);
+    const percentage = Math.min(100, (currentStock / optimalStock) * 100);
+    stockInfo.push({
+      unit: 'Tali',
+      unitLabel: 'tali',
+      quantity: currentStock,
+      percentage: percentage
+    });
+  }
+
+  if (product.pricePerKaing > 0) {
+    const currentStock = product.stockPerKaing || 0;
+    // Dynamic percentage: 100% when stock >= 25 kaing, scales down proportionally
+    const optimalStock = Math.max(currentStock, 25);
+    const percentage = Math.min(100, (currentStock / optimalStock) * 100);
+    stockInfo.push({
+      unit: 'Kaing',
+      unitLabel: 'kaing',
+      quantity: currentStock,
+      percentage: percentage
+    });
+  }
+
+  if (product.pricePerTray > 0) {
+    const currentStock = product.stockPerTray || 0;
+    // Dynamic percentage: 100% when stock >= 40 trays, scales down proportionally
+    const optimalStock = Math.max(currentStock, 40);
+    const percentage = Math.min(100, (currentStock / optimalStock) * 100);
+    stockInfo.push({
+      unit: 'Tray',
+      unitLabel: 'trays',
+      quantity: currentStock,
+      percentage: percentage
+    });
+  }
+
+  if (product.pricePerPiece > 0) {
+    const currentStock = product.stockPerPiece || 0;
+    // Dynamic percentage: 100% when stock >= 100 pieces, scales down proportionally
+    const optimalStock = Math.max(currentStock, 100);
+    const percentage = Math.min(100, (currentStock / optimalStock) * 100);
+    stockInfo.push({
+      unit: 'Piece',
+      unitLabel: 'pieces',
+      quantity: currentStock,
+      percentage: percentage
+    });
+  }
+
+  return stockInfo;
+};
+
+// Get main stock display (first available unit)
+const getMainStockDisplay = (product) => {
+  const stockInfo = getStockByUnit(product);
+  if (stockInfo.length > 0) {
+    const main = stockInfo[0];
+    return `${main.quantity} ${main.unitLabel}`;
+  }
+  return '0';
+};
+
+// Get main stock percentage (first available unit)
+const getMainStockPercentage = (product) => {
+  const stockInfo = getStockByUnit(product);
+  if (stockInfo.length > 0) {
+    return stockInfo[0].percentage;
+  }
+  return 0;
+};
+
+// Get stock class based on percentage
+const getStockClass = (percentage) => {
+  if (percentage <= 0) return 'out';
+  if (percentage < 20) return 'low';
+  if (percentage < 50) return 'medium';
+  return 'high';
 };
 
 // Computed: filtered products
@@ -234,12 +406,18 @@ const filteredProducts = computed(() => {
   return products.value.filter(product => {
     const productName = product.productName?.toLowerCase() || '';
     const category = product.category?.toLowerCase() || '';
-    const status = product.status?.toLowerCase() || '';
-
+    
     const matchesSearch = productName.includes(searchQuery.value.toLowerCase());
     const matchesCategory = activeCategory.value === 'all' || category === activeCategory.value.toLowerCase();
-    const matchesFilter = activeFilter.value === 'All' || status === activeFilter.value.toLowerCase();
-
+    
+    let matchesFilter = true;
+    if (activeFilter.value === 'Active') matchesFilter = product.isActive;
+    else if (activeFilter.value === 'Inactive') matchesFilter = !product.isActive;
+    else if (activeFilter.value === 'On Sale') matchesFilter = product.isOnSale;
+    else if (activeFilter.value === 'Pre-Order') matchesFilter = product.isPreOrder;
+    else if (activeFilter.value === 'Wholesale') matchesFilter = product.wholesaleAvailable;
+    else if (activeFilter.value === 'Limited') matchesFilter = product.status === 'limited';
+    
     return matchesSearch && matchesCategory && matchesFilter;
   });
 });
@@ -259,19 +437,95 @@ const setFilter = (filter) => {
   showFilterDropdown.value = false;
 };
 
-// Stock visual
-const getStockClass = (stock, maxStock) => {
-  const percentage = (stock / maxStock) * 100;
-  if (percentage < 20) return 'low';
-  if (percentage < 50) return 'medium';
-  return 'high';
-};
-
 // Close dropdown if clicked outside
 const clickOutside = (event) => {
   const filterDropdown = document.querySelector('.filter-dropdown');
   if (filterDropdown && !filterDropdown.contains(event.target)) {
     showFilterDropdown.value = false;
+  }
+  
+  // Close stock dropdown if clicked outside
+  const stockDropdowns = document.querySelectorAll('.product-stock');
+  let clickedInsideStock = false;
+  stockDropdowns.forEach(dropdown => {
+    if (dropdown.contains(event.target)) {
+      clickedInsideStock = true;
+    }
+  });
+  
+  if (!clickedInsideStock) {
+    openStockDropdown.value = null;
+  }
+};
+
+const getAvailableUnits = (product) => {
+  const units = [];
+  if (product.pricePerKilo > 0) units.push('kg');
+  if (product.pricePerSack > 0) units.push('sack');
+  if (product.pricePerTali > 0) units.push('tali');
+  if (product.pricePerKaing > 0) units.push('kaing');
+  if (product.pricePerTray > 0) units.push('tray');
+  if (product.pricePerPiece > 0) units.push('piece');
+  if (product.pricePerBundle > 0) units.push('bundle');
+  return units;
+};
+
+// Fetch products
+const fetchProducts = async () => {
+  const user = auth.currentUser;
+  if (!user) {
+    alert('You must be logged in to view products.');
+    router.push('/login');
+    return;
+  }
+
+  try {
+    const q = query(fbCollection(db, 'products'), where('sellerId', '==', user.uid));
+    const querySnapshot = await getDocs(q);
+    products.value = querySnapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        productName: data.productName || 'No Name',
+        category: data.category || 'No Category',
+        status: data.status || 'available',
+        isActive: data.isActive !== undefined ? data.isActive : true,
+        isOnSale: data.isOnSale || false,
+        isPreOrder: data.isPreOrder || false,
+        wholesaleAvailable: data.wholesaleAvailable || false,
+        discountPercentage: data.discountPercentage || 0,
+        pricePerKilo: Number(data.pricePerKilo) || 0,
+        pricePerSack: Number(data.pricePerSack) || 0,
+        pricePerTali: Number(data.pricePerTali) || 0,
+        pricePerKaing: Number(data.pricePerKaing) || 0,
+        pricePerTray: Number(data.pricePerTray) || 0,
+        pricePerPiece: Number(data.pricePerPiece) || 0,
+        stockPerKilo: Number(data.stockPerKilo) || 0,
+        stockPerSack: Number(data.stockPerSack) || 0,
+        stockPerTali: Number(data.stockPerTali) || 0,
+        stockPerKaing: Number(data.stockPerKaing) || 0,
+        stockPerTray: Number(data.stockPerTray) || 0,
+        stockPerPiece: Number(data.stockPerPiece) || 0,
+        sackWeight: Number(data.sackWeight) || 50,
+        kaingWeight: Number(data.kaingWeight) || 12,
+        itemsPerTali: Number(data.itemsPerTali) || 10,
+        itemsPerTray: Number(data.itemsPerTray) || 30,
+        profit: Number(data.profit) || 0,
+        sales: Number(data.sales) || 0,
+        rating: Number(data.rating) || 0,
+        views: Number(data.views) || 0,
+        sellerId: data.sellerId || user.uid,
+        pricePerBundle: Number(data.pricePerBundle) || 0,
+        stockPerBundle: Number(data.stockPerBundle) || 0,
+        bundleWeight: Number(data.bundleWeight) || 12,
+        ...data,
+      };
+    });
+  } catch (error) {
+    console.error('Error fetching products:', error);
+    alert('Failed to fetch products.');
+  } finally {
+    isLoading.value = false;
   }
 };
 
@@ -293,7 +547,6 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', clickOutside);
 });
 </script>
-
 
 <style scoped>
 .dashboard-container {
@@ -509,11 +762,26 @@ onBeforeUnmount(() => {
   top: 10px;
   right: 10px;
   padding: 4px 8px;
-  background-color: #2e5c31;
-  color: #fff;
   font-size: 0.7rem;
   font-weight: 500;
   border-radius: 4px;
+  color: white;
+}
+
+.product-badge.sale {
+  background-color: #ef4444;
+}
+
+.product-badge.pre-order {
+  background-color: #f59e0b;
+}
+
+.product-badge.wholesale {
+  background-color: #3b82f6;
+}
+
+.product-badge.limited {
+  background-color: #8b5cf6;
 }
 
 .product-status {
@@ -533,11 +801,6 @@ onBeforeUnmount(() => {
 
 .product-status.inactive {
   background-color: #ef4444;
-  color: #fff;
-}
-
-.product-status.scheduled {
-  background-color: #f59e0b;
   color: #fff;
 }
 
@@ -596,16 +859,76 @@ onBeforeUnmount(() => {
   color: #10b981;
 }
 
+.available-units {
+  margin-bottom: 10px;
+}
+
+.units-label {
+  font-size: 0.8rem;
+  color: #6b7280;
+  margin-right: 8px;
+}
+
+.unit-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.unit-tag {
+  font-size: 0.7rem;
+  padding: 3px 8px;
+  background-color: #e5e7eb;
+  border-radius: 12px;
+  color: #4b5563;
+}
+
+/* Enhanced Stock Section with Dropdown */
 .product-stock {
+  margin-bottom: 15px;
+  position: relative;
+}
+
+.stock-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 15px;
+  justify-content: space-between;
+  margin-bottom: 8px;
 }
 
 .stock-label {
   font-size: 0.8rem;
   color: #6b7280;
+}
+
+.stock-dropdown {
+  position: relative;
+}
+
+.stock-dropdown-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  color: #6b7280;
+}
+
+.stock-dropdown-btn:hover {
+  background-color: #f3f4f6;
+  color: #374151;
+}
+
+.stock-dropdown-btn.active {
+  transform: rotate(180deg);
+  color: #2e5c31;
+}
+
+.main-stock-display {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .stock-bar {
@@ -619,6 +942,7 @@ onBeforeUnmount(() => {
 .stock-progress {
   height: 100%;
   border-radius: 3px;
+  transition: width 0.3s ease;
 }
 
 .stock-progress.high {
@@ -633,11 +957,63 @@ onBeforeUnmount(() => {
   background-color: #ef4444;
 }
 
+.stock-progress.out {
+  background-color: #6b7280;
+}
+
 .stock-value {
   font-size: 0.8rem;
   color: #6b7280;
-  min-width: 25px;
+  min-width: 60px;
   text-align: right;
+}
+
+/* Stock Dropdown Content */
+.stock-dropdown-content {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background-color: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  z-index: 20;
+  padding: 8px;
+  margin-top: 4px;
+}
+
+.stock-item {
+  margin-bottom: 8px;
+}
+
+.stock-item:last-child {
+  margin-bottom: 0;
+}
+
+.stock-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.stock-unit {
+  font-size: 0.75rem;
+  color: #374151;
+  font-weight: 500;
+}
+
+.stock-quantity {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.stock-item-bar {
+  height: 4px;
+  background-color: #f3f4f6;
+  border-radius: 2px;
+  overflow: hidden;
 }
 
 .product-actions {
@@ -745,6 +1121,16 @@ onBeforeUnmount(() => {
   }
 }
 
+/* Dark mode styles */
+:global(.dark) .unit-tag {
+  background-color: #374151;
+  color: #d1d5db;
+}
+
+:global(.dark) .units-label {
+  color: #9ca3af;
+}
+
 :global(.dark) .main-content {
   background-color: #111827;
 }
@@ -791,5 +1177,26 @@ onBeforeUnmount(() => {
 
 :global(.dark) .profit {
   color: #34d399;
+}
+
+:global(.dark) .stock-dropdown-content {
+  background-color: #1f2937;
+  border-color: #374151;
+}
+
+:global(.dark) .stock-unit {
+  color: #d1d5db;
+}
+
+:global(.dark) .stock-quantity {
+  color: #9ca3af;
+}
+
+:global(.dark) .stock-item-bar {
+  background-color: #374151;
+}
+
+:global(.dark) .stock-dropdown-btn:hover {
+  background-color: #374151;
 }
 </style>

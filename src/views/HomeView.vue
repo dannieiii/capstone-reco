@@ -99,10 +99,6 @@
                 <input type="checkbox" v-model="typeFilter" value="trending">
                 <span>Trending</span>
               </label>
-              <label class="type-option">
-                <input type="checkbox" v-model="typeFilter" value="wholesale">
-                <span>Wholesale</span>
-              </label>
             </div>
           </div>
           
@@ -121,14 +117,17 @@
             @input="applyFiltersImmediately"
           >
         </div>
-        <div class="header-buttons">
-          <button class="icon-button" @click="navigateToPath('/cart')">
-            <ShoppingCart size="18" />
-            <span v-if="cartItems.length > 0" class="cart-badge">{{ cartItems.length }}</span>
-          </button>
-          <button class="icon-button profile-icon" @click="toggleProfileMenu" ref="profileRef">
-            <User size="18" />
-          </button>
+<div class="header-buttons">
+  <button class="icon-button" @click="navigateToPath('/cart')">
+    <ShoppingCart size="18" />
+    <span v-if="cartItems.length > 0" class="cart-badge">{{ cartItems.length }}</span>
+  </button>
+  <button class="icon-button profile-icon" @click="toggleProfileMenu" ref="profileRef">
+    <div class="profile-icon-container">
+      <img v-if="userPhotoURL" :src="userPhotoURL" alt="User avatar" class="profile-avatar-icon" />
+      <User v-else size="18" class="default-profile-icon" />
+    </div>
+  </button>
           
           
           <div class="profile-dropdown" v-if="showProfileMenu">
@@ -325,18 +324,156 @@
       </div>
 
       
+ <div class="products-grid">
+      <div v-if="isLoading" class="loading-state">
+        <div class="spinner"></div>
+        <p>Loading products...</p>
+      </div>
+      <div v-else-if="filteredProducts.length === 0" class="no-products">
+        <img src="https://cdn-icons-png.flaticon.com/512/5445/5445197.png" alt="No products" class="no-products-icon">
+        <p>No products found with current filters.</p>
+        <button class="browse-all-btn" @click="resetAllFilters">Reset All Filters</button>
+      </div>
+      <div v-else class="products-container">
+        <div class="product-card" v-for="(product, index) in filteredProducts" :key="index" @click="viewProduct(product)">
+          <div class="product-image">
+            <img 
+              :src="product.image" 
+              :alt="product.productName || product.name"
+              @error="handleProductImageError($event, product)"
+            >
+            <div v-if="product.ribbon" :class="['product-ribbon', `ribbon-${product.ribbon}`]">
+              <span v-if="product.ribbon === 'new'">NEW</span>
+              <span v-else-if="product.ribbon === 'sale'">{{ product.discountPercentage }}% OFF</span>
+              <span v-else-if="product.ribbon === 'pre-order'">PRE-ORDER</span>
+              <span v-else-if="product.ribbon === 'organic'">ORGANIC</span>
+              <span v-else-if="product.ribbon === 'limited'">LIMITED</span>
+            </div>
+            <div class="product-badge" v-if="product.isOrganic && !product.ribbon">Organic</div>
+            
+            <div class="trending-badge" v-if="product.isTrending">
+              <TrendingUp size="12" />
+              Trending
+            </div>
+            
+            <div class="hot-seller-badge" v-if="product.isHotSeller && !product.isTrending">
+              <Flame size="12" />
+              Hot Seller
+            </div>
+          </div>
+          <div class="product-info">
+            <h3>{{ product.productName || product.name }}</h3>
+            <div class="product-meta">
+              <ProductRating :productId="product.id" />
+              <div class="product-stats">
+                <Eye size="12" />
+                <span>{{ product.views || 0 }}</span>
+              </div>
+              <div class="product-stats">
+                <ShoppingBag size="12" />
+                <span>{{ product.sold || 0 }}</span>
+              </div>
+            </div>
+            
+            <!-- Display available unit prices -->
+            <div class="unit-prices">
+              <div v-if="product.pricePerKilo > 0" class="price-tag">
+                <span class="price">₱{{ formatPrice(product.pricePerKilo) }}</span>
+                <span class="unit">/kg</span>
+                <span v-if="product.isOnSale" class="sale-price">
+                  ₱{{ formatPrice(calculateSalePrice(product.pricePerKilo, product.discountPercentage)) }}
+                </span>
+              </div>
+              <div v-if="product.pricePerSack > 0" class="price-tag">
+                <span class="price">₱{{ formatPrice(product.pricePerSack) }}</span>
+                <span class="unit">/sack</span>
+                <span v-if="product.isOnSale" class="sale-price">
+                  ₱{{ formatPrice(calculateSalePrice(product.pricePerSack, product.discountPercentage)) }}
+                </span>
+              </div>
+              <div v-if="product.pricePerTali > 0" class="price-tag">
+                <span class="price">₱{{ formatPrice(product.pricePerTali) }}</span>
+                <span class="unit">/tali</span>
+                <span v-if="product.isOnSale" class="sale-price">
+                  ₱{{ formatPrice(calculateSalePrice(product.pricePerTali, product.discountPercentage)) }}
+                </span>
+              </div>
+              <div v-if="product.pricePerKaing > 0" class="price-tag">
+                <span class="price">₱{{ formatPrice(product.pricePerKaing) }}</span>
+                <span class="unit">/kaing</span>
+                <span v-if="product.isOnSale" class="sale-price">
+                  ₱{{ formatPrice(calculateSalePrice(product.pricePerKaing, product.discountPercentage)) }}
+                </span>
+              </div>
+              <div v-if="product.pricePerBundle > 0" class="price-tag">
+                <span class="price">₱{{ formatPrice(product.pricePerBundle) }}</span>
+                <span class="unit">/bundle</span>
+                <span v-if="product.isOnSale" class="sale-price">
+                  ₱{{ formatPrice(calculateSalePrice(product.pricePerBundle, product.discountPercentage)) }}
+                </span>
+              </div>
+              <div v-if="product.pricePerTray > 0" class="price-tag">
+                <span class="price">₱{{ formatPrice(product.pricePerTray) }}</span>
+                <span class="unit">/tray</span>
+                <span v-if="product.isOnSale" class="sale-price">
+                  ₱{{ formatPrice(calculateSalePrice(product.pricePerTray, product.discountPercentage)) }}
+                </span>
+              </div>
+              <div v-if="product.pricePerPiece > 0" class="price-tag">
+                <span class="price">₱{{ formatPrice(product.pricePerPiece) }}</span>
+                <span class="unit">/piece</span>
+                <span v-if="product.isOnSale" class="sale-price">
+                  ₱{{ formatPrice(calculateSalePrice(product.pricePerPiece, product.discountPercentage)) }}
+                </span>
+              </div>
+            </div>
+          </div>
+          <button class="add-to-cart-button" @click.stop="addToCart(product)" :disabled="!hasAvailableStock(product)">
+            <ShoppingCart size="14" />
+            <span class="add-text">Add</span>
+          </button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Wholesale Products Section -->
+    <div class="wholesale-section" v-if="showWholesaleSection">
+      <div class="section-header">
+        <h2>Wholesale Products</h2>
+        <div class="section-actions">
+          <span class="product-count">{{ wholesaleProducts.length }} products</span>
+        </div>
+      </div>
+      
+      <div class="wholesale-info">
+        <div class="info-card">
+          <Package size="24" />
+          <h3>Bulk Orders</h3>
+          <p>Get better prices when you order in bulk</p>
+        </div>
+        <div class="info-card">
+          <Truck size="24" />
+          <h3>Free Delivery</h3>
+          <p>Free delivery for wholesale orders</p>
+        </div>
+        <div class="info-card">
+          <Percent size="24" />
+          <h3>Special Discounts</h3>
+          <p>Additional discounts for large orders</p>
+        </div>
+      </div>
+
       <div class="products-grid">
         <div v-if="isLoading" class="loading-state">
           <div class="spinner"></div>
-          <p>Loading products...</p>
+          <p>Loading wholesale products...</p>
         </div>
-        <div v-else-if="filteredProducts.length === 0" class="no-products">
+        <div v-else-if="wholesaleProducts.length === 0" class="no-products">
           <img src="https://cdn-icons-png.flaticon.com/512/5445/5445197.png" alt="No products" class="no-products-icon">
-          <p>No products found with current filters.</p>
-          <button class="browse-all-btn" @click="resetAllFilters">Reset All Filters</button>
+          <p>No wholesale products available.</p>
         </div>
         <div v-else class="products-container">
-          <div class="product-card" v-for="(product, index) in filteredProducts" :key="index" @click="viewProduct(product)">
+          <div class="product-card" v-for="(product, index) in wholesaleProducts" :key="index" @click="viewProduct(product)">
             <div class="product-image">
               <img 
                 :src="product.image" 
@@ -355,11 +492,6 @@
               <div class="wholesale-badge" v-if="product.wholesale">
                 <Package size="12" />
                 Wholesale
-              </div>
-              
-              <div class="preorder-badge" v-if="product.preorder">
-                <Calendar size="12" />
-                Pre-order
               </div>
               
               <div class="trending-badge" v-if="product.isTrending">
@@ -401,110 +533,7 @@
           </div>
         </div>
       </div>
-
-      <!-- Wholesale Products Section -->
-      <div class="wholesale-section" v-if="showWholesaleSection">
-        <div class="section-header">
-          <h2>Wholesale Products</h2>
-          <div class="section-actions">
-            <span class="product-count">{{ wholesaleProducts.length }} products</span>
-          </div>
-        </div>
-        
-        <div class="wholesale-info">
-          <div class="info-card">
-            <Package size="24" />
-            <h3>Bulk Orders</h3>
-            <p>Get better prices when you order in bulk</p>
-          </div>
-          <div class="info-card">
-            <Truck size="24" />
-            <h3>Free Delivery</h3>
-            <p>Free delivery for wholesale orders</p>
-          </div>
-          <div class="info-card">
-            <Percent size="24" />
-            <h3>Special Discounts</h3>
-            <p>Additional discounts for large orders</p>
-          </div>
-        </div>
-
-        <div class="products-grid">
-          <div v-if="isLoading" class="loading-state">
-            <div class="spinner"></div>
-            <p>Loading wholesale products...</p>
-          </div>
-          <div v-else-if="wholesaleProducts.length === 0" class="no-products">
-            <img src="https://cdn-icons-png.flaticon.com/512/5445/5445197.png" alt="No products" class="no-products-icon">
-            <p>No wholesale products available.</p>
-          </div>
-          <div v-else class="products-container">
-            <div class="product-card" v-for="(product, index) in wholesaleProducts" :key="index" @click="viewProduct(product)">
-              <div class="product-image">
-                <img 
-                  :src="product.image" 
-                  :alt="product.productName || product.name"
-                  @error="handleProductImageError($event, product)"
-                >
-                <div v-if="product.ribbon" :class="['product-ribbon', `ribbon-${product.ribbon}`]">
-                  <span v-if="product.ribbon === 'new'">NEW</span>
-                  <span v-else-if="product.ribbon === 'sale'">{{ product.discount }}% OFF</span>
-                  <span v-else-if="product.ribbon === 'pre-order'">PRE-ORDER</span>
-                  <span v-else-if="product.ribbon === 'organic'">ORGANIC</span>
-                  <span v-else-if="product.ribbon === 'limited'">LIMITED</span>
-                </div>
-                <div class="product-badge" v-if="product.isOrganic && !product.ribbon">Organic</div>
-                
-                <div class="wholesale-badge" v-if="product.wholesale">
-                  <Package size="12" />
-                  Wholesale
-                </div>
-                
-                <div class="preorder-badge" v-if="product.preorder">
-                  <Calendar size="12" />
-                  Pre-order
-                </div>
-                
-                <div class="trending-badge" v-if="product.isTrending">
-                  <TrendingUp size="12" />
-                  Trending
-                </div>
-                
-                <div class="hot-seller-badge" v-if="product.isHotSeller && !product.isTrending">
-                  <Flame size="12" />
-                  Hot Seller
-                </div>
-              </div>
-              <div class="product-info">
-                <h3>{{ product.productName || product.name }}</h3>
-                <div class="product-meta">
-                  <ProductRating :productId="product.id" />
-                  <div class="product-stats">
-                    <Eye size="12" />
-                    <span>{{ product.views || 0 }}</span>
-                  </div>
-                  <div class="product-stats">
-                    <ShoppingBag size="12" />
-                    <span>{{ product.sold || 0 }}</span>
-                  </div>
-                </div>
-                <div class="price">
-                  <span v-if="product.wholesalePrice">₱{{ formatPrice(product.wholesalePrice) }}</span>
-                  <span v-else>₱{{ formatPrice(product.price) }}</span>
-                  <span v-if="product.minOrderQuantity" class="min-order">
-                    Min: {{ product.minOrderQuantity }} units
-                  </span>
-                  <span class="unit">/kg</span>
-                </div>
-              </div>
-              <button class="add-to-cart-button" @click.stop="addToCart(product)" :disabled="product.stock <= 0">
-                <ShoppingCart size="14" />
-                <span class="add-text">Add</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+    </div>
     </div>
     
     <bottom-navigation active-tab="/" @navigate="handleBottomNavigation" />
@@ -534,9 +563,9 @@ import {
   TrendingUp,
   Flame,
   Package,
-  Calendar,
   Truck,
-  Percent
+  Percent,
+  Calendar
 } from 'lucide-vue-next';
 import { onMounted, onUnmounted, ref, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
@@ -575,9 +604,9 @@ export default {
     TrendingUp,
     Flame,
     Package,
-    Calendar,
     Truck,
-    Percent
+    Percent,
+    Calendar
   },
   setup() {
     const router = useRouter();
@@ -674,8 +703,7 @@ const filteredProducts = computed(() => {
             (typeFilter.value.includes('organic') && product.isOrganic) ||
             (typeFilter.value.includes('new') && product.ribbon === 'new') ||
             (typeFilter.value.includes('sale') && product.ribbon === 'sale') ||
-            (typeFilter.value.includes('trending') && product.isTrending) ||
-            (typeFilter.value.includes('wholesale') && product.wholesale === true)
+            (typeFilter.value.includes('trending') && product.isTrending)
           );
         });
       }
@@ -889,56 +917,57 @@ const filteredProducts = computed(() => {
       }
     };
 
-    const fetchProducts = async () => {
+const fetchProducts = async () => {
       try {
         const querySnapshot = await getDocs(collection(db, 'products'));
         
-        // Process all products
         const allProducts = querySnapshot.docs.map((doc) => {
-          // Get product data
           const productData = doc.data();
           
-          // Calculate if this is a trending product (based primarily on sales)
+          // Calculate if this is a trending product
           const views = parseInt(productData.views || 0);
           const sold = parseInt(productData.sold || 0);
-          const isTrending = sold > 15; // Threshold for trending based on sales
-          const isHotSeller = sold > 10 && sold <= 15; // Hot seller but not trending
+          const isTrending = sold > 15;
+          const isHotSeller = sold > 10 && sold <= 15;
           
           // Generate a random ribbon type for products without explicit data
           const hasExistingRibbon = productData.ribbon;
           let ribbon = productData.ribbon;
-          let discount = productData.discount;
           
           if (!hasExistingRibbon) {
             const ribbonTypes = ['new', 'sale', 'pre-order', 'organic', 'limited', null, null];
             ribbon = ribbonTypes[Math.floor(Math.random() * ribbonTypes.length)];
-            
-            // Generate random discount for sale items
-            discount = ribbon === 'sale' ? Math.floor(Math.random() * 30) + 10 : 0;
           }
           
           return {
             id: doc.id,
-            image: productData.image || 'https://via.placeholder.com/300',
+            ...productData,
             productName: productData.productName || productData.name,
             name: productData.name,
-            price: productData.price || (Math.random() * 500 + 50).toFixed(2),
-            stock: productData.stock || Math.floor(Math.random() * 100),
-            category: productData.category, // Use the category from Firestore
-            description: productData.description || '',
             isOrganic: productData.isOrganic || Math.random() > 0.7,
             rating: productData.rating || 0,
             views: productData.views || 0,
             sold: productData.sold || 0,
             ribbon: ribbon,
-            discount: discount,
             isTrending,
             isHotSeller,
-            // Add wholesale fields
-            wholesale: productData.wholesale === true,
-            wholesalePrice: productData.wholesalePrice ?? null,
-            minOrderQuantity: productData.minOrderQuantity ?? null,
-            wholesaleMessage: productData.wholesaleMessage ?? ''
+            // Ensure all unit price fields are set
+            pricePerKilo: productData.pricePerKilo || 0,
+            pricePerSack: productData.pricePerSack || 0,
+            pricePerTali: productData.pricePerTali || 0,
+            pricePerKaing: productData.pricePerKaing || 0,
+            pricePerBundle: productData.pricePerBundle || 0,
+            pricePerTray: productData.pricePerTray || 0,
+            pricePerPiece: productData.pricePerPiece || 0,
+            stockPerKilo: productData.stockPerKilo || 0,
+            stockPerSack: productData.stockPerSack || 0,
+            stockPerTali: productData.stockPerTali || 0,
+            stockPerKaing: productData.stockPerKaing || 0,
+            stockPerBundle: productData.stockPerBundle || 0,
+            stockPerTray: productData.stockPerTray || 0,
+            stockPerPiece: productData.stockPerPiece || 0,
+            discountPercentage: productData.discountPercentage || 0,
+            isOnSale: productData.isOnSale || false
           };
         });
         
@@ -1027,8 +1056,23 @@ const filteredProducts = computed(() => {
   },
   methods: {
     formatPrice(price) {
-      // Format price to have 2 decimal places
       return parseFloat(price).toFixed(2);
+    },
+
+        calculateSalePrice(originalPrice, discountPercentage) {
+      if (!discountPercentage || discountPercentage <= 0) return originalPrice;
+      return originalPrice * (1 - discountPercentage / 100);
+    },
+
+        hasAvailableStock(product) {
+      // Check if any of the unit stocks are available
+      return (product.stockPerKilo > 0) || 
+             (product.stockPerSack > 0) || 
+             (product.stockPerTali > 0) || 
+             (product.stockPerKaing > 0) || 
+             (product.stockPerBundle > 0) || 
+             (product.stockPerTray > 0) || 
+             (product.stockPerPiece > 0);
     },
     async fetchUserInfo() {
       const user = auth.currentUser;
@@ -1114,6 +1158,7 @@ const filteredProducts = computed(() => {
 </script>
 
 <style scoped>
+/* All existing styles remain the same */
 /* Base Styles */
 .home-page {
   height: 100%;
@@ -1424,27 +1469,17 @@ const filteredProducts = computed(() => {
   font-weight: bold;
 }
 
+.profile-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 .profile-icon {
   padding: 0;
   margin: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  background-color: #f5f5f5;
-  border: 2px solid #e0e0e0;
-  border-bottom: 3px solid #ffcc00;
-  border-radius: 50%;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-  transition: all 0.2s ease;
-  overflow: hidden;
-}
-
-.profile-icon:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-  border-color: #2e5c31;
 }
 
 .profile-icon-container {
@@ -1456,6 +1491,7 @@ const filteredProducts = computed(() => {
   align-items: center;
   justify-content: center;
   background: #f5f5f5;
+  border: 1px solid #e0e0e0;
 }
 
 .profile-avatar-icon {
@@ -1467,7 +1503,6 @@ const filteredProducts = computed(() => {
 .default-profile-icon {
   color: #666;
 }
-
 /* Profile Dropdown Menu */
 .profile-dropdown {
   position: absolute;
@@ -1665,8 +1700,6 @@ const filteredProducts = computed(() => {
   color: #ffcc00;
   font-weight: 700;
 }
-
-
 
 .content {
   flex: 1;
@@ -2128,10 +2161,39 @@ const filteredProducts = computed(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  border-bottom: 2px solid #2e5c31; /* Changed from yellow to green */
   -webkit-box-orient: vertical;
   line-height: 1.3;
   min-height: 36px;
+}
+
+.unit-prices {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.price-tag {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 13px;
+  line-height: 1.2;
+}
+.price {
+  font-weight: 700;
+  color: #2e5c31;
+}
+.unit {
+  color: #666;
+  font-size: 11px;
+}
+
+.sale-price {
+  color: #e74c3c;
+  font-size: 11px;
+  text-decoration: line-through;
+  margin-left: 4px;
 }
 
 .product-meta {
@@ -2157,26 +2219,13 @@ const filteredProducts = computed(() => {
   margin: 5px 0 0 0;
   display: flex;
   align-items: baseline;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.wholesale-price {
-  font-size: 14px;
-  color: #666;
-  font-weight: 500;
-}
-
-.min-order {
-  font-size: 12px;
-  color: #666;
-  font-weight: normal;
 }
 
 .unit {
   font-size: 12px;
   color: #666;
   font-weight: normal;
+  margin-left: 2px;
 }
 
 .add-to-cart-button {
@@ -2405,55 +2454,75 @@ html {
   user-zoom: fixed;
 }
 
-/* Wholesale Section Styles */
 .wholesale-section {
-  margin-top: 20px;
-  padding: 20px;
-  background-color: #f8f9fa;
-  border-radius: 15px;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 12px;
+  margin: 1rem 0;
 }
 
 .wholesale-info {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 20px;
-  margin: 20px 0;
+  gap: 1rem;
+  margin: 1rem 0;
 }
 
 .info-card {
-  background-color: white;
-  padding: 20px;
+  background: white;
+  padding: 1.5rem;
   border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 10px;
+  transition: transform 0.2s;
 }
 
-.info-card svg {
-  color: #2e5c31;
-  margin-bottom: 10px;
+.info-card:hover {
+  transform: translateY(-2px);
 }
 
 .info-card h3 {
-  font-size: 16px;
-  font-weight: 600;
-  color: #333;
-  margin: 0;
+  margin: 0.5rem 0;
+  color: #2c3e50;
+  font-size: 1.1rem;
 }
 
 .info-card p {
-  font-size: 14px;
   color: #666;
+  font-size: 0.9rem;
   margin: 0;
 }
 
-/* Wholesale Section Responsive Design */
+.wholesale-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: #4CAF50;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.min-order {
+  font-size: 0.8rem;
+  color: #666;
+  margin-left: 0.5rem;
+}
+
 @media (max-width: 768px) {
   .wholesale-info {
     grid-template-columns: 1fr;
+  }
+  
+  .info-card {
+    padding: 1rem;
   }
 }
 </style>

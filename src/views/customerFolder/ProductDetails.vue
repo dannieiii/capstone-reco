@@ -2,7 +2,7 @@
   <div class="product-details">
     <!-- Header Section -->
     <div class="header">
-      <button class="back-button" @click="$emit('navigate', '/')">
+      <button class="back-button" @click="$router.push('/')">
         <ChevronLeft size="22" />
       </button>
       <h1>Product Details</h1>
@@ -39,6 +39,7 @@
       <div class="product-header">
         <div>
           <h2>{{ productName }}</h2>
+          <p class="product-category">{{ product?.category || 'No Category' }}</p>
         </div>
         <button class="favorite-button">
           <Heart size="20" />
@@ -46,8 +47,22 @@
       </div>
       
       <div class="price-section">
-        <h3 class="price">₱{{ computedPrice }}</h3>
-        <p class="stock">Quantity: {{ computedStock }}</p>
+        <h3 class="price">₱{{ defaultPrice }}</h3>
+        <p class="stock">Available: {{ defaultStock }} {{ defaultUnit }}</p>
+      </div>
+      
+      <!-- Unit Selection -->
+      <div class="unit-selection" v-if="availableUnits.length > 1">
+        <div class="unit-options">
+          <button 
+            v-for="unit in availableUnits" 
+            :key="unit"
+            :class="['unit-btn', { active: selectedUnit === unit }]"
+            @click="selectUnit(unit)"
+          >
+            {{ unit }}
+          </button>
+        </div>
       </div>
       
       <!-- Product Stats Info -->
@@ -127,101 +142,152 @@
       <div class="related-products">
         <div class="section-header">
           <h3>You might also like</h3>
-          <!-- Popularity toggle button -->
-          <button class="popularity-toggle" @click="togglePopularitySort">
-            <template v-if="sortRelatedByPopularity">
-              <TrendingUp size="14" />
-              Popular
-            </template>
-            <template v-else>
-              <Hash size="14" />
-              Default
-            </template>
-          </button>
         </div>
         
         <div class="related-products-grid">
           <div 
             class="related-product" 
-            v-for="(product, index) in sortedRelatedProducts" 
+            v-for="(product, index) in relatedProducts" 
             :key="index" 
             @click="viewProduct(product)"
           >
             <div class="related-product-image">
-              <img :src="product.image" :alt="product.productName">
-              <!-- Show trending badge if product is trending -->
-              <div v-if="isProductTrending(product)" class="related-trending-badge">
-                <TrendingUp size="10" />
-                Trending
+              <img :src="product.image || 'https://via.placeholder.com/180'" :alt="product.productName">
+              <div v-if="product.isOnSale" class="related-badge sale">
+                Sale {{ product.discountPercentage }}%
               </div>
             </div>
             <div class="related-product-info">
               <h4>{{ product.productName }}</h4>
-              <div class="related-product-meta">
-                <p class="related-price">₱{{ formatPrice(product.price) }}</p>
-                <div class="related-stats">
-                  <div class="stat-icon">
-                    <Eye size="10" />
-                    <span>{{ product.views || 0 }}</span>
-                  </div>
-                  <div class="stat-icon">
-                    <ShoppingBag size="10" />
-                    <span>{{ product.sold || 0 }}</span>
-                  </div>
-                </div>
-              </div>
+              <p class="related-price">₱{{ getDisplayPrice(product) }}</p>
             </div>
           </div>
         </div>
       </div>
     </div>
     
-    <bottom-navigation active-tab="home" @navigate="$emit('navigate', $event)" @tab-change="handleTabChange" />
-
     <Notification 
       :message="notificationMessage"
       :type="notificationType"
       :visible="showNotification"
     />
 
-    <ProductModal
-      v-if="showAddToCartModalVisible"
-      :visible="showAddToCartModalVisible"
-      :productName="productName"
-      :productImage="productImage"
-      :category="product?.category"
-      :initialPackagingType="'plastic'"
-      :initialWeight="1"
-      :pricePerKg="productPrice"
-      :sellerId="product?.sellerId" 
-      :userId="userId"
-      :username="username"
-      @confirm="handleAddToCartConfirm"
-      @close="closeAddToCartModal"
-    />
+    <!-- Add to Cart Modal -->
+    <div v-if="showAddToCartModalVisible" class="modal-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Add to Cart</h3>
+          <button class="close-button" @click="closeAddToCartModal">
+            &times;
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="product-info">
+            <img :src="productImage" alt="Product" class="modal-product-image">
+            <h4>{{ productName }}</h4>
+          </div>
+          
+          <div class="form-group">
+            <label>Unit</label>
+            <select v-model="modalSelectedUnit" class="form-control">
+              <option v-for="unit in availableUnits" :key="unit" :value="unit">
+                {{ unit }}
+              </option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label>Quantity</label>
+            <div class="quantity-control">
+              <button @click="decreaseModalQuantity" :disabled="modalQuantity <= 1">
+                <Minus size="16" />
+              </button>
+              <input type="number" v-model="modalQuantity" min="1" :max="getMaxQuantity(modalSelectedUnit)">
+              <button @click="increaseModalQuantity" :disabled="modalQuantity >= getMaxQuantity(modalSelectedUnit)">
+                <Plus size="16" />
+              </button>
+            </div>
+          </div>
+          
+          <div class="price-summary">
+            <div class="price-row">
+              <span>Price per {{ modalSelectedUnit }}:</span>
+              <span>₱{{ getUnitPrice(modalSelectedUnit).toFixed(2) }}</span>
+            </div>
+            <div class="price-row total">
+              <span>Total:</span>
+              <span>₱{{ (getUnitPrice(modalSelectedUnit) * modalQuantity).toFixed(2) }}</span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="confirm-button" @click="handleAddToCartConfirm">
+            Add to Cart
+          </button>
+        </div>
+      </div>
+    </div>
 
-    <ProductModal
-      v-if="showBuyNowModalVisible"
-      :visible="showBuyNowModalVisible"
-      :productName="productName"
-      :productImage="productImage"
-      :category="product?.category"
-      :initialPackagingType="'plastic'"
-      :initialWeight="1"
-      :pricePerKg="productPrice"
-      :sellerId="product?.sellerId" 
-      :userId="userId"
-      :username="username"
-      @confirm="handleBuyNowConfirm"
-      @close="closeBuyNowModal"
-    />
+    <!-- Buy Now Modal -->
+    <div v-if="showBuyNowModalVisible" class="modal-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Buy Now</h3>
+          <button class="close-button" @click="closeBuyNowModal">
+            &times;
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="product-info">
+            <img :src="productImage" alt="Product" class="modal-product-image">
+            <h4>{{ productName }}</h4>
+          </div>
+          
+          <div class="form-group">
+            <label>Unit</label>
+            <select v-model="modalSelectedUnit" class="form-control">
+              <option v-for="unit in availableUnits" :key="unit" :value="unit">
+                {{ unit }}
+              </option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label>Quantity</label>
+            <div class="quantity-control">
+              <button @click="decreaseModalQuantity" :disabled="modalQuantity <= 1">
+                <Minus size="16" />
+              </button>
+              <input type="number" v-model="modalQuantity" min="1" :max="getMaxQuantity(modalSelectedUnit)">
+              <button @click="increaseModalQuantity" :disabled="modalQuantity >= getMaxQuantity(modalSelectedUnit)">
+                <Plus size="16" />
+              </button>
+            </div>
+          </div>
+          
+          <div class="price-summary">
+            <div class="price-row">
+              <span>Price per {{ modalSelectedUnit }}:</span>
+              <span>₱{{ getUnitPrice(modalSelectedUnit).toFixed(2) }}</span>
+            </div>
+            <div class="price-row total">
+              <span>Total:</span>
+              <span>₱{{ (getUnitPrice(modalSelectedUnit) * modalQuantity).toFixed(2) }}</span>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="confirm-button" @click="handleBuyNowConfirm">
+            Proceed to Checkout
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script>
 import Notification from '@/components/Notification.vue'; 
-import BottomNavigation from '@/components/BottomNavigation.vue';
-import ProductModal from '@/components/ProductModal.vue';
 import RatingsSummary from '@/components/RatingsSummary.vue';
 import ReviewsList from '@/components/ReviewsList.vue';
 import { 
@@ -235,8 +301,7 @@ import {
   Store,
   Eye,
   ShoppingBag,
-  TrendingUp,
-  Hash
+  TrendingUp
 } from 'lucide-vue-next';
 import { doc, getDoc, collection, getDocs, query, where, addDoc, serverTimestamp, updateDoc, increment } from 'firebase/firestore';
 import { auth, db } from '@/firebase/firebaseConfig';
@@ -246,8 +311,6 @@ import { ref, computed } from 'vue';
 export default {
   components: {
     Notification,
-    ProductModal,
-    BottomNavigation,
     RatingsSummary,
     ReviewsList,
     ChevronLeft,
@@ -260,35 +323,27 @@ export default {
     Store,
     Eye,
     ShoppingBag,
-    TrendingUp,
-    Hash
-  },
-  setup() {
-    const router = useRouter();
-    const showReviewsSection = ref(false);
-    const sortRelatedByPopularity = ref(true);
-    
-    const toggleReviewsSection = () => {
-      showReviewsSection.value = !showReviewsSection.value;
-    };
-    
-    const togglePopularitySort = () => {
-      sortRelatedByPopularity.value = !sortRelatedByPopularity.value;
-    };
-    
-    return { 
-      router,
-      showReviewsSection,
-      toggleReviewsSection,
-      sortRelatedByPopularity,
-      togglePopularitySort
-    };
+    TrendingUp
   },
   props: {
     productId: {
       type: String,
       required: true
     }
+  },
+  setup() {
+    const router = useRouter();
+    const showReviewsSection = ref(false);
+    
+    const toggleReviewsSection = () => {
+      showReviewsSection.value = !showReviewsSection.value;
+    };
+    
+    return { 
+      router,
+      showReviewsSection,
+      toggleReviewsSection
+    };
   },
   data() {
     return {
@@ -298,7 +353,6 @@ export default {
       showNotification: false,
       notificationMessage: '',
       notificationType: 'success',
-      notificationTimeout: null,
       product: null,
       userId: '',
       relatedProducts: [],
@@ -306,9 +360,12 @@ export default {
       userEmail: '',
       userPhotoURL: '',
       quantity: 1,
+      selectedUnit: null,
+      availableUnits: [],
       showAddToCartModalVisible: false,
       showBuyNowModalVisible: false,
-      averageRating: 0
+      modalSelectedUnit: '',
+      modalQuantity: 1
     };
   },
   computed: {
@@ -316,22 +373,52 @@ export default {
       return this.product ? this.product.productName : 'Loading...';
     },
     productImage() {
-      return this.product?.image || '/placeholder.svg?height=200&width=200';
-    },
-    productPrice() {
-      return this.product ? this.product.price : 0;
-    },
-    productStock() {
-      return this.product ? this.product.stock : 0;
+      return this.product?.image || 'https://via.placeholder.com/200';
     },
     productDescription() {
       return this.product ? this.product.description : 'Loading...';
     },
-    computedPrice() {
-      return this.productPrice * this.quantity;
+    defaultUnit() {
+      if (this.selectedUnit) return this.selectedUnit;
+      if (this.product?.pricePerKilo > 0) return 'kg';
+      if (this.product?.pricePerSack > 0) return 'sack';
+      if (this.product?.pricePerTali > 0) return 'tali';
+      if (this.product?.pricePerKaing > 0) return 'kaing';
+      if (this.product?.pricePerBundle > 0) return 'bundle';
+      if (this.product?.pricePerTray > 0) return 'tray';
+      if (this.product?.pricePerPiece > 0) return 'piece';
+      return '';
     },
-    computedStock() {
-      return this.productStock - this.quantity;
+    defaultPrice() {
+      if (!this.product) return '0.00';
+      
+      let unitPrice = 0;
+      switch(this.defaultUnit) {
+        case 'kg': unitPrice = this.product.pricePerKilo; break;
+        case 'sack': unitPrice = this.product.pricePerSack; break;
+        case 'tali': unitPrice = this.product.pricePerTali; break;
+        case 'kaing': unitPrice = this.product.pricePerKaing; break;
+        case 'bundle': unitPrice = this.product.pricePerBundle; break;
+        case 'tray': unitPrice = this.product.pricePerTray; break;
+        case 'piece': unitPrice = this.product.pricePerPiece; break;
+        default: unitPrice = 0;
+      }
+      
+      return (unitPrice * this.quantity).toFixed(2);
+    },
+    defaultStock() {
+      if (!this.product) return 0;
+      
+      switch(this.defaultUnit) {
+        case 'kg': return this.product.stockPerKilo;
+        case 'sack': return this.product.stockPerSack;
+        case 'tali': return this.product.stockPerTali;
+        case 'kaing': return this.product.stockPerKaing;
+        case 'bundle': return this.product.stockPerBundle;
+        case 'tray': return this.product.stockPerTray;
+        case 'piece': return this.product.stockPerPiece;
+        default: return 0;
+      }
     },
     isTrending() {
       if (!this.product) return false;
@@ -339,218 +426,99 @@ export default {
       const views = parseInt(this.product.views || 0);
       const sold = parseInt(this.product.sold || 0);
       
-      // Define trending threshold
       return views > 50 || sold > 20;
     },
-    // Compute sorted related products based on popularity toggle
-    sortedRelatedProducts() {
-      if (this.sortRelatedByPopularity) {
-        // Sort by popularity (views + sales)
-        return [...this.relatedProducts].sort((a, b) => {
-          const scoreA = this.calculatePopularityScore(a);
-          const scoreB = this.calculatePopularityScore(b);
-          return scoreB - scoreA;
-        });
-      } else {
-        // Default sort (as-is)
-        return this.relatedProducts;
-      }
+    averageRating() {
+      if (!this.product) return 0;
+      return this.product.rating || 0;
     }
   },
   methods: {
-    formatPrice(price) {
-      return parseFloat(price).toFixed(2);
+    getDisplayPrice(product) {
+      if (product.pricePerKilo > 0) return product.pricePerKilo.toFixed(2) + '/kg';
+      if (product.pricePerSack > 0) return product.pricePerSack.toFixed(2) + '/sack';
+      if (product.pricePerTali > 0) return product.pricePerTali.toFixed(2) + '/tali';
+      if (product.pricePerKaing > 0) return product.pricePerKaing.toFixed(2) + '/kaing';
+      if (product.pricePerBundle > 0) return product.pricePerBundle.toFixed(2) + '/bundle';
+      if (product.pricePerTray > 0) return product.pricePerTray.toFixed(2) + '/tray';
+      if (product.pricePerPiece > 0) return product.pricePerPiece.toFixed(2) + '/piece';
+      return '0.00';
     },
-    
-    calculatePopularityScore(product) {
-      const views = parseInt(product.views || 0);
-      const sold = parseInt(product.sold || 0);
-      // Higher weight for sales than views
-      return (views * 0.3) + (sold * 0.7);
+    selectUnit(unit) {
+      this.selectedUnit = unit;
+      this.quantity = 1;
     },
-    
-    isProductTrending(product) {
-      const views = parseInt(product.views || 0);
-      const sold = parseInt(product.sold || 0);
-      
-      return views > 50 || sold > 20;
+    increaseQuantity() {
+      if (this.quantity < this.defaultStock) {
+        this.quantity++;
+      } else {
+        this.showNotificationMessage(`Maximum available ${this.defaultUnit} reached`, 'error');
+      }
     },
-    
+    decreaseQuantity() {
+      if (this.quantity > 1) {
+        this.quantity--;
+      }
+    },
     handleRatingUpdate(rating) {
       this.averageRating = rating;
     },
-    
     async fetchProduct() {
       try {
-        if (!this.productId) {
-          console.error('No product ID provided');
-          return;
-        }
-
         const productDocRef = doc(db, 'products', this.productId);
         const productDoc = await getDoc(productDocRef);
         
         if (productDoc.exists()) {
           this.product = productDoc.data();
-          console.log('Product data loaded:', this.product);
+          this.sellerId = this.product.sellerId; // Ensure sellerId is set from product
           
-          if (this.product.sellerId) {
-            await this.fetchFarmDetails();
-          } else {
-            console.warn('No sellerId found in product document');
-            this.farmName = 'Farm not specified';
-            this.farmAddress = 'Location not available';
-          }
+          // Determine available units
+          this.availableUnits = [];
+          if (this.product.pricePerKilo > 0) this.availableUnits.push('kg');
+          if (this.product.pricePerSack > 0) this.availableUnits.push('sack');
+          if (this.product.pricePerTali > 0) this.availableUnits.push('tali');
+          if (this.product.pricePerKaing > 0) this.availableUnits.push('kaing');
+          if (this.product.pricePerBundle > 0) this.availableUnits.push('bundle');
+          if (this.product.pricePerTray > 0) this.availableUnits.push('tray');
+          if (this.product.pricePerPiece > 0) this.availableUnits.push('piece');
+          
+          // Fetch farm details
+          await this.fetchFarmDetails();
         } else {
-          console.error('Product document does not exist');
+          this.showNotificationMessage('Product not found', 'error');
         }
       } catch (error) {
         console.error('Error fetching product:', error);
         this.showNotificationMessage('Failed to load product details', 'error');
       }
     },
-
     async fetchFarmDetails() {
+      if (!this.sellerId) {
+        this.farmName = 'Farm not available';
+        this.farmAddress = 'Location not available';
+        return;
+      }
+
       try {
-        console.log('Fetching farm details for seller:', this.product.sellerId);
-        const sellerDocRef = doc(db, 'sellers', this.product.sellerId);
+        const sellerDocRef = doc(db, 'sellers', this.sellerId);
         const sellerDoc = await getDoc(sellerDocRef);
         
         if (sellerDoc.exists()) {
           const sellerData = sellerDoc.data();
-          console.log('Seller data loaded:', sellerData);
-          
           this.farmName = sellerData.farmName || 'Farm not specified';
-          this.farmAddress = sellerData.farmAddress || 'Location not available';
-          this.sellerId = this.product.sellerId;
+          this.farmAddress = sellerData.farmAddress || sellerData.address || 'Location not available';
         } else {
-          console.error('Seller document does not exist');
-          this.farmName = 'Farm not found';
-          this.farmAddress = 'Location unknown';
+          this.farmName = 'Farm not available';
+          this.farmAddress = 'Location not available';
         }
       } catch (error) {
         console.error('Error fetching farm details:', error);
-        this.farmName = 'Error loading farm';
-        this.farmAddress = 'Error loading location';
+        this.farmName = 'Farm not available';
+        this.farmAddress = 'Location not available';
       }
     },
-
-    visitStore() {
-      if (this.sellerId) {
-        this.$router.push({
-          name: 'SellerStore',
-          params: { sellerId: this.sellerId }
-        });
-      } else {
-        console.error('No seller ID available for store visit');
-        this.showNotificationMessage('Unable to visit store at this time', 'error');
-      }
-    },
-
-    showNotificationMessage(message, type) {
-      this.notificationMessage = message;
-      this.notificationType = type;
-      this.showNotification = true;
-      
-      if (this.notificationTimeout) {
-        clearTimeout(this.notificationTimeout);
-      }
-      
-      this.notificationTimeout = setTimeout(() => {
-        this.showNotification = false;
-      }, 5000);
-    },
-
-    async handleAddToCartConfirm(data) {
-      try {
-        if (!auth.currentUser) {
-          this.showNotificationMessage('Please sign in to add items to cart', 'error');
-          return;
-        }
-
-        const cartItem = {
-          userId: auth.currentUser.uid,
-          productId: this.productId,
-          productName: this.productName,
-          productImage: this.productImage,
-          price: this.productPrice,
-          weight: data.weight,
-          packagingType: data.packagingType,
-          farmName: this.farmName,
-          sellerId: this.product.sellerId,
-          quantity: 1,
-          selected: false,
-          createdAt: serverTimestamp()
-        };
-
-        // Add to cart collection
-        await addDoc(collection(db, 'carts'), cartItem);
-        
-        this.closeAddToCartModal();
-        this.showNotificationMessage('Item added to cart successfully', 'success');
-      } catch (error) {
-        console.error('Error adding to cart:', error);
-        this.showNotificationMessage('Failed to add item to cart', 'error');
-      }
-    },
-    
-    handleBuyNowConfirm(data) {
-      this.closeBuyNowModal();
-      // For Buy Now, we pass a single item directly to checkout
-      const buyNowItem = {
-        productId: this.productId,
-        productName: this.productName,
-        productImage: this.productImage,
-        weight: data.weight,
-        packagingType: data.packagingType,
-        price: this.productPrice,
-        totalPrice: this.productPrice * data.weight,
-        sellerId: this.product.sellerId,
-        farmName: this.farmName,
-        isBuyNow: true // Flag to indicate this is a buy now order
-      };
-
-      this.router.push({
-        name: 'Checkout',
-        query: {
-          items: JSON.stringify([buyNowItem])
-        }
-      });
-    },
-
-    showAddToCartModal() {
-      this.showAddToCartModalVisible = true;
-    },
-    
-    showBuyNowModal() {
-      this.showBuyNowModalVisible = true;
-    },
-    
-    closeAddToCartModal() {
-      this.showAddToCartModalVisible = false;
-    },
-    
-    closeBuyNowModal() {
-      this.showBuyNowModalVisible = false;
-    },
-    
-    async fetchUserInfo() {
-      const user = auth.currentUser;
-      if (user) {
-        this.userPhotoURL = user.photoURL || 'https://randomuser.me/api/portraits/men/32.jpg';
-        this.userEmail = user.email;
-
-        const userDocRef = doc(db, 'users', user.uid);
-        const userDoc = await getDoc(userDocRef);
-        if (userDoc.exists()) {
-          this.username = userDoc.data().username;
-        }
-      }
-    },
-    
     async fetchRelatedProducts() {
       try {
-        // If we have a category, fetch related products from the same category
         let productsQuery;
         
         if (this.product && this.product.category) {
@@ -559,116 +527,192 @@ export default {
             where('category', '==', this.product.category)
           );
         } else {
-          // Otherwise just get some products
           productsQuery = collection(db, 'products');
         }
         
         const productsSnapshot = await getDocs(productsQuery);
         
-        // Filter out the current product and map the rest
         this.relatedProducts = productsSnapshot.docs
           .filter(doc => doc.id !== this.productId)
           .map(doc => {
             const data = doc.data();
             return {
               id: doc.id,
-              image: data.image || 'https://via.placeholder.com/300',
-              productName: data.productName || data.name || 'Product',
-              price: data.price || 0,
-              views: data.views || 0,
-              sold: data.sold || 0
+              ...data,
+              productName: data.productName || 'Product',
+              pricePerKilo: Number(data.pricePerKilo) || 0,
+              pricePerSack: Number(data.pricePerSack) || 0,
+              pricePerTali: Number(data.pricePerTali) || 0,
+              pricePerKaing: Number(data.pricePerKaing) || 0,
+              pricePerBundle: Number(data.pricePerBundle) || 0,
+              pricePerTray: Number(data.pricePerTray) || 0,
+              pricePerPiece: Number(data.pricePerPiece) || 0,
+              isOnSale: data.isOnSale || false,
+              discountPercentage: data.discountPercentage || 0
             };
           })
-          .slice(0, 4); // Only take up to 4 related products
+          .slice(0, 4);
       } catch (error) {
         console.error('Failed to fetch related products:', error);
       }
     },
-    
-    viewProduct(product) {
-      const productId = product.id || product.productId;
-      if (productId) {
-        this.$router.push({ path: `/product/${productId}` });
+    getUnitPrice(unit) {
+      switch(unit) {
+        case 'kg': return this.product.pricePerKilo;
+        case 'sack': return this.product.pricePerSack;
+        case 'tali': return this.product.pricePerTali;
+        case 'kaing': return this.product.pricePerKaing;
+        case 'bundle': return this.product.pricePerBundle;
+        case 'tray': return this.product.pricePerTray;
+        case 'piece': return this.product.pricePerPiece;
+        default: return 0;
       }
-    },  
-    
-    toggleCart() {
-      console.log('Cart toggled');
     },
-    
-    handleTabChange(tab) {
-      console.log(`Changed to tab: ${tab}`);
+    getMaxQuantity(unit) {
+      switch(unit) {
+        case 'kg': return this.product.stockPerKilo;
+        case 'sack': return this.product.stockPerSack;
+        case 'tali': return this.product.stockPerTali;
+        case 'kaing': return this.product.stockPerKaing;
+        case 'bundle': return this.product.stockPerBundle;
+        case 'tray': return this.product.stockPerTray;
+        case 'piece': return this.product.stockPerPiece;
+        default: return 0;
+      }
     },
-    
-    increaseQuantity() {
-      if (this.quantity < this.productStock) {
-        this.quantity++;
+    showAddToCartModal() {
+      this.modalSelectedUnit = this.defaultUnit;
+      this.modalQuantity = 1;
+      this.showAddToCartModalVisible = true;
+    },
+    showBuyNowModal() {
+      this.modalSelectedUnit = this.defaultUnit;
+      this.modalQuantity = 1;
+      this.showBuyNowModalVisible = true;
+    },
+    closeAddToCartModal() {
+      this.showAddToCartModalVisible = false;
+    },
+    closeBuyNowModal() {
+      this.showBuyNowModalVisible = false;
+    },
+    increaseModalQuantity() {
+      if (this.modalQuantity < this.getMaxQuantity(this.modalSelectedUnit)) {
+        this.modalQuantity++;
       } else {
-        alert('Cannot exceed available stock.');
+        this.showNotificationMessage(`Maximum available ${this.modalSelectedUnit} reached`, 'error');
       }
     },
-    
-    decreaseQuantity() {
-      if (this.quantity > 1) {
-        this.quantity--;
+    decreaseModalQuantity() {
+      if (this.modalQuantity > 1) {
+        this.modalQuantity--;
       }
     },
-    
+    async handleAddToCartConfirm() {
+      if (!auth.currentUser) {
+        this.showNotificationMessage('Please sign in to add items to cart', 'error');
+        return;
+      }
+
+      try {
+        const cartItem = {
+          userId: auth.currentUser.uid,
+          productId: this.productId,
+          productName: this.productName,
+          productImage: this.productImage,
+          unit: this.modalSelectedUnit,
+          quantity: this.modalQuantity,
+          unitPrice: this.getUnitPrice(this.modalSelectedUnit),
+          totalPrice: this.getUnitPrice(this.modalSelectedUnit) * this.modalQuantity,
+          farmName: this.farmName,
+          sellerId: this.sellerId,
+          createdAt: serverTimestamp()
+        };
+
+        await addDoc(collection(db, 'carts'), cartItem);
+        this.closeAddToCartModal();
+        this.showNotificationMessage('Item added to cart successfully', 'success');
+      } catch (error) {
+        console.error('Error adding to cart:', error);
+        this.showNotificationMessage('Failed to add item to cart', 'error');
+      }
+    },
+    handleBuyNowConfirm() {
+      if (!this.sellerId) {
+        this.showNotificationMessage('Seller information is missing', 'error');
+        return;
+      }
+
+      const buyNowItem = {
+        productId: this.productId,
+        productName: this.productName,
+        productImage: this.productImage,
+        unit: this.modalSelectedUnit,
+        quantity: this.modalQuantity,
+        unitPrice: this.getUnitPrice(this.modalSelectedUnit),
+        totalPrice: this.getUnitPrice(this.modalSelectedUnit) * this.modalQuantity,
+        sellerId: this.sellerId,
+        farmName: this.farmName || 'Unknown Farm',
+        isBuyNow: true
+      };
+
+      this.closeBuyNowModal();
+      this.router.push({
+        name: 'Checkout',
+        query: {
+          items: JSON.stringify([buyNowItem])
+        }
+      });
+    },
+    visitStore() {
+      if (this.sellerId) {
+        // Fixed: Changed from 'SellerStore' to 'farmStore' to match the router configuration
+        this.router.push({
+          name: 'farmStore',
+          params: { sellerId: this.sellerId }
+        });
+      }
+    },
+    viewProduct(product) {
+      this.router.push({ path: `/product/${product.id}` });
+    },
+    toggleCart() {
+      this.router.push('/cart');
+    },
+    showNotificationMessage(message, type) {
+      this.notificationMessage = message;
+      this.notificationType = type;
+      this.showNotification = true;
+      
+      setTimeout(() => {
+        this.showNotification = false;
+      }, 3000);
+    },
     async incrementViewCount() {
       try {
         const productRef = doc(db, 'products', this.productId);
         await updateDoc(productRef, {
           views: increment(1)
         });
-        console.log('View count incremented');
       } catch (error) {
         console.error('Error incrementing view count:', error);
       }
     }
   },
   async mounted() {
-    try {
-      if (!this.productId) return;
-
-      const user = auth.currentUser;
-      if (user) {
-        this.userId = user.uid;
-        const userDocRef = doc(db, 'users', user.uid);
-        const userDoc = await getDoc(userDocRef);
-        if (userDoc.exists()) {
-          this.username = userDoc.data().username;
-        }
+    const user = auth.currentUser;
+    if (user) {
+      this.userId = user.uid;
+      const userDocRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userDocRef);
+      if (userDoc.exists()) {
+        this.username = userDoc.data().username;
       }
-
-      await this.fetchUserInfo();
-      await this.fetchProduct();
-      await this.fetchRelatedProducts();
-      
-      // Increment view count when product details page is viewed
-      this.incrementViewCount();
-      
-      // Fetch average rating from ratings summary component
-      try {
-        const ratingsQuery = query(
-          collection(db, 'reviews'),
-          where('productId', '==', this.productId)
-        );
-        
-        const querySnapshot = await getDocs(ratingsQuery);
-        if (querySnapshot.size > 0) {
-          let totalRating = 0;
-          querySnapshot.forEach(doc => {
-            totalRating += doc.data().rating;
-          });
-          this.averageRating = totalRating / querySnapshot.size;
-        }
-      } catch (error) {
-        console.error('Error fetching ratings:', error);
-      }
-      
-    } catch (error) {
-      console.error('Error in mounted hook:', error);
     }
+
+    await this.fetchProduct();
+    await this.fetchRelatedProducts();
+    await this.incrementViewCount();
   }
 };
 </script>
@@ -699,6 +743,9 @@ export default {
   align-items: center;
   justify-content: center;
   color: white;
+  background: none; /* Removed background */
+  border: none;
+  cursor: pointer;
 }
 
 .header h1 {
@@ -715,12 +762,14 @@ export default {
 .icon-button {
   width: 40px;
   height: 40px;
-  background-color: rgba(255, 255, 255, 0.2);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
+  background: none; /* Removed background */
+  border: none;
+  cursor: pointer;
   transition: all 0.2s ease;
 }
 
@@ -774,6 +823,90 @@ export default {
   color: white;
 }
 
+.product-info {
+  padding: 20px 15px;
+}
+
+.product-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 15px;
+}
+
+.product-header h2 {
+  font-size: 1.3rem;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 4px;
+}
+
+.product-category {
+  font-size: 0.9rem;
+  color: #6b7280;
+}
+
+.favorite-button {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #e74c3c;
+  border: 1px solid #e0e0e0;
+  background-color: white;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.price-section {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.price {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #2e5c31;
+}
+
+.stock {
+  color: #666;
+  font-size: 0.9rem;
+}
+
+/* Unit Selection */
+.unit-selection {
+  margin-bottom: 15px;
+}
+
+.unit-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.unit-btn {
+  padding: 8px 12px;
+  background-color: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.unit-btn:hover {
+  background-color: #e5e7eb;
+}
+
+.unit-btn.active {
+  background-color: #2e5c31;
+  color: white;
+  border-color: #2e5c31;
+}
+
 /* Product Stats Container */
 .product-stats-container {
   display: flex;
@@ -805,6 +938,104 @@ export default {
   color: #444;
 }
 
+/* Product Rating */
+.product-rating {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.see-reviews-btn {
+  margin-left: auto;
+  color: #2e5c31;
+  font-size: 0.9rem;
+  font-weight: 500;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* Reviews Section */
+.reviews-section {
+  background-color: white;
+  padding: 15px;
+  border-radius: 10px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.section-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 15px 0;
+  color: #333;
+}
+
+.guarantee {
+  background-color: white;
+  padding: 15px;
+  border-radius: 10px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.guarantee p {
+  color: #555;
+  line-height: 1.5;
+  font-size: 0.95rem;
+}
+
+/* Quantity Section */
+.quantity-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 25px;
+}
+
+.quantity-button {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: white;
+  border: 1px solid #e0e0e0;
+  color: #2e5c31;
+}
+
+.quantity {
+  font-size: 1.1rem;
+  width: 30px;
+  text-align: center;
+}
+
+.add-to-cart, .buy-now-button {
+  flex: 1;
+  height: 48px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 500;
+  gap: 8px;
+}
+
+.add-to-cart {
+  background-color: white;
+  color: #2e5c31;
+  border: 1px solid #2e5c31;
+}
+
+.buy-now-button {
+  background-color: #2e5c31;
+  color: white;
+}
+
+/* Farm Store Info */
 .farm-store-info {
   display: flex;
   justify-content: space-between;
@@ -868,173 +1099,12 @@ export default {
   background-color: #e0f0e0;
 }
 
-.product-info {
-  padding: 20px 15px;
-}
-
-.product-header {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 15px;
-}
-
-.product-header h2 {
-  font-size: 1.3rem;
-  font-weight: 600;
-  color: #333;
-}
-
-.favorite-button {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #e74c3c;
-  border: 1px solid #e0e0e0;
-  background-color: white;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-}
-
-.price-section {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 15px;
-}
-
-.price {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: #2e5c31;
-}
-
-.stock {
-  color: #666;
-  font-size: 0.9rem;
-}
-
-.product-rating {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 15px;
-}
-
-.rating-stars {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.rating-value {
-  margin-left: 5px;
-  font-weight: 600;
-  color: #333;
-}
-
-.rating-count {
-  color: #666;
-  font-size: 0.9rem;
-}
-
-.see-reviews-btn {
-  margin-left: auto;
-  color: #2e5c31;
-  font-size: 0.9rem;
-  font-weight: 500;
-  background: none;
-  border: none;
-  cursor: pointer;
-}
-
-/* Reviews Section */
-.reviews-section {
-  background-color: white;
-  padding: 15px;
-  border-radius: 10px;
-  margin-bottom: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-}
-
-.section-title {
-  font-size: 16px;
-  font-weight: 600;
-  margin: 0 0 15px 0;
-  color: #333;
-}
-
-.guarantee {
-  background-color: white;
-  padding: 15px;
-  border-radius: 10px;
-  margin-bottom: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-}
-
-.guarantee p {
-  color: #555;
-  line-height: 1.5;
-  font-size: 0.95rem;
-}
-
-.quantity-section {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 25px;
-}
-
-.quantity-button {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: white;
-  border: 1px solid #e0e0e0;
-  color: #2e5c31;
-}
-
-.quantity {
-  font-size: 1.1rem;
-  width: 30px;
-  text-align: center;
-}
-
-.add-to-cart, .buy-now-button {
-  flex: 1;
-  height: 48px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 500;
-  gap: 8px;
-}
-
-.add-to-cart {
-  background-color: white;
-  color: #2e5c31;
-  border: 1px solid #2e5c31;
-}
-
-.buy-now-button {
-  background-color: #2e5c31;
-  color: white;
-}
-
+/* Related Products */
 .related-products {
   margin-top: 25px;
 }
 
 .section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   margin-bottom: 15px;
 }
 
@@ -1042,25 +1112,6 @@ export default {
   font-size: 1.1rem;
   font-weight: 600;
   color: #333;
-}
-
-/* Popularity toggle button */
-.popularity-toggle {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  background-color: #f0f8f0;
-  color: #2e5c31;
-  border: none;
-  border-radius: 20px;
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 600;
-  transition: all 0.2s ease;
-}
-
-.popularity-toggle:hover {
-  background-color: #e0f0e0;
 }
 
 .related-products-grid {
@@ -1074,11 +1125,6 @@ export default {
   border-radius: 10px;
   overflow: hidden;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
-  transition: transform 0.2s ease;
-}
-
-.related-product:hover {
-  transform: translateY(-5px);
 }
 
 .related-product-image {
@@ -1092,18 +1138,19 @@ export default {
   object-fit: cover;
 }
 
-.related-trending-badge {
+.related-badge {
   position: absolute;
   top: 5px;
   right: 5px;
-  background-color: rgba(233, 30, 99, 0.9);
-  color: white;
   padding: 3px 6px;
-  border-radius: 10px;
-  font-size: 9px;
-  display: flex;
-  align-items: center;
-  gap: 3px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  color: white;
+}
+
+.related-badge.sale {
+  background-color: #ef4444;
 }
 
 .related-product-info {
@@ -1118,12 +1165,6 @@ export default {
   text-overflow: ellipsis;
 }
 
-.related-product-meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
 .related-price {
   font-size: 0.9rem;
   font-weight: 600;
@@ -1131,17 +1172,154 @@ export default {
   margin: 0;
 }
 
-.related-stats {
-  display: flex;
-  gap: 6px;
-}
-
-.stat-icon {
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
-  gap: 2px;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background-color: white;
+  border-radius: 10px;
+  width: 90%;
+  max-width: 400px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 20px;
+  border-bottom: 1px solid #eee;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.2rem;
+  color: #2e5c31;
+}
+
+.close-button {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
   color: #666;
-  font-size: 10px;
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+.modal-product-image {
+  width: 100px;
+  height: 100px;
+  object-fit: contain;
+  display: block;
+  margin: 0 auto 15px;
+}
+
+.form-group {
+  margin-bottom: 15px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 500;
+  color: #444;
+}
+
+.form-control {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  font-size: 1rem;
+}
+
+.quantity-control {
+  display: flex;
+  align-items: center;
+}
+
+.quantity-control button {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: white;
+  border: 1px solid #e0e0e0;
+  color: #2e5c31;
+  cursor: pointer;
+}
+
+.quantity-control button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.quantity-control input {
+  width: 50px;
+  text-align: center;
+  margin: 0 10px;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+}
+
+.price-summary {
+  margin-top: 20px;
+  padding: 15px;
+  background-color: #f9f9f9;
+  border-radius: 5px;
+}
+
+.price-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.price-row.total {
+  font-weight: bold;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #eee;
+}
+
+.modal-footer {
+  padding: 15px 20px;
+  border-top: 1px solid #eee;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.confirm-button {
+  padding: 10px 20px;
+  background-color: #2e5c31;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.confirm-button:hover {
+  background-color: #1e4a21;
 }
 
 @media (max-width: 480px) {

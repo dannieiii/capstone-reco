@@ -325,41 +325,28 @@
     </div>
     
     <!-- Order Success Modal -->
-  <div class="modal" v-if="showSuccessModal">
-    <div class="modal-content success-modal">
-      <div class="success-icon">
-        <CheckCircle size="40" />
-      </div>
-      
-      <h2>Order Placed Successfully!</h2>
-      <p>Your order has been confirmed and will be processed shortly.</p>
-      
-      <div class="order-number">
-        <p class="label">Order Code</p>
-        <p class="value">#{{ orderNumber }}</p>
-      </div>
-      
-      <!-- Add cancellation notice and countdown -->
-      <div class="cancellation-notice" v-if="canCancel">
-        <p>You can cancel your order before processing begins.</p>
-        <p class="countdown">
-          Time remaining: {{ Math.floor(countdown / 60) }}:{{ (countdown % 60).toString().padStart(2, '0') }}
-        </p>
-        <button class="cancel-order-button" @click="cancelOrder">
-          Cancel Order
-        </button>
-      </div>
-      <div v-else>
-        <p>Your order is now being processed and cannot be cancelled.</p>
-      </div>
-      
-      <div class="modal-actions">
-        <button class="continue-button" @click="continueShopping">Continue Shopping</button>
+    <div class="modal" v-if="showSuccessModal">
+      <div class="modal-content success-modal">
+        <div class="success-icon">
+          <CheckCircle size="40" />
+        </div>
+        
+        <h2>Order Placed Successfully!</h2>
+        <p>Your order has been confirmed and will be processed shortly.</p>
+        
+        <div class="order-number">
+          <p class="label">Order Code</p>
+          <p class="value">#{{ orderNumber }}</p>
+        </div>
+        
+        <div class="modal-actions">
+          <button class="continue-button" @click="continueShopping">Continue Shopping</button>
+        </div>
       </div>
     </div>
   </div>
-  </div>
 </template>
+
 
 <script>
 import { 
@@ -374,7 +361,7 @@ import {
   CheckCircle,
   X
 } from 'lucide-vue-next';
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { 
   collection, 
@@ -386,14 +373,10 @@ import {
   arrayUnion,
   runTransaction,
   deleteDoc,
-  increment,
-  query,          // Add this
-  where,          // Add this
-  getDocs         // Add this
+  increment
 } from 'firebase/firestore';
 import { db, auth } from '@/firebase/firebaseConfig';
 import Notification from '@/components/Notification.vue';
-import { getFunctions, httpsCallable } from 'firebase/functions';
 
 // Oriental Mindoro data from Register.vue
 const orientalMindoroData = {
@@ -451,9 +434,6 @@ export default {
     const orderItems = ref([]);
     const isBuyNow = ref(false);
     
-        const countdown = ref(300); // 5 minutes in seconds
-    const countdownInterval = ref(null);
-    const canCancel = ref(true);
     // Parse items from route query with validation
     onMounted(() => {
       try {
@@ -473,19 +453,6 @@ export default {
         showNotificationMessage('Error loading order items', 'error');
       }
     });
-
-        // Add this new method for the countdown
-    const startCountdown = () => {
-      countdownInterval.value = setInterval(() => {
-        countdown.value -= 1;
-        if (countdown.value <= 0) {
-          clearInterval(countdownInterval.value);
-          canCancel.value = false;
-          // Optionally update the order status in Firestore here
-        }
-      }, 1000);
-    };
-
 
     // Notification state
     const showNotification = ref(false);
@@ -668,273 +635,184 @@ export default {
       return subtotal.value + fee + tax.value;
     });
 
+ 
+
+
     // Place order function for multiple items
-    const functions = getFunctions();
-    const createGcashPayment = httpsCallable(functions, 'createGcashPayment');
+  const placeOrder = async () => {
+  // Validation checks
+  if (!selectedAddress.value) {
+    showNotificationMessage('Please select a delivery address', 'error');
+    return;
+  }
+  
+  if (paymentMethod.value === 'gcash' && !gcashDetails.value.number) {
+    showNotificationMessage('Please enter your GCash number', 'error');
+    return;
+  }
+  
 
-    const placeOrder = async () => {
-      // Validation checks
-      if (!selectedAddress.value) {
-        showNotificationMessage('Please select a delivery address', 'error');
-        return;
-      }
-      
-      if (paymentMethod.value === 'gcash' && !gcashDetails.value.number) {
-        showNotificationMessage('Please enter your GCash number', 'error');
-        return;
-      }
+  // Validate all order items
+  for (const item of orderItems.value) {
+    if (!item.productId || !item.sellerId || !item.weight || (!item.pricePerKg && !item.price)) {
+      showNotificationMessage('One or more items have incomplete information', 'error');
+      return;
+    }
+  }
 
-      // Validate all order items
-      for (const item of orderItems.value) {
-        if (!item.productId || !item.sellerId || !item.weight || (!item.pricePerKg && !item.price)) {
-          showNotificationMessage('One or more items have incomplete information', 'error');
-          return;
-        }
-      }
-
-      try {
-        if (!auth.currentUser) throw new Error('User not authenticated');
-
-        // Generate order code
-        const orderCode = generateOrderCode();
-        orderNumber.value = orderCode;
-
-        // Get user data
-        const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
-        const userData = userDoc.exists() ? userDoc.data() : {};
-        const username = userData.username || '';
-        const email = userData.email || '';
-
-        // Collect cart items to delete (if not buy now)
-        const cartItemsToDelete = [];
-        if (!isBuyNow.value) {
-          orderItems.value.forEach(item => {
-            if (item.cartItemId) {
-              cartItemsToDelete.push(item.cartItemId);
-            }
-          });
-        }
-
-        // PHASE 1: VALIDATION - Check all products first
-        const productPromises = orderItems.value.map(item => 
-          getDoc(doc(db, 'products', item.productId))
-        );
-        const productSnapshots = await Promise.all(productPromises);
-
-        // Verify stock before transaction
-        for (let i = 0; i < orderItems.value.length; i++) {
-          const item = orderItems.value[i];
-          const productDoc = productSnapshots[i];
-          
-          if (!productDoc.exists()) {
-            throw new Error(`Product ${item.productName || item.productId} not found`);
-          }
-          
-          const productData = productDoc.data();
-          if (Number(productData.stock) < Number(item.weight)) {
-            throw new Error(`Only ${productData.stock}kg available for ${item.productName || 'product'}`);
-          }
-        }
-
-        // PHASE 2: TRANSACTION - Only writes here
-        await runTransaction(db, async (transaction) => {
-          // Process each item
-          for (let i = 0; i < orderItems.value.length; i++) {
-            const item = orderItems.value[i];
-            const productRef = doc(db, 'products', item.productId);
-            const productData = productSnapshots[i].data();
-            
-            // Update product stock
-            transaction.update(productRef, {
-              stock: increment(-Number(item.weight))
-            });
-
-            // Calculate all price components
-            const pricePerKg = Number(item.pricePerKg) || Number(item.price) || 0;
-            const weight = Number(item.weight) || 0;
-            const itemPrice = pricePerKg * weight;
-            const deliveryFeeValue = paymentMethod.value !== 'pickup' ? deliveryFee.value : 0;
-            const taxValue = itemPrice * 0.08; // 8% tax
-            const totalPrice = itemPrice + deliveryFeeValue + taxValue;
-
-            // Create order document with complete financial information
-            const orderRef = doc(collection(db, 'orders'));
-            transaction.set(orderRef, {
-              orderCode: orderCode,
-              sellerId: item.sellerId,
-              productId: item.productId,
-              productName: item.productName,
-              productImage: item.productImage || placeholderImage,
-              pricePerKg: pricePerKg,
-              itemPrice: itemPrice,
-              weight: weight,
-              packagingType: item.packagingType || 'N/A',
-              paymentMethod: paymentMethod.value,
-              gcashNumber: paymentMethod.value === 'gcash' ? gcashDetails.value.number : null,
-              deliveryOption: paymentMethod.value !== 'pickup' ? deliveryOption.value : null,
-              deliveryFee: deliveryFeeValue,
-              tax: taxValue,
-              totalPrice: totalPrice,
-              Location: {
-                province: selectedAddress.value.province,
-                municipality: selectedAddress.value.municipality,
-                barangay: selectedAddress.value.barangay,
-                address: `${selectedAddress.value.barangay}, ${selectedAddress.value.municipality}, ${selectedAddress.value.province}`,
-                notes: selectedAddress.value.locationNotes || ''
-              },
-              status: 'Processing',
-              payStatus: 'unpaid',
-              createdAt: serverTimestamp(),
-              userId: auth.currentUser.uid,
-              username: username,
-              isBuyNow: isBuyNow.value
-            });
-
-            // Create sale record with accurate financial data
-            const saleRef = doc(collection(db, 'sales'));
-            transaction.set(saleRef, {
-              productId: item.productId,
-              productName: item.productName,
-              category: productData.category || 'uncategorized',
-              quantity: weight,
-              price: pricePerKg,
-              totalPrice: itemPrice,
-              timestamp: serverTimestamp(),
-              sellerId: item.sellerId,
-              season: getCurrentSeason(),
-              orderCode: orderCode,
-              isBuyNow: isBuyNow.value,
-              paymentStatus: 'unpaid'
-            });
-          }
-        });
-
-        // PHASE 3: CLEANUP - Delete cart items after successful transaction
-        if (!isBuyNow.value && cartItemsToDelete.length > 0) {
-          try {
-            const deletePromises = cartItemsToDelete.map(cartItemId => 
-              deleteDoc(doc(db, 'carts', cartItemId))
-            );
-            await Promise.all(deletePromises);
-          } catch (error) {
-            console.error('Error deleting cart items:', error);
-            // Non-critical error, doesn't affect order success
-          }
-        }
-
-        // PHASE 4: Handle Payment
-        if (paymentMethod.value === 'gcash') {
-          try {
-            // Create GCash payment link
-            const paymentResult = await createGcashPayment({
-              amount: total.value,
-              orderCode: orderCode,
-              customerName: username,
-              customerEmail: email
-            });
-
-            // Redirect to GCash payment page
-            window.location.href = paymentResult.data.paymentUrl;
-            return; // Exit function as we're redirecting
-          } catch (error) {
-            console.error('Error creating GCash payment:', error);
-            showNotificationMessage('Failed to create GCash payment. Please try again.', 'error');
-            return;
-          }
-        }
-        
-        // For cash on delivery, show success modal
-
-      showSuccessModal.value = true;
-      countdown.value = 300; // Reset to 5 minutes
-      canCancel.value = true;
-      startCountdown();
-      showNotificationMessage('Order placed successfully!', 'success');
-
-        
-        // Save GCash number if requested
-        if (paymentMethod.value === 'gcash' && saveGcash.value) {
-          try {
-            const userRef = doc(db, 'users', auth.currentUser.uid);
-            await updateDoc(userRef, {
-              savedGcashNumber: gcashDetails.value.number
-            });
-          } catch (error) {
-            console.error('Error saving GCash number:', error);
-            // Non-critical error
-          }
-        }
-        
-      } catch (error) {
-        console.error('Order placement error:', error);
-        showNotificationMessage(
-          error.message || 'Failed to place order. Please try again.',
-          'error'
-        );
-      }
-    };
-
-
-
-    
-const cancelOrder = async () => {
   try {
     if (!auth.currentUser) throw new Error('User not authenticated');
-    
-    // Update all orders with this order code to 'Cancelled'
-    const ordersQuery = query(
-      collection(db, 'orders'),
-      where('orderCode', '==', orderNumber.value)
-    );
-    
-    const querySnapshot = await getDocs(ordersQuery);
-    const updatePromises = [];
-    
-    querySnapshot.forEach((doc) => {
-      updatePromises.push(updateDoc(doc.ref, {
-        status: 'Cancelled',
-        cancelledAt: serverTimestamp()
-      }));
-    });
-    
-    await Promise.all(updatePromises);
-    
-    // Also update sales records
-    const salesQuery = query(
-      collection(db, 'sales'),
-      where('orderCode', '==', orderNumber.value)
-    );
-    
-    const salesSnapshot = await getDocs(salesQuery);
-    const salesUpdates = [];
-    
-    salesSnapshot.forEach((doc) => {
-      salesUpdates.push(updateDoc(doc.ref, {
-        paymentStatus: 'cancelled'
-      }));
-    });
-    
-    await Promise.all(salesUpdates);
-    
-    // Stop the countdown
-    clearInterval(countdownInterval.value);
-    
-    // Show success message
-    showNotificationMessage('Order cancelled successfully', 'success');
-    showSuccessModal.value = false;
-  } catch (error) {
-    console.error('Error cancelling order:', error);
-    showNotificationMessage('Failed to cancel order', 'error');
-  }
-};
 
-    
-    // Clean up interval when component unmounts
-    onUnmounted(() => {
-      if (countdownInterval.value) {
-        clearInterval(countdownInterval.value);
+    // Generate order code
+    const orderCode = generateOrderCode();
+    orderNumber.value = orderCode;
+
+    // Get user data
+    const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
+    const username = userDoc.exists() ? userDoc.data().username || '' : '';
+
+    // Collect cart items to delete (if not buy now)
+    const cartItemsToDelete = [];
+    if (!isBuyNow.value) {
+      orderItems.value.forEach(item => {
+        if (item.cartItemId) {
+          cartItemsToDelete.push(item.cartItemId);
+        }
+      });
+    }
+
+    // PHASE 1: VALIDATION - Check all products first
+    const productPromises = orderItems.value.map(item => 
+      getDoc(doc(db, 'products', item.productId))
+    );
+    const productSnapshots = await Promise.all(productPromises);
+
+    // Verify stock before transaction
+    for (let i = 0; i < orderItems.value.length; i++) {
+      const item = orderItems.value[i];
+      const productDoc = productSnapshots[i];
+      
+      if (!productDoc.exists()) {
+        throw new Error(`Product ${item.productName || item.productId} not found`);
+      }
+      
+      const productData = productDoc.data();
+      if (Number(productData.stock) < Number(item.weight)) {
+        throw new Error(`Only ${productData.stock}kg available for ${item.productName || 'product'}`);
+      }
+    }
+
+    // PHASE 2: TRANSACTION - Only writes here
+    await runTransaction(db, async (transaction) => {
+      // Process each item
+      for (let i = 0; i < orderItems.value.length; i++) {
+        const item = orderItems.value[i];
+        const productRef = doc(db, 'products', item.productId);
+        const productData = productSnapshots[i].data();
+        
+        // Update product stock
+        transaction.update(productRef, {
+          stock: increment(-Number(item.weight))
+        });
+
+        // Calculate all price components
+        const pricePerKg = Number(item.pricePerKg) || Number(item.price) || 0;
+        const weight = Number(item.weight) || 0;
+        const itemPrice = pricePerKg * weight;
+        const deliveryFeeValue = paymentMethod.value !== 'pickup' ? deliveryFee.value : 0;
+        const taxValue = itemPrice * 0.08; // 8% tax
+        const totalPrice = itemPrice + deliveryFeeValue + taxValue;
+
+        // Create order document with complete financial information
+        const orderRef = doc(collection(db, 'orders'));
+        transaction.set(orderRef, {
+          orderCode: orderCode,
+          sellerId: item.sellerId,
+          productId: item.productId,
+          productName: item.productName,
+          productImage: item.productImage || placeholderImage,
+          pricePerKg: pricePerKg,
+          itemPrice: itemPrice,
+          weight: weight,
+          packagingType: item.packagingType || 'N/A',
+          paymentMethod: paymentMethod.value,
+          gcashNumber: paymentMethod.value === 'gcash' ? gcashDetails.value.number : null,
+          deliveryOption: paymentMethod.value !== 'pickup' ? deliveryOption.value : null,
+          deliveryFee: deliveryFeeValue,
+          tax: taxValue,
+          totalPrice: totalPrice,
+          Location: {
+            province: selectedAddress.value.province,
+            municipality: selectedAddress.value.municipality,
+            barangay: selectedAddress.value.barangay,
+            address: `${selectedAddress.value.barangay}, ${selectedAddress.value.municipality}, ${selectedAddress.value.province}`,
+            notes: selectedAddress.value.locationNotes || ''
+          },
+          status: 'Processing',
+          payStatus: 'unpaid', // Default payment status
+          createdAt: serverTimestamp(),
+          userId: auth.currentUser.uid,
+          username: username,
+          isBuyNow: isBuyNow.value
+        });
+
+        // Create sale record with accurate financial data
+        const saleRef = doc(collection(db, 'sales'));
+        transaction.set(saleRef, {
+          productId: item.productId,
+          productName: item.productName,
+          category: productData.category || 'uncategorized',
+          quantity: weight,
+          price: pricePerKg,
+          totalPrice: itemPrice,
+          timestamp: serverTimestamp(),
+          sellerId: item.sellerId,
+          season: getCurrentSeason(),
+          orderCode: orderCode,
+          isBuyNow: isBuyNow.value,
+          paymentStatus: 'unpaid' // Consistent with order record
+        });
       }
     });
+
+    // PHASE 3: CLEANUP - Delete cart items after successful transaction
+    if (!isBuyNow.value && cartItemsToDelete.length > 0) {
+      try {
+        const deletePromises = cartItemsToDelete.map(cartItemId => 
+          deleteDoc(doc(db, 'carts', cartItemId))
+        );
+        await Promise.all(deletePromises);
+      } catch (error) {
+        console.error('Error deleting cart items:', error);
+        // Non-critical error, doesn't affect order success
+      }
+    }
+    
+    // Show success notification and modal
+    showSuccessModal.value = true;
+    showNotificationMessage('Order placed successfully!', 'success');
+    
+    // Save GCash number if requested
+    if (paymentMethod.value === 'gcash' && saveGcash.value) {
+      try {
+        const userRef = doc(db, 'users', auth.currentUser.uid);
+        await updateDoc(userRef, {
+          savedGcashNumber: gcashDetails.value.number
+        });
+      } catch (error) {
+        console.error('Error saving GCash number:', error);
+        // Non-critical error
+      }
+    }
+    
+  } catch (error) {
+    console.error('Order placement error:', error);
+    showNotificationMessage(
+      error.message || 'Failed to place order. Please try again.',
+      'error'
+    );
+  }
+};
 
     function getCurrentSeason() {
       const month = new Date().getMonth() + 1;
@@ -954,58 +832,54 @@ const cancelOrder = async () => {
       fetchUserAddresses();
     });
     
-   return {
-  orderItems,
-  isBuyNow,
-  subtotal,
-  deliveryFee,
-  tax,
-  total,
-  placeOrder,
-  placeholderImage,
-  increaseQuantity,
-  decreaseQuantity,
-  
-  // Address
-  addresses,
-  selectedAddressIndex,
-  selectedAddress,
-  showAddressModal,
-  showNewAddressForm,
-  newAddress,
-  loadingAddresses,
-  municipalities,
-  barangays,
-  updateBarangays,
-  
-  // Payment
-  paymentMethod,
-  gcashDetails,
-  saveGcash,
-  
-  // Delivery
-  deliveryOption,
-  
-  // Notification
-  showNotification,
-  notificationMessage,
-  notificationType,
-  
-  // Order success
-  showSuccessModal,
-  orderNumber,
-  
-  // Methods
-  confirmAddress,
-  saveNewAddress,
-  cancelNewAddress,
-  continueShopping,
-  showNotificationMessage, // <-- This line was missing a comma
-
-  countdown,
-  canCancel,
-  cancelOrder,
-};
+    return {
+      orderItems,
+      isBuyNow,
+      subtotal,
+      deliveryFee,
+      tax,
+      total,
+      placeOrder,
+      placeholderImage,
+      increaseQuantity,
+      decreaseQuantity,
+      
+      // Address
+      addresses,
+      selectedAddressIndex,
+      selectedAddress,
+      showAddressModal,
+      showNewAddressForm,
+      newAddress,
+      loadingAddresses,
+      municipalities,
+      barangays,
+      updateBarangays,
+      
+      // Payment
+      paymentMethod,
+      gcashDetails,
+      saveGcash,
+      
+      // Delivery
+      deliveryOption,
+      
+      // Notification
+      showNotification,
+      notificationMessage,
+      notificationType,
+      
+      // Order success
+      showSuccessModal,
+      orderNumber,
+      
+      // Methods
+      confirmAddress,
+      saveNewAddress,
+      cancelNewAddress,
+      continueShopping,
+      showNotificationMessage
+    };
   }
 }
 </script>
@@ -1808,39 +1682,5 @@ const cancelOrder = async () => {
   transform: translateY(-50%);
   color: #999;
   pointer-events: none;
-}
-
-.cancellation-notice {
-  background-color: #fff8e6;
-  padding: 15px;
-  border-radius: 10px;
-  margin-bottom: 20px;
-  text-align: center;
-}
-
-.cancellation-notice p {
-  margin: 0 0 10px;
-  font-size: 14px;
-}
-
-.countdown {
-  font-weight: 600;
-  color: #2e5c31;
-  font-size: 16px;
-}
-
-.cancel-order-button {
-  width: 100%;
-  padding: 10px;
-  background-color: #ffebee;
-  color: #c62828;
-  border: 1px solid #c62828;
-  border-radius: 8px;
-  font-weight: 500;
-  margin-top: 10px;
-}
-
-.cancel-order-button:hover {
-  background-color: #ffcdd2;
 }
 </style>

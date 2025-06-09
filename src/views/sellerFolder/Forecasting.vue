@@ -94,36 +94,38 @@
         </div>
         
         <div class="forecast-details">
-          <div class="forecast-products">
-            <h2>Product Forecasts</h2>
-            <div class="product-cards">
-              <div v-for="product in displayedProducts" :key="product.id" class="product-card">
-                <div class="product-image">
-                  <img :src="product.image" :alt="product.name" />
-                </div>
-                <div class="product-info">
-                  <h3>{{ product.name }}</h3>
-                  <p class="category">{{ product.category }}</p>
-                  <div class="forecast-stats">
-                    <div class="stat">
-                      <span class="stat-label">Projected Sales</span>
-                      <span class="stat-value">{{ product.projectedSales }} {{ product.unit }}</span>
-                    </div>
-                    <div class="stat">
-                      <span class="stat-label">Projected Revenue</span>
-                      <span class="stat-value">₱{{ product.projectedRevenue.toLocaleString() }}</span>
-                    </div>
-                    <div class="stat">
-                      <span class="stat-label">Growth</span>
-                      <span class="stat-value" :class="getGrowthClass(product.growth)">
-                        {{ product.growth > 0 ? '+' : '' }}{{ product.growth }}%
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+<div class="forecast-products">
+  <h2>Product Forecasts</h2>
+  <div class="product-cards">
+    <div v-for="product in displayedProducts" :key="product.id" class="product-card">
+      <div class="product-image">
+        <img :src="product.image" :alt="product.name" />
+      </div>
+      <div class="product-info">
+        <h3>{{ product.name }}</h3>
+        <p class="category">{{ product.category }}</p>
+        <div class="forecast-stats">
+          <div class="stat">
+            <span class="stat-label">Projected Sales</span>
+            <div class="unit-sales" v-for="(value, unit) in product.projectedSales" :key="unit">
+              <span class="stat-value">{{ value }} {{ getUnitDisplay(unit) }}</span>
             </div>
           </div>
+          <div class="stat">
+            <span class="stat-label">Projected Revenue</span>
+            <span class="stat-value">₱{{ product.projectedRevenue.toLocaleString() }}</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Growth</span>
+            <span class="stat-value" :class="getGrowthClass(product.growth)">
+              {{ product.growth > 0 ? '+' : '' }}{{ product.growth }}%
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
           
           <div class="forecast-insights">
             <h2>Insights & Recommendations</h2>
@@ -217,6 +219,10 @@ import {
   RefreshCw 
 } from 'lucide-vue-next';
 
+import { useRouter } from 'vue-router';
+
+const router = useRouter();
+
 // Data properties
 const forecastPeriod = ref('14');
 const selectedCategory = ref('all');
@@ -238,6 +244,30 @@ const trainingStats = ref({
   endDate: '',
   accuracy: 0
 });
+
+const defaultProductImage = '/placeholder.svg?height=100&width=100';
+
+const unitDisplayMap = {
+  'kg': 'Kilogram',
+  'sack': 'Sack',
+  'tali': 'Tali',
+  'kaing': 'Kaing',
+  'bundle': 'Bundle',
+  'tray': 'Tray',
+  'piece': 'Piece',
+  'perKilo': 'Kilogram',
+  'perSack': 'Sack',
+  'perTali': 'Tali',
+  'perKaing': 'Kaing',
+  'perBundle': 'Bundle',
+  'perTray': 'Tray',
+  'perPiece': 'Piece'
+};
+
+// Helper function to get unit display name
+const getUnitDisplay = (unit) => {
+  return unitDisplayMap[unit] || unit || 'Unit';
+};
 
 // Philippine seasons
 const seasons = ref([
@@ -665,7 +695,6 @@ const getSeasonalFactor = (dayOffset) => {
   return baseFactor + variation;
 };
 
-// Generate product-specific forecasts with capped growth rate at 100%
 const generateProductForecasts = (salesData, products, forecastTotal) => {
   loadingMessage.value = 'Generating product-specific forecasts...';
   
@@ -684,7 +713,14 @@ const generateProductForecasts = (salesData, products, forecastTotal) => {
   for (const product of products) {
     // Calculate historical sales for this product
     let productHistoricalSales = 0;
-    let productHistoricalQuantity = 0;
+    const productHistoricalQuantities = {};
+    
+    // Initialize quantities for all available units
+    if (product.availableUnits) {
+      product.availableUnits.forEach(unit => {
+        productHistoricalQuantities[unit] = 0;
+      });
+    }
     
     // Count occurrences of this product in sales data
     let occurrences = 0;
@@ -693,7 +729,14 @@ const generateProductForecasts = (salesData, products, forecastTotal) => {
       const productData = day.products[product.id];
       if (productData) {
         productHistoricalSales += productData.revenue;
-        productHistoricalQuantity += productData.quantity;
+        
+        // Track quantities by unit
+        if (productData.unit && productData.quantity) {
+          if (!productHistoricalQuantities[productData.unit]) {
+            productHistoricalQuantities[productData.unit] = 0;
+          }
+          productHistoricalQuantities[productData.unit] += productData.quantity;
+        }
         occurrences++;
       }
     });
@@ -703,12 +746,7 @@ const generateProductForecasts = (salesData, products, forecastTotal) => {
       ? productHistoricalSales / totalHistoricalSales 
       : 0;
     
-    // Calculate average quantity per sale
-    const avgQuantityPerSale = occurrences > 0 
-      ? productHistoricalQuantity / occurrences 
-      : 0;
-    
-    // Calculate a simple growth metric (positive or negative)
+    // Calculate growth (similar to existing logic)
     let growth = 0;
     if (salesData.length > 2) {
       const halfPoint = Math.floor(salesData.length / 2);
@@ -721,69 +759,80 @@ const generateProductForecasts = (salesData, products, forecastTotal) => {
       firstHalf.forEach(day => {
         const productData = day.products[product.id];
         if (productData) {
-          firstHalfSales += productData.quantity;
+          firstHalfSales += productData.quantity || 0;
         }
       });
       
       secondHalf.forEach(day => {
         const productData = day.products[product.id];
         if (productData) {
-          secondHalfSales += productData.quantity;
+          secondHalfSales += productData.quantity || 0;
         }
       });
       
       if (firstHalfSales > 0) {
-        // Calculate growth but cap it at 100%
         growth = ((secondHalfSales - firstHalfSales) / firstHalfSales) * 100;
-        growth = Math.max(-100, Math.min(100, growth)); // Cap between -100% and 100%
+        growth = Math.max(-100, Math.min(100, growth));
       }
     }
     
-    // Apply seasonal adjustment based on product category
+    // Apply seasonal adjustment (existing logic)
     let seasonalFactor = 1;
-    
     if (useSeasonalAdjustment.value) {
       const season = selectedSeason.value === 'auto' ? getCurrentSeason() : selectedSeason.value;
       
       if (season === 'dry') {
         if (product.category === 'Fruits') {
-          seasonalFactor = 1.3; // Fruits sell better in dry season
+          seasonalFactor = 1.3;
         } else if (product.category === 'Vegetables') {
-          seasonalFactor = 0.9; // Some vegetables might not do as well
+          seasonalFactor = 0.9;
         }
       } else if (season === 'rainy') {
         if (product.category === 'Vegetables') {
-          seasonalFactor = 1.2; // Vegetables often do better in rainy season
+          seasonalFactor = 1.2;
         } else if (product.category === 'Fruits') {
-          seasonalFactor = 0.8; // Some fruits might not do as well
+          seasonalFactor = 0.8;
         }
       } else if (season === 'cool') {
         if (product.category === 'Vegetables') {
-          seasonalFactor = 1.15; // Cool-weather vegetables do well
+          seasonalFactor = 1.15;
         } else if (product.category === 'Fruits') {
-          seasonalFactor = 0.95; // Some fruits might not do as well
+          seasonalFactor = 0.95;
         }
       }
     }
     
-    // Calculate projected sales for the forecast period
+    // Calculate projected sales for each unit
     const projectedSalesShare = salesShare * seasonalFactor;
     const projectedSalesValue = totalForecastSales * projectedSalesShare;
-    const projectedQuantity = avgQuantityPerSale > 0 && product.price > 0
-      ? projectedSalesValue / product.price 
-      : 0;
+    
+    // Calculate projected quantities per unit
+    const projectedSalesByUnit = {};
+    let totalHistoricalQuantity = 0;
+    
+    // Calculate total historical quantity across all units
+    Object.values(productHistoricalQuantities).forEach(qty => {
+      totalHistoricalQuantity += qty;
+    });
+    
+    // Distribute forecasted quantities by unit
+    if (totalHistoricalQuantity > 0) {
+      for (const [unit, qty] of Object.entries(productHistoricalQuantities)) {
+        const unitShare = qty / totalHistoricalQuantity;
+        projectedSalesByUnit[unit] = Math.round(unitShare * (projectedSalesValue / (product.price || 1)) * 10) / 10;
+      }
+    }
     
     // Add to product forecasts
     productForecasts.push({
       id: product.id,
-      name: product.productName,
+      name: product.productName || product.name,
       category: product.category,
-      image: product.image,
-      unit: product.unit || 'units',
+image: product.image || defaultProductImage,
       price: product.price,
-      projectedSales: Math.round(projectedQuantity * 10) / 10, // Round to 1 decimal
+      projectedSales: projectedSalesByUnit,
       projectedRevenue: Math.round(projectedSalesValue),
-      growth: Math.round(growth), // Growth percentage (capped at ±100%)
+      growth: Math.round(growth),
       seasonalFactor
     });
   }
@@ -1132,7 +1181,13 @@ watch([selectedCategory, selectedSeason, useSeasonalAdjustment], () => {
   flex-direction: column;
   gap: 4px;
 }
+.unit-sales {
+  margin-top: 4px;
+}
 
+.unit-sales:first-child {
+  margin-top: 0;
+}
 .toggle-group {
   flex-direction: column;
 }

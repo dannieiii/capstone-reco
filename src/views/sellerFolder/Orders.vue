@@ -131,6 +131,8 @@
             <tr>
               <th>Order Code</th>
               <th>Customer</th>
+              <th>Product</th>
+              <th>Unit & Quantity</th>
               <th>Location</th>
               <th>Date</th>
               <th>Total</th>
@@ -143,12 +145,23 @@
               <td class="order-id">#{{ order.orderCode || 'N/A' }}</td>
               <td>{{ order.username }}</td>
               <td>
+                <div class="product-info">
+                  <span class="product-name">{{ order.productName }}</span>
+                </div>
+              </td>
+              <td>
+                <div class="unit-quantity">
+                  <span class="quantity">{{ order.quantity }}</span>
+                  <span class="unit">{{ getUnitDisplay(order.unit) }}</span>
+                </div>
+              </td>
+              <td>
                 <div class="location-cell">
                   <i class="i-lucide-map-pin location-icon"></i>
                   <span>{{ getAddressDisplay(order.Location) }}</span>
                 </div>
               </td>
-              <td>{{ formatDateTime(order.timestamp) }}</td>
+              <td>{{ formatDateTime(order.timestamp || order.createdAt) }}</td>
               <td>₱{{ order.totalPrice.toFixed(2) }}</td>
               <td>
                 <div class="status-cell">
@@ -225,19 +238,26 @@
               
               <div class="info-group">
                 <h3>Delivery Information</h3>
-                <p><strong>Address:</strong> {{ selectedOrder.Location?.address || 'N/A' }}</p>
+                <p><strong>Address:</strong> {{ selectedOrder.Location?.address || getAddressDisplay(selectedOrder.Location) }}</p>
                 <p v-if="selectedOrder.Location?.name"><strong>Name/Alias:</strong> {{ selectedOrder.Location.name }}</p>
-                <p v-if="selectedOrder.Location?.locationNotes"><strong>Instruction:</strong> {{ selectedOrder.Location.locationNotes }}</p>
+                <p v-if="selectedOrder.Location?.locationNotes || selectedOrder.Location?.notes">
+                  <strong>Instructions:</strong> {{ selectedOrder.Location.locationNotes || selectedOrder.Location.notes }}
+                </p>
+                <p v-if="selectedOrder.deliveryOption"><strong>Delivery Option:</strong> {{ selectedOrder.deliveryOption }}</p>
+                <p v-if="selectedOrder.deliveryFee"><strong>Delivery Fee:</strong> ₱{{ selectedOrder.deliveryFee.toFixed(2) }}</p>
               </div>
               
               <div class="info-group">
                 <h3>Order Details</h3>
-                <p><strong>Date:</strong> {{ formatDateTime(selectedOrder.timestamp) }}</p>
+                <p><strong>Date:</strong> {{ formatDateTime(selectedOrder.timestamp || selectedOrder.createdAt) }}</p>
                 <p><strong>Status:</strong> 
                   <span :class="['status-badge', selectedOrder.status.toLowerCase()]">
                     {{ selectedOrder.status }}
                   </span>
                 </p>
+                <p><strong>Payment Method:</strong> {{ selectedOrder.paymentMethod || 'Cash on Delivery' }}</p>
+                <p v-if="selectedOrder.gcashNumber"><strong>GCash Number:</strong> {{ selectedOrder.gcashNumber }}</p>
+                <p><strong>Payment Status:</strong> {{ selectedOrder.payStatus || 'Unpaid' }}</p>
               </div>
             </div>
             
@@ -247,20 +267,36 @@
                 <thead>
                   <tr>
                     <th>Item</th>
-                    <th>Weight</th>
-                    <th>Price</th>
+                    <th>Unit</th>
+                    <th>Quantity</th>
+                    <th>Unit Price</th>
+                    <th>Subtotal</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
-                    <td>{{ selectedOrder.productName }}</td>
-                    <td>{{ selectedOrder.weight }} kg</td>
-                    <td>₱{{ selectedOrder.totalPrice.toFixed(2) }}</td>
+                    <td>
+                      <div class="item-details">
+                        <span class="item-name">{{ selectedOrder.productName }}</span>
+                      </div>
+                    </td>
+                    <td>{{ getUnitDisplay(selectedOrder.unit) }}</td>
+                    <td>{{ selectedOrder.quantity }}</td>
+                    <td>₱{{ selectedOrder.unitPrice ? selectedOrder.unitPrice.toFixed(2) : '0.00' }}</td>
+                    <td>₱{{ selectedOrder.itemPrice ? selectedOrder.itemPrice.toFixed(2) : (selectedOrder.unitPrice * selectedOrder.quantity).toFixed(2) }}</td>
                   </tr>
                 </tbody>
                 <tfoot>
+                  <tr v-if="selectedOrder.deliveryFee">
+                    <td colspan="4" class="text-right"><strong>Delivery Fee</strong></td>
+                    <td class="fee-cell">₱{{ selectedOrder.deliveryFee.toFixed(2) }}</td>
+                  </tr>
+                  <tr v-if="selectedOrder.tax">
+                    <td colspan="4" class="text-right"><strong>Tax</strong></td>
+                    <td class="fee-cell">₱{{ selectedOrder.tax.toFixed(2) }}</td>
+                  </tr>
                   <tr>
-                    <td colspan="2" class="text-right"><strong>Total</strong></td>
+                    <td colspan="4" class="text-right"><strong>Total</strong></td>
                     <td class="total-cell">₱{{ selectedOrder.totalPrice.toFixed(2) }}</td>
                   </tr>
                 </tfoot>
@@ -303,14 +339,44 @@ const selectedTime = ref('');
 const currentSellerId = ref('');
 const showExportMenu = ref(false);
 
+// Unit display mapping
+const unitDisplayMap = {
+  'kg': 'Kilogram',
+  'sack': 'Sack',
+  'tali': 'Tali',
+  'kaing': 'Kaing',
+  'bundle': 'Bundle',
+  'tray': 'Tray',
+  'piece': 'Piece',
+  'perKilo': 'Kilogram',
+  'perSack': 'Sack',
+  'perTali': 'Tali',
+  'perKaing': 'Kaing',
+  'perBundle': 'Bundle',
+  'perTray': 'Tray',
+  'perPiece': 'Piece'
+};
+
+// Helper function to get unit display name
+const getUnitDisplay = (unit) => {
+  return unitDisplayMap[unit] || unit || 'Unit';
+};
+
 // Helper function to get display address
 const getAddressDisplay = (location) => {
   if (!location) return 'N/A';
   if (typeof location === 'string') return location;
-  return location.address || 'N/A';
+  if (location.address) return location.address;
+  
+  // Construct address from components
+  const parts = [];
+  if (location.barangay) parts.push(location.barangay);
+  if (location.municipality) parts.push(location.municipality);
+  if (location.province) parts.push(location.province);
+  
+  return parts.length > 0 ? parts.join(', ') : 'N/A';
 };
 
-// Initialize with empty orders
 const initializeOrders = async () => {
   try {
     const auth = getAuth();
@@ -348,12 +414,23 @@ const initializeOrders = async () => {
         id: doc.id,
         ...data,
         username: data.username || '',
-        status: data.status || 'Pending',
+        status: data.status || 'Pending', // Default status is now 'Pending'
         Location: location,
         totalPrice: data.totalPrice || 0,
         timestamp: timestamp,
         sellerId: data.sellerId || '',
-        orderCode: data.orderCode || ''
+        orderCode: data.orderCode || '',
+        // New fields for multi-unit support
+        unit: data.unit || 'piece',
+        quantity: data.quantity || 1,
+        unitPrice: data.unitPrice || 0,
+        itemPrice: data.itemPrice || 0,
+        deliveryFee: data.deliveryFee || 0,
+        tax: data.tax || 0,
+        paymentMethod: data.paymentMethod || 'Cash on Delivery',
+        gcashNumber: data.gcashNumber || '',
+        deliveryOption: data.deliveryOption || '',
+        payStatus: data.payStatus || 'unpaid'
       };
     });
   } catch (error) {
@@ -392,7 +469,8 @@ const filteredOrders = computed(() => {
     .filter(order => {
       const matchesSearch = 
         (order.orderCode && order.orderCode.toLowerCase().includes(searchTerm)) ||
-        (order.username && order.username.toLowerCase().includes(searchTerm));
+        (order.username && order.username.toLowerCase().includes(searchTerm)) ||
+        (order.productName && order.productName.toLowerCase().includes(searchTerm));
       
       const matchesFilter = 
         activeFilter.value === 'All Orders' || 
@@ -575,7 +653,7 @@ const printReceipt = () => {
   }
   
   // Format the date for the receipt
-  const orderDate = formatDateTime(order.timestamp);
+  const orderDate = formatDateTime(order.timestamp || order.createdAt);
   
   // Create receipt HTML content with escaped closing tags
   const receiptContent = `
@@ -633,12 +711,14 @@ const printReceipt = () => {
             <h3>Delivery Information</h3>
             <p><strong>Address:</strong> ${getAddressDisplay(order.Location)}</p>
             ${order.Location?.name ? `<p><strong>Name/Alias:</strong> ${order.Location.name}</p>` : ''}
-            ${order.Location?.locationNotes ? `<p><strong>Instructions:</strong> ${order.Location.locationNotes}</p>` : ''}
+            ${order.Location?.locationNotes || order.Location?.notes ? `<p><strong>Instructions:</strong> ${order.Location.locationNotes || order.Location.notes}</p>` : ''}
+            ${order.deliveryOption ? `<p><strong>Delivery:</strong> ${order.deliveryOption}</p>` : ''}
           </div>
           
           <div class="info-group">
             <h3>Order Details</h3>
             <p><strong>Status:</strong> <span class="status-badge status-${order.status.toLowerCase()}">${order.status}</span></p>
+            <p><strong>Payment:</strong> ${order.paymentMethod || 'Cash on Delivery'}</p>
             <p><strong>Order ID:</strong> ${order.id}</p>
           </div>
         </div>
@@ -647,20 +727,34 @@ const printReceipt = () => {
           <thead>
             <tr>
               <th>Item</th>
-              <th>Weight</th>
-              <th>Price</th>
+              <th>Unit</th>
+              <th>Quantity</th>
+              <th>Unit Price</th>
+              <th>Subtotal</th>
             </tr>
           </thead>
           <tbody>
             <tr>
               <td>${order.productName || 'N/A'}</td>
-              <td>${order.weight || 0} kg</td>
-              <td>₱${order.totalPrice ? order.totalPrice.toFixed(2) : '0.00'}</td>
+              <td>${getUnitDisplay(order.unit)}</td>
+              <td>${order.quantity || 0}</td>
+              <td>₱${order.unitPrice ? order.unitPrice.toFixed(2) : '0.00'}</td>
+              <td>₱${order.itemPrice ? order.itemPrice.toFixed(2) : (order.unitPrice * order.quantity).toFixed(2)}</td>
             </tr>
           </tbody>
           <tfoot>
+            ${order.deliveryFee ? `
+            <tr>
+              <td colspan="4" class="text-right">Delivery Fee</td>
+              <td>₱${order.deliveryFee.toFixed(2)}</td>
+            </tr>` : ''}
+            ${order.tax ? `
+            <tr>
+              <td colspan="4" class="text-right">Tax</td>
+              <td>₱${order.tax.toFixed(2)}</td>
+            </tr>` : ''}
             <tr class="total-row">
-              <td colspan="2" class="text-right">Total</td>
+              <td colspan="4" class="text-right">Total</td>
               <td>₱${order.totalPrice ? order.totalPrice.toFixed(2) : '0.00'}</td>
             </tr>
           </tfoot>
@@ -722,15 +816,19 @@ const exportOrders = (format) => {
 // Export as CSV
 const exportAsCSV = () => {
   // Create CSV content
-  const headers = ['Order Code', 'Customer', 'Location', 'Date', 'Total', 'Status'];
+  const headers = ['Order Code', 'Customer', 'Product', 'Unit', 'Quantity', 'Unit Price', 'Location', 'Date', 'Total', 'Status'];
   
   const csvContent = [
     headers.join(','),
     ...filteredOrders.value.map(order => [
       order.orderCode ? `#${order.orderCode}` : 'N/A',
       order.username || 'Unknown',
+      order.productName || 'N/A',
+      getUnitDisplay(order.unit),
+      order.quantity || 0,
+      order.unitPrice ? `₱${order.unitPrice.toFixed(2)}` : '₱0.00',
       getAddressDisplay(order.Location),
-      formatDateTime(order.timestamp),
+      formatDateTime(order.timestamp || order.createdAt),
       `₱${order.totalPrice.toFixed(2)}`,
       order.status
     ].join(','))
@@ -794,6 +892,8 @@ const exportAsPDF = () => {
           <tr>
             <th>Order Code</th>
             <th>Customer</th>
+            <th>Product</th>
+            <th>Unit & Qty</th>
             <th>Location</th>
             <th>Date</th>
             <th>Total</th>
@@ -807,8 +907,10 @@ const exportAsPDF = () => {
               <tr>
                 <td>${escapeHtml(order.orderCode ? `#${order.orderCode}` : 'N/A')}</td>
                 <td>${escapeHtml(order.username || 'Unknown')}</td>
+                <td>${escapeHtml(order.productName || 'N/A')}</td>
+                <td>${order.quantity || 0} ${getUnitDisplay(order.unit)}</td>
                 <td>${escapeHtml(getAddressDisplay(order.Location))}</td>
-                <td>${escapeHtml(formatDateTime(order.timestamp))}</td>
+                <td>${escapeHtml(formatDateTime(order.timestamp || order.createdAt))}</td>
                 <td>₱${order.totalPrice.toFixed(2)}</td>
                 <td><span class="status-badge ${statusClass}">${order.status}</span></td>
               </tr>
@@ -846,6 +948,7 @@ const exportAsPDF = () => {
   min-width: 100px;
   color: #4b5563;
 }
+
 .location-cell {
   display: flex;
   align-items: center;
@@ -860,6 +963,52 @@ const exportAsPDF = () => {
   color: #2e5c31;
   flex-shrink: 0;
 }
+
+.product-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.product-name {
+  font-weight: 500;
+}
+
+
+
+.unit-quantity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.quantity {
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.unit {
+  font-size: 12px;
+  color: #666;
+  text-transform: capitalize;
+}
+
+.item-details {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.item-name {
+  font-weight: 500;
+}
+
+.fee-cell {
+  color: #666;
+  font-weight: 500;
+}
+
 .dashboard-container {
   display: flex;
   min-height: 100vh;
@@ -1221,16 +1370,6 @@ const exportAsPDF = () => {
   color: #2e5c31;
 }
 
-.location-cell {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.location-icon {
-  color: #2e5c31;
-}
-
 .status-cell {
   position: relative;
 }
@@ -1506,42 +1645,6 @@ const exportAsPDF = () => {
   font-size: 1.1rem;
 }
 
-.order-actions-section h3 {
-  font-size: 1rem;
-  font-weight: 600;
-  color: #111827;
-  margin: 0 0 15px 0;
-}
-
-.status-update-form {
-  display: flex;
-  gap: 10px;
-}
-
-.status-update-form .status-select {
-  flex: 1;
-  padding: 8px 12px;
-  border-radius: 4px;
-  border: 1px solid #e5e7eb;
-  font-size: 0.9rem;
-}
-
-.update-status-btn {
-  padding: 8px 16px;
-  background-color: #2e5c31;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.update-status-btn:hover {
-  background-color: #234425;
-}
-
 /* Dark mode styles */
 :global(.dark) .main-content {
   background-color: #111827;
@@ -1656,6 +1759,14 @@ const exportAsPDF = () => {
   border-bottom-color: #4b5563;
 }
 
+:global(.dark) .modal-content {
+  background-color: #1f2937;
+}
+
+:global(.dark) .modal-header {
+  border-bottom-color: #4b5563;
+}
+
 :global(.dark) .modal-header h2 {
   color: #f9fafb;
 }
@@ -1697,25 +1808,6 @@ const exportAsPDF = () => {
 
 :global(.dark) .total-cell {
   color: #6abe6e;
-}
-
-:global(.dark) .order-actions-section h3 {
-  color: #f9fafb;
-}
-
-:global(.dark) .status-update-form .status-select {
-  background-color: #374151;
-  border-color: #4b5563;
-  color: #e5e7eb;
-}
-
-:global(.dark) .update-status-btn {
-  background-color: #6abe6e;
-  color: #111827;
-}
-
-:global(.dark) .update-status-btn:hover {
-  background-color: #58a85c;
 }
 
 /* Responsive styles */
@@ -1762,10 +1854,6 @@ const exportAsPDF = () => {
     grid-template-columns: 1fr;
   }
   
-  .status-update-form {
-    flex-direction: column;
-  }
-  
   .modal-actions {
     flex-direction: column;
     gap: 8px;
@@ -1774,6 +1862,15 @@ const exportAsPDF = () => {
   .print-receipt-btn {
     width: 100%;
     justify-content: center;
+  }
+  
+  .orders-table {
+    font-size: 0.8rem;
+  }
+  
+  .orders-table th,
+  .orders-table td {
+    padding: 8px 4px;
   }
 }
 </style>
