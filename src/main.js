@@ -7,6 +7,7 @@ import { auth, db } from './firebase/firebaseConfig'; // Import auth and db
 import { doc, updateDoc } from 'firebase/firestore'; // Import Firestore functions
 import { onAuthStateChanged } from 'firebase/auth'; // Import auth functions
 import '@fortawesome/fontawesome-free/css/all.min.css';
+import 'leaflet/dist/leaflet.css';
 
 let app;
 

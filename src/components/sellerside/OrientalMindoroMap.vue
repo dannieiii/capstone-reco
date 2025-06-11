@@ -26,6 +26,7 @@
         :min-zoom="8"
         :max-zoom="15"
         @ready="onMapReady"
+        style="height: 100%; width: 100%;"
       >
         <l-tile-layer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -34,32 +35,31 @@
           :bounds="bounds"
         />
         
-        <l-marker
-          v-for="(municipality, index) in municipalities"
+       <l-marker
+          v-for="(municipality, index) in municipalityMarkers"
           :key="index"
           :lat-lng="municipality.coordinates"
           :icon="icon"
-          @click="selectMunicipality(municipality.name)"
         >
           <l-popup>
             <div class="popup-content">
               <h4>{{ municipality.name }}</h4>
               <div class="info-item">
-                <span class="info-label">Total Users:</span>
-                <span class="info-value">{{ getMunicipalityUsers(municipality.name).length }}</span>
+                <span class="info-label">Sellers covering this area:</span>
+                <span class="info-value">{{ sellersByMunicipality[municipality.name]?.length || 0 }}</span>
               </div>
-              <div class="info-item">
-                <span class="info-label">Sellers:</span>
-                <span class="info-value">{{ getMunicipalityUsers(municipality.name).filter(u => u.role === 'seller').length }}</span>
-              </div>
-              <div class="info-item">
-                <span class="info-label">Customers:</span>
-                <span class="info-value">{{ getMunicipalityUsers(municipality.name).filter(u => u.role === 'customer').length }}</span>
-              </div>
+              <ul>
+                <li v-for="seller in sellersByMunicipality[municipality.name]" :key="seller.id">
+                  {{ seller.name || seller.id }}
+                </li>
+              </ul>
             </div>
           </l-popup>
         </l-marker>
       </l-map>
+      <div v-if="municipalityMarkers.length === 0" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#888;">
+        No delivery areas registered by sellers yet.
+      </div>
       
       <!-- Legend -->
       <div class="map-legend">
@@ -110,14 +110,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { db } from '@/firebase/firebaseConfig';
-import { collection, getDocs, query, where } from "firebase/firestore";
+import { collection, getDocs } from "firebase/firestore";
 import "leaflet/dist/leaflet.css";
 import { LMap, LTileLayer, LMarker, LPopup } from "@vue-leaflet/vue-leaflet";
 import L from 'leaflet';
 
-// Fix for default marker icons
 const icon = L.icon({
   iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png',
@@ -131,197 +130,121 @@ const icon = L.icon({
 const loading = ref(true);
 const selectedUserType = ref('all');
 const sellers = ref([]);
-const customers = ref([]);
-const usersByMunicipality = ref({});
-const selectedMunicipality = ref(null);
-const zoom = ref(10); // Increased zoom level to focus more on Oriental Mindoro
-const center = ref([13.0, 121.5]); // Center of Oriental Mindoro
-
-// Define bounds for Oriental Mindoro
+const municipalityMarkers = ref([]);
+const zoom = ref(10);
+const center = ref([13.0, 121.5]);
 const bounds = ref([
-  [12.2, 120.8], // Southwest coordinates
-  [13.6, 121.6]  // Northeast coordinates
+  [12.2, 120.8],
+  [13.6, 121.6]
 ]);
 
-// Oriental Mindoro municipalities with their coordinates
 const municipalities = [
-  {
-    name: "Puerto Galera",
-    coordinates: [13.5022, 120.9547]
-  },
-  {
-    name: "San Teodoro",
-    coordinates: [13.4333, 120.9167]
-  },
-  {
-    name: "Baco",
-    coordinates: [13.3578, 120.9739]
-  },
-  {
-    name: "Calapan City",
-    coordinates: [13.4117, 121.1803]
-  },
-  {
-    name: "Naujan",
-    coordinates: [13.3239, 121.3028]
-  },
-  {
-    name: "Victoria",
-    coordinates: [13.1778, 121.2778]
-  },
-  {
-    name: "Socorro",
-    coordinates: [13.0583, 121.4083]
-  },
-  {
-    name: "Pola",
-    coordinates: [13.1444, 121.4444]
-  },
-  {
-    name: "Pinamalayan",
-    coordinates: [13.0333, 121.4833]
-  },
-  {
-    name: "Gloria",
-    coordinates: [12.9833, 121.4667]
-  },
-  {
-    name: "Bansud",
-    coordinates: [12.8667, 121.4500]
-  },
-  {
-    name: "Bongabong",
-    coordinates: [12.7500, 121.4833]
-  },
-  {
-    name: "Roxas",
-    coordinates: [12.5833, 121.5167]
-  },
-  {
-    name: "Mansalay",
-    coordinates: [12.5167, 121.4333]
-  },
-  {
-    name: "Bulalacao",
-    coordinates: [12.3333, 121.3500]
-  }
+  { name: "Puerto Galera", coordinates: [13.5022, 120.9547] },
+  { name: "San Teodoro", coordinates: [13.4333, 120.9167] },
+  { name: "Baco", coordinates: [13.3578, 120.9739] },
+  { name: "Calapan City", coordinates: [13.4117, 121.1803] },
+  { name: "Naujan", coordinates: [13.3239, 121.3028] },
+  { name: "Victoria", coordinates: [13.1778, 121.2778] },
+  { name: "Socorro", coordinates: [13.0583, 121.4083] },
+  { name: "Pola", coordinates: [13.1444, 121.4444] },
+  { name: "Pinamalayan", coordinates: [13.0333, 121.4833] },
+  { name: "Gloria", coordinates: [12.9833, 121.4667] },
+  { name: "Bansud", coordinates: [12.8667, 121.4500] },
+  { name: "Bongabong", coordinates: [12.7500, 121.4833] },
+  { name: "Roxas", coordinates: [12.5833, 121.5167] },
+  { name: "Mansalay", coordinates: [12.5167, 121.4333] },
+  { name: "Bulalacao", coordinates: [12.3333, 121.3500] }
 ];
 
-// Computed property to get the top municipality by user count
-const topMunicipality = computed(() => {
-  const municipalityCounts = municipalities.map(m => {
-    return {
-      name: m.name,
-      count: getMunicipalityUsers(m.name).length
-    };
-  });
-  
-  if (municipalityCounts.length === 0) return { name: null, count: 0 };
-  
-  return municipalityCounts.sort((a, b) => b.count - a.count)[0];
-});
-
-// Function to fetch users data from Firestore
-const fetchUsersData = async () => {
+// Fetch sellers and their areasCovered
+const fetchSellersAreas = async () => {
+  loading.value = true;
   try {
-    loading.value = true;
-    
-    // Fetch sellers
-    const sellersQuery = query(collection(db, "users"), where("role", "==", "seller"));
-    const sellersSnapshot = await getDocs(sellersQuery);
-    sellers.value = sellersSnapshot.docs.map(doc => ({ id: doc.id, role: 'seller', ...doc.data() }));
-    
-    // Fetch customers
-    const customersQuery = query(collection(db, "users"), where("role", "==", "customer"));
-    const customersSnapshot = await getDocs(customersQuery);
-    customers.value = customersSnapshot.docs.map(doc => ({ id: doc.id, role: 'customer', ...doc.data() }));
-    
-    // Process data
-    processUserData();
-    
+    const sellersSnapshot = await getDocs(collection(db, "sellers"));
+    sellers.value = sellersSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    console.log('Fetched sellers:', sellers.value);
+
+    // Collect all unique areasCovered from all sellers (normalized)
+    const coveredAreas = new Set();
+    sellers.value.forEach(seller => {
+      let areas = seller.deliveryInfo?.areasCovered;
+      if (Array.isArray(areas)) {
+        areas.forEach(area => {
+          if (typeof area === 'string') {
+            const normalizedArea = area.trim().toLowerCase().replace(/\s+/g, ' ');
+            coveredAreas.add(normalizedArea);
+          }
+        });
+      } else if (areas && typeof areas === 'object') {
+        Object.values(areas).forEach(area => {
+          if (typeof area === 'string') {
+            const normalizedArea = area.trim().toLowerCase().replace(/\s+/g, ' ');
+            coveredAreas.add(normalizedArea);
+          }
+        });
+      }
+    });
+
+    console.log('Normalized coveredAreas:', Array.from(coveredAreas));
+    console.log('Municipalities:', municipalities.map(m => m.name));
+
+    // Debug: Check each municipality
+    municipalities.forEach(m => {
+      const normalizedMuni = m.name.trim().toLowerCase().replace(/\s+/g, ' ');
+      console.log('Checking municipality:', m.name, '->', normalizedMuni, 'in coveredAreas?', coveredAreas.has(normalizedMuni));
+    });
+
+    // Filter municipalities to only those covered by sellers
+    municipalityMarkers.value = municipalities.filter(m => {
+      if (!m || !m.name || !m.coordinates) return false;
+      const normalizedMuni = m.name.trim().toLowerCase().replace(/\s+/g, ' ');
+      return coveredAreas.has(normalizedMuni);
+    });
+
+    console.log('Filtered municipalityMarkers:', municipalityMarkers.value);
   } catch (error) {
-    console.error("Error fetching users data:", error);
+    console.error("Error fetching sellers:", error);
   } finally {
     loading.value = false;
   }
 };
 
-// Function to process user data and group by municipality
-const processUserData = () => {
-  const municipalityData = {};
-  
-  // Initialize all municipalities with empty arrays
-  municipalities.forEach(m => {
-    municipalityData[m.name] = [];
-  });
-  
-  // Process data based on selected user type
-  let usersToProcess = [];
-  
-  if (selectedUserType.value === 'all') {
-    usersToProcess = [...sellers.value, ...customers.value];
-  } else if (selectedUserType.value === 'seller') {
-    usersToProcess = [...sellers.value];
-  } else {
-    usersToProcess = [...customers.value];
-  }
-  
-  // For demonstration purposes, we'll randomly assign users to municipalities
-  // In a real implementation, you would parse the address to determine the municipality
-  usersToProcess.forEach(user => {
-    // Extract municipality from address
-    const addressParts = (user.address || '').split(',').map(part => part.trim());
-    let municipality = null;
-    
-    // Try to find a municipality in the address that matches our list
-    for (const part of addressParts) {
-      const match = municipalities.find(m => 
-        part.toLowerCase().includes(m.name.toLowerCase())
-      );
-      if (match) {
-        municipality = match.name;
-        break;
+onMounted(fetchSellersAreas);
+
+// For popup info (optional: show how many sellers cover each area)
+const sellersByMunicipality = computed(() => {
+  const map = {};
+  municipalityMarkers.value.forEach(m => {
+    map[m.name] = sellers.value.filter(seller => {
+      let areas = seller.deliveryInfo?.areasCovered;
+      if (Array.isArray(areas)) {
+        return areas.some(area =>
+          typeof area === 'string' &&
+          area.trim().toLowerCase() === m.name.trim().toLowerCase()
+        );
+      } else if (areas && typeof areas === 'object') {
+        return Object.values(areas).some(area =>
+          typeof area === 'string' &&
+          area.trim().toLowerCase() === m.name.trim().toLowerCase()
+        );
       }
-    }
-    
-    // If no match found, assign to a random municipality for demonstration
-    if (!municipality) {
-      const randomIndex = Math.floor(Math.random() * municipalities.length);
-      municipality = municipalities[randomIndex].name;
-    }
-    
-    if (!municipalityData[municipality]) {
-      municipalityData[municipality] = [];
-    }
-    
-    municipalityData[municipality].push(user);
+      return false;
+    });
   });
-  
-  usersByMunicipality.value = municipalityData;
-};
-
-// Function to get users for a specific municipality
-const getMunicipalityUsers = (municipalityName) => {
-  return usersByMunicipality.value[municipalityName] || [];
-};
-
-// Function to select a municipality
-const selectMunicipality = (municipalityName) => {
-  selectedMunicipality.value = municipalityName;
-};
-
-// Map ready handler
-const onMapReady = (map) => {
-  // You can add any map initialization logic here
-};
-
-// Watch for changes in selected user type
-watch(selectedUserType, () => {
-  processUserData();
+  return map;
 });
 
-onMounted(async () => {
-  await fetchUsersData();
+const topMunicipality = computed(() => {
+  let top = { name: '', count: 0 };
+  Object.entries(sellersByMunicipality.value).forEach(([name, sellers]) => {
+    if (sellers.length > top.count) {
+      top = { name, count: sellers.length };
+    }
+  });
+  return top;
 });
 </script>
 
@@ -480,22 +403,22 @@ onMounted(async () => {
 
 .stat-value {
   font-size: 1.2rem;
-  font-weight: 600;
-  color: #3182bd;
+  font-weight: 500;
+  color: #111827;
 }
+
+
 
 .leaflet-control-attribution {
   display: none !important;
 }
-</style>
-
-<!-- Add custom attribution below the map for compliance -->
-<div class="custom-attribution" style="text-align:center; font-size:0.8em; color:#888; margin-top:-10px;">
-  Map data © OpenStreetMap contributors
-</div>
-
-<style>
-.leaflet-control-attribution {
-  display: none !important;
+.custom-attribution {
+  text-align: center;
+  font-size: 0.8em;
+  color: #888;
+  margin-top: -10px;
 }
+
+
+
 </style>
