@@ -120,23 +120,29 @@
       
       <!-- Farm Store Information -->
       <div class="farm-store-info">
-        <div class="farm-details">
-          <div class="farm-avatar">
-            <img src="https://images.unsplash.com/photo-1500382017468-9049fed747ef?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8ZmFybXxlbnwwfHwwfHx8MA%3D%3D&w=100&q=80" alt="Farm logo">
-          </div>
-          <div class="farm-text">
-            <h3>{{ farmName || 'Loading farm...' }}</h3>
-            <div class="farm-location">
-              <MapPin size="14" />
-              <span>{{ farmAddress || 'Loading location...' }}</span>
+          <div class="farm-details">
+            <div class="farm-text">
+              <h3>{{ farmName || 'Farm information not available' }}</h3>
+              <div class="farm-location">
+                <MapPin size="14" />
+                <span v-if="areasCovered && areasCovered.length > 0">
+                  Available in {{ areasCovered.join(', ') }}
+                </span>
+                <span v-else>
+                  Delivery areas not specified
+                </span>
+              </div>
             </div>
           </div>
+          <button 
+            class="visit-store-btn" 
+            @click="visitStore"
+            :disabled="!sellerId"
+          >
+            <Store size="16" />
+            Visit Store
+          </button>
         </div>
-        <button class="visit-store-btn" @click="visitStore">
-          <Store size="16" />
-          Visit Store
-        </button>
-      </div>
 
       <!-- Related Products Section -->
       <div class="related-products">
@@ -347,9 +353,9 @@ export default {
   },
   data() {
     return {
-      farmName: '',
-      farmAddress: '',
+      farmName: 'Loading farm...',
       sellerId: '',
+      areasCovered: [],
       showNotification: false,
       notificationMessage: '',
       notificationType: 'success',
@@ -431,6 +437,12 @@ export default {
     averageRating() {
       if (!this.product) return 0;
       return this.product.rating || 0;
+    },
+    deliveryAreasText() {
+      if (!this.areasCovered || this.areasCovered.length === 0) {
+        return 'No delivery areas available';
+      }
+      return `Available in ${this.areasCovered.join(', ')}`;
     }
   },
   methods: {
@@ -463,60 +475,90 @@ export default {
     handleRatingUpdate(rating) {
       this.averageRating = rating;
     },
-    async fetchProduct() {
-      try {
-        const productDocRef = doc(db, 'products', this.productId);
-        const productDoc = await getDoc(productDocRef);
-        
-        if (productDoc.exists()) {
-          this.product = productDoc.data();
-          this.sellerId = this.product.sellerId; // Ensure sellerId is set from product
-          
-          // Determine available units
-          this.availableUnits = [];
-          if (this.product.pricePerKilo > 0) this.availableUnits.push('kg');
-          if (this.product.pricePerSack > 0) this.availableUnits.push('sack');
-          if (this.product.pricePerTali > 0) this.availableUnits.push('tali');
-          if (this.product.pricePerKaing > 0) this.availableUnits.push('kaing');
-          if (this.product.pricePerBundle > 0) this.availableUnits.push('bundle');
-          if (this.product.pricePerTray > 0) this.availableUnits.push('tray');
-          if (this.product.pricePerPiece > 0) this.availableUnits.push('piece');
-          
-          // Fetch farm details
-          await this.fetchFarmDetails();
-        } else {
-          this.showNotificationMessage('Product not found', 'error');
-        }
-      } catch (error) {
-        console.error('Error fetching product:', error);
-        this.showNotificationMessage('Failed to load product details', 'error');
-      }
-    },
-    async fetchFarmDetails() {
+   async fetchProduct() {
+  try {
+    const productDocRef = doc(db, 'products', this.productId);
+    const productDoc = await getDoc(productDocRef);
+    
+    if (productDoc.exists()) {
+      this.product = productDoc.data();
+      console.log('Product data:', this.product);
+      
+      // Check if sellerId exists and is valid
+      this.sellerId = this.product.sellerId;
       if (!this.sellerId) {
-        this.farmName = 'Farm not available';
-        this.farmAddress = 'Location not available';
-        return;
+        console.warn('Product has no sellerId field');
+      } else if (typeof this.sellerId !== 'string') {
+        console.warn('sellerId is not a string:', this.sellerId);
       }
+      
+      // Determine available units
+      this.availableUnits = [];
+      if (this.product.pricePerKilo > 0) this.availableUnits.push('kg');
+      if (this.product.pricePerSack > 0) this.availableUnits.push('sack');
+      if (this.product.pricePerTali > 0) this.availableUnits.push('tali');
+      if (this.product.pricePerKaing > 0) this.availableUnits.push('kaing');
+      if (this.product.pricePerBundle > 0) this.availableUnits.push('bundle');
+      if (this.product.pricePerTray > 0) this.availableUnits.push('tray');
+      if (this.product.pricePerPiece > 0) this.availableUnits.push('piece');
+      
+      // Set default unit
+      this.selectedUnit = this.defaultUnit;
+    } else {
+      console.error('Product document does not exist');
+      this.showNotificationMessage('Product not found', 'error');
+    }
+  } catch (error) {
+    console.error('Error fetching product:', error);
+    this.showNotificationMessage('Failed to load product details', 'error');
+  }
+},
+    async fetchFarmDetails() {
+  if (!this.sellerId) {
+    console.log('No sellerId available');
+    this.farmName = 'Farm not available';
+    this.areasCovered = [];
+    return;
+  }
 
-      try {
-        const sellerDocRef = doc(db, 'sellers', this.sellerId);
-        const sellerDoc = await getDoc(sellerDocRef);
-        
-        if (sellerDoc.exists()) {
-          const sellerData = sellerDoc.data();
-          this.farmName = sellerData.farmName || 'Farm not specified';
-          this.farmAddress = sellerData.farmAddress || sellerData.address || 'Location not available';
-        } else {
-          this.farmName = 'Farm not available';
-          this.farmAddress = 'Location not available';
-        }
-      } catch (error) {
-        console.error('Error fetching farm details:', error);
-        this.farmName = 'Farm not available';
-        this.farmAddress = 'Location not available';
-      }
-    },
+  try {
+    console.log(`Fetching seller document with ID: ${this.sellerId}`);
+    const sellerDocRef = doc(db, 'sellers', this.sellerId);
+    const sellerDoc = await getDoc(sellerDocRef);
+
+    if (!sellerDoc.exists()) {
+      console.error('Seller document does not exist in sellers collection');
+      // List all seller IDs for debugging
+      const sellersQuery = query(collection(db, 'sellers'));
+      const sellersSnapshot = await getDocs(sellersQuery);
+      const allSellerIds = sellersSnapshot.docs.map(doc => doc.id);
+      console.log('Existing seller IDs:', allSellerIds);
+      
+      this.farmName = 'Farm not available';
+      this.areasCovered = [];
+      return;
+    }
+
+    const sellerData = sellerDoc.data();
+    console.log('Seller data found:', sellerData);
+    
+    // Ensure required fields exist
+    if (!sellerData.farmName) {
+      console.warn('Seller document exists but has no farmName field');
+    }
+    if (!sellerData.areasCovered) {
+      console.warn('Seller document exists but has no areasCovered field');
+    }
+
+    this.farmName = sellerData.farmName || 'Farm not specified';
+    this.areasCovered = sellerData.areasCovered || [];
+    
+  } catch (error) {
+    console.error('Error fetching seller details:', error);
+    this.farmName = 'Farm not available';
+    this.areasCovered = [];
+  }
+},
     async fetchRelatedProducts() {
       try {
         let productsQuery;
@@ -666,7 +708,6 @@ export default {
     },
     visitStore() {
       if (this.sellerId) {
-        // Fixed: Changed from 'SellerStore' to 'farmStore' to match the router configuration
         this.router.push({
           name: 'farmStore',
           params: { sellerId: this.sellerId }
@@ -700,20 +741,22 @@ export default {
     }
   },
   async mounted() {
-    const user = auth.currentUser;
-    if (user) {
-      this.userId = user.uid;
-      const userDocRef = doc(db, 'users', user.uid);
-      const userDoc = await getDoc(userDocRef);
-      if (userDoc.exists()) {
-        this.username = userDoc.data().username;
-      }
-    }
-
-    await this.fetchProduct();
-    await this.fetchRelatedProducts();
-    await this.incrementViewCount();
+  console.log('Component mounted, productId:', this.productId);
+  
+  await this.fetchProduct();
+  console.log('Product fetched. Seller ID:', this.sellerId);
+  
+  if (this.sellerId) {
+    console.log('Fetching farm details for seller:', this.sellerId);
+    await this.fetchFarmDetails();
+  } else {
+    console.warn('No sellerId found in product');
   }
+  
+  await this.fetchRelatedProducts();
+  await this.incrementViewCount();
+
+}
 };
 </script>
 
@@ -743,7 +786,7 @@ export default {
   align-items: center;
   justify-content: center;
   color: white;
-  background: none; /* Removed background */
+  background: none;
   border: none;
   cursor: pointer;
 }
@@ -767,7 +810,7 @@ export default {
   align-items: center;
   justify-content: center;
   color: white;
-  background: none; /* Removed background */
+  background: none;
   border: none;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -1072,16 +1115,29 @@ export default {
   font-weight: 600;
   color: #333;
   margin: 0 0 4px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
 }
 
 .farm-location {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 4px;
   font-size: 12px;
   color: #666;
 }
 
+.farm-location span {
+  display: inline-block;
+  max-width: 150px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Button Styles */
 .visit-store-btn {
   display: flex;
   align-items: center;
@@ -1124,20 +1180,7 @@ export default {
   background-color: white;
   border-radius: 10px;
   overflow: hidden;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
 }
-
-.related-product-image {
-  height: 100px;
-  position: relative;
-}
-
-.related-product-image img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
 .related-badge {
   position: absolute;
   top: 5px;
@@ -1292,7 +1335,6 @@ export default {
   justify-content: space-between;
   margin-bottom: 8px;
 }
-
 .price-row.total {
   font-weight: bold;
   margin-top: 10px;
