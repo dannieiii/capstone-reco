@@ -48,7 +48,9 @@
       
       <div class="price-section">
         <h3 class="price">₱{{ defaultPrice }}</h3>
-        <p class="stock">Available: {{ defaultStock }} {{ defaultUnit }}</p>
+        <p class="stock" :class="{ 'out-of-stock': isOutOfStock(defaultUnit) }">
+          {{ isOutOfStock(defaultUnit) ? 'Out of Stock' : `Available: ${defaultStock} ${defaultUnit}` }}
+        </p>
       </div>
       
       <!-- Unit Selection -->
@@ -100,21 +102,37 @@
       </div>
       
       <div class="quantity-section">
-        <button class="quantity-button decrease" @click="decreaseQuantity">
+        <button 
+          class="quantity-button decrease" 
+          @click="decreaseQuantity"
+          :disabled="isOutOfStock(defaultUnit)"
+        >
           <Minus size="16" />
         </button>
         <span class="quantity">{{ quantity }}</span>
-        <button class="quantity-button increase" @click="increaseQuantity">
+        <button 
+          class="quantity-button increase" 
+          @click="increaseQuantity"
+          :disabled="isOutOfStock(defaultUnit)"
+        >
           <Plus size="16" />
         </button>
         
-        <button class="add-to-cart" @click="showAddToCartModal">
+        <button 
+          class="add-to-cart" 
+          @click="showAddToCartModal"
+          :disabled="isOutOfStock(defaultUnit)"
+        >
           <ShoppingCart size="16" />
-          Add to cart
+          {{ isOutOfStock(defaultUnit) ? 'Out of Stock' : 'Add to cart' }}
         </button>
 
-        <button class="buy-now-button" @click="showBuyNowModal">
-          Buy Now
+        <button 
+          class="buy-now-button" 
+          @click="showBuyNowModal"
+          :disabled="isOutOfStock(defaultUnit)"
+        >
+          {{ isOutOfStock(defaultUnit) ? 'Out of Stock' : 'Buy Now' }}
         </button>
       </div>
       
@@ -205,14 +223,29 @@
           <div class="form-group">
             <label>Quantity</label>
             <div class="quantity-control">
-              <button @click="decreaseModalQuantity" :disabled="modalQuantity <= 1">
+              <button 
+                @click="decreaseModalQuantity" 
+                :disabled="modalQuantity <= 1"
+              >
                 <Minus size="16" />
               </button>
-              <input type="number" v-model="modalQuantity" min="1" :max="getMaxQuantity(modalSelectedUnit)">
-              <button @click="increaseModalQuantity" :disabled="modalQuantity >= getMaxQuantity(modalSelectedUnit)">
+              <input 
+                type="number" 
+                v-model="modalQuantity" 
+                min="1" 
+                :max="getMaxQuantity(modalSelectedUnit)"
+                @input="validateModalQuantity"
+              >
+              <button 
+                @click="increaseModalQuantity" 
+                :disabled="modalQuantity >= getMaxQuantity(modalSelectedUnit) || getMaxQuantity(modalSelectedUnit) === 0"
+              >
                 <Plus size="16" />
               </button>
             </div>
+            <small v-if="getMaxQuantity(modalSelectedUnit) === 0" class="stock-warning">
+              This item is currently out of stock
+            </small>
           </div>
           
           <div class="price-summary">
@@ -227,7 +260,11 @@
           </div>
         </div>
         <div class="modal-footer">
-          <button class="confirm-button" @click="handleAddToCartConfirm">
+          <button 
+            class="confirm-button" 
+            @click="handleAddToCartConfirm"
+            :disabled="getMaxQuantity(modalSelectedUnit) === 0"
+          >
             Add to Cart
           </button>
         </div>
@@ -261,14 +298,29 @@
           <div class="form-group">
             <label>Quantity</label>
             <div class="quantity-control">
-              <button @click="decreaseModalQuantity" :disabled="modalQuantity <= 1">
+              <button 
+                @click="decreaseModalQuantity" 
+                :disabled="modalQuantity <= 1"
+              >
                 <Minus size="16" />
               </button>
-              <input type="number" v-model="modalQuantity" min="1" :max="getMaxQuantity(modalSelectedUnit)">
-              <button @click="increaseModalQuantity" :disabled="modalQuantity >= getMaxQuantity(modalSelectedUnit)">
+              <input 
+                type="number" 
+                v-model="modalQuantity" 
+                min="1" 
+                :max="getMaxQuantity(modalSelectedUnit)"
+                @input="validateModalQuantity"
+              >
+              <button 
+                @click="increaseModalQuantity" 
+                :disabled="modalQuantity >= getMaxQuantity(modalSelectedUnit) || getMaxQuantity(modalSelectedUnit) === 0"
+              >
                 <Plus size="16" />
               </button>
             </div>
+            <small v-if="getMaxQuantity(modalSelectedUnit) === 0" class="stock-warning">
+              This item is currently out of stock
+            </small>
           </div>
           
           <div class="price-summary">
@@ -283,9 +335,108 @@
           </div>
         </div>
         <div class="modal-footer">
-          <button class="confirm-button" @click="handleBuyNowConfirm">
+          <button 
+            class="confirm-button" 
+            @click="handleBuyNowConfirm"
+            :disabled="getMaxQuantity(modalSelectedUnit) === 0"
+          >
             Proceed to Checkout
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Login Required Modal -->
+    <div v-if="showLoginModal" class="modal-overlay">
+      <div class="login-modal">
+        <div class="login-header">
+          <button class="close-button" @click="closeLoginModal">
+            &times;
+          </button>
+        </div>
+        
+        <div class="login-content">
+          <div class="app-branding">
+            <img src="@/assets/logo.png" alt="FarmXpress Logo" class="logo" />
+            <h1 class="app-title">FarmXpress</h1>
+            <h3 class="app-subtitle">MOBILE APP</h3>
+          </div>
+          
+          <div class="login-form">
+            <div class="input-group">
+              <div class="input-wrapper">
+                <User size="18" class="input-icon" />
+                <input 
+                  type="email" 
+                  placeholder="Email" 
+                  class="login-input"
+                  v-model="loginEmail"
+                />
+              </div>
+            </div>
+            
+            <div class="input-group">
+              <div class="input-wrapper">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="input-icon">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                  <circle cx="12" cy="16" r="1"/>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                </svg>
+                <input 
+                  :type="showPassword ? 'text' : 'password'" 
+                  placeholder="Password" 
+                  class="login-input"
+                  v-model="loginPassword"
+                />
+                <button 
+                  type="button" 
+                  class="password-toggle"
+                  @click="togglePassword"
+                >
+                  <svg v-if="showPassword" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                  </svg>
+                  <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                    <line x1="1" y1="1" x2="23" y2="23"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            
+            <div class="form-options">
+              <label class="remember-me">
+                <input type="checkbox" v-model="rememberMe" />
+                <span class="checkmark"></span>
+                Remember Me
+              </label>
+              <a href="#" class="forgot-password" @click="goToForgotPassword">Forgot Password?</a>
+            </div>
+            
+            <button class="login-button" @click="handleEmailLogin" :disabled="isLoggingIn">
+              {{ isLoggingIn ? 'Logging in...' : 'Login' }}
+            </button>
+            
+            <div class="login-divider">
+              <span>or</span>
+            </div>
+            
+            <button class="google-login-btn" @click="loginWithGoogle">
+              <svg width="18" height="18" viewBox="0 0 18 18">
+                <path fill="#4285F4" d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 0 0 2.38-5.88c0-.57-.05-.66-.15-1.18z"/>
+                <path fill="#34A853" d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2.04a4.8 4.8 0 0 1-7.18-2.53H1.83v2.07A8 8 0 0 0 8.98 17z"/>
+                <path fill="#FBBC05" d="M4.5 10.49a4.8 4.8 0 0 1 0-3.07V5.35H1.83a8 8 0 0 0 0 7.17l2.67-2.03z"/>
+                <path fill="#EA4335" d="M8.98 4.72c1.16 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 0 0 1.83 5.35L4.5 7.42c.64-1.9 2.26-3.2 4.48-3.2z"/>
+              </svg>
+              Continue with Google
+            </button>
+            
+            <p class="signup-text">
+              Don't have an account? 
+              <a href="#" @click="goToSignup" class="signup-link">Create an account</a>
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -307,8 +458,19 @@ import {
   Store,
   Eye,
   ShoppingBag,
-  TrendingUp
+  TrendingUp,
+  User // Add User icon import
 } from 'lucide-vue-next';
+import { 
+  GoogleAuthProvider, 
+  FacebookAuthProvider, 
+  signInWithPopup,
+  signInWithEmailAndPassword,
+  OAuthProvider,
+  setPersistence,
+  browserSessionPersistence,
+  browserLocalPersistence
+} from 'firebase/auth';
 import { doc, getDoc, collection, getDocs, query, where, addDoc, serverTimestamp, updateDoc, increment } from 'firebase/firestore';
 import { auth, db } from '@/firebase/firebaseConfig';
 import { useRouter } from 'vue-router';
@@ -356,6 +518,7 @@ export default {
       farmName: 'Loading farm...',
       sellerId: '',
       areasCovered: [],
+      sellerInfo: null, // Add this line
       showNotification: false,
       notificationMessage: '',
       notificationType: 'success',
@@ -371,7 +534,14 @@ export default {
       showAddToCartModalVisible: false,
       showBuyNowModalVisible: false,
       modalSelectedUnit: '',
-      modalQuantity: 1
+      modalQuantity: 1,
+      showLoginModal: false,
+      pendingAction: null, // 'cart' or 'buynow'
+      loginEmail: '',
+      loginPassword: '',
+      rememberMe: false,
+      showPassword: false,
+      isLoggingIn: false
     };
   },
   computed: {
@@ -446,6 +616,20 @@ export default {
     }
   },
   methods: {
+    increaseModalQuantity() {
+      const maxQuantity = this.getMaxQuantity(this.modalSelectedUnit);
+      if (this.modalQuantity < maxQuantity) {
+        this.modalQuantity++;
+      } else {
+        this.showNotificationMessage(`Cannot add more items. Only ${maxQuantity} ${this.modalSelectedUnit} available in stock`, 'error');
+      }
+    },
+    
+    decreaseModalQuantity() {
+      if (this.modalQuantity > 1) {
+        this.modalQuantity--;
+      }
+    },
     getDisplayPrice(product) {
       if (product.pricePerKilo > 0) return product.pricePerKilo.toFixed(2) + '/kg';
       if (product.pricePerSack > 0) return product.pricePerSack.toFixed(2) + '/sack';
@@ -482,14 +666,20 @@ export default {
     
     if (productDoc.exists()) {
       this.product = productDoc.data();
-      console.log('Product data:', this.product);
+      console.log('Full product data:', this.product);
       
-      // Check if sellerId exists and is valid
+      // Check sellerId field specifically
       this.sellerId = this.product.sellerId;
+      console.log('Raw sellerId from product:', this.sellerId);
+      console.log('Type of sellerId:', typeof this.sellerId);
+      console.log('sellerId length:', this.sellerId ? this.sellerId.length : 'undefined');
+      
       if (!this.sellerId) {
         console.warn('Product has no sellerId field');
-      } else if (typeof this.sellerId !== 'string') {
-        console.warn('sellerId is not a string:', this.sellerId);
+      } else {
+        // Clean the sellerId (remove any whitespace)
+        this.sellerId = this.sellerId.trim();
+        console.log('Cleaned sellerId:', this.sellerId);
       }
       
       // Determine available units
@@ -513,50 +703,62 @@ export default {
     this.showNotificationMessage('Failed to load product details', 'error');
   }
 },
-    async fetchFarmDetails() {
+   async fetchFarmDetails() {
   if (!this.sellerId) {
     console.log('No sellerId available');
-    this.farmName = 'Farm not available';
+    this.farmName = 'Seller not found';
     this.areasCovered = [];
     return;
   }
 
   try {
-    console.log(`Fetching seller document with ID: ${this.sellerId}`);
-    const sellerDocRef = doc(db, 'sellers', this.sellerId);
-    const sellerDoc = await getDoc(sellerDocRef);
-
-    if (!sellerDoc.exists()) {
-      console.error('Seller document does not exist in sellers collection');
-      // List all seller IDs for debugging
-      const sellersQuery = query(collection(db, 'sellers'));
-      const sellersSnapshot = await getDocs(sellersQuery);
-      const allSellerIds = sellersSnapshot.docs.map(doc => doc.id);
-      console.log('Existing seller IDs:', allSellerIds);
-      
-      this.farmName = 'Farm not available';
-      this.areasCovered = [];
+    console.log(`Fetching farm details for seller: ${this.sellerId}`);
+    
+    // Query the sellers collection where userId field matches the sellerId
+    const sellersQuery = query(
+      collection(db, 'sellers'), 
+      where('userId', '==', this.sellerId)
+    );
+    
+    const sellersSnapshot = await getDocs(sellersQuery);
+    
+    if (sellersSnapshot.empty) {
+      console.error('No seller found with userId:', this.sellerId);
+      this.farmName = 'Seller not found';
+      this.areasCovered = ['Contact seller for delivery info'];
       return;
     }
-
-    const sellerData = sellerDoc.data();
-    console.log('Seller data found:', sellerData);
     
-    // Ensure required fields exist
-    if (!sellerData.farmName) {
-      console.warn('Seller document exists but has no farmName field');
+    // Get the first matching seller document
+    const sellerDoc = sellersSnapshot.docs[0];
+    const sellerData = sellerDoc.data();
+    console.log('Seller document found:', sellerData);
+    
+    // Extract farm name from farmDetails map
+    if (sellerData.farmDetails && sellerData.farmDetails.farmName) {
+      this.farmName = sellerData.farmDetails.farmName;
+      console.log('Farm name found:', this.farmName);
+    } else {
+      // Fallback to personal info
+      const firstName = sellerData.personalInfo?.firstName || '';
+      const lastName = sellerData.personalInfo?.lastName || '';
+      this.farmName = firstName && lastName ? `${firstName} ${lastName}'s Farm` : 'Farm name not available';
+      console.log('Using fallback farm name:', this.farmName);
     }
-    if (!sellerData.areasCovered) {
-      console.warn('Seller document exists but has no areasCovered field');
+    
+    // Extract areas covered from deliveryInfo map
+    if (sellerData.deliveryInfo && sellerData.deliveryInfo.areasCovered && Array.isArray(sellerData.deliveryInfo.areasCovered)) {
+      this.areasCovered = sellerData.deliveryInfo.areasCovered;
+      console.log('Areas covered found:', this.areasCovered);
+    } else {
+      this.areasCovered = ['Area coverage not available'];
+      console.log('No delivery areas found, using fallback');
     }
-
-    this.farmName = sellerData.farmName || 'Farm not specified';
-    this.areasCovered = sellerData.areasCovered || [];
     
   } catch (error) {
-    console.error('Error fetching seller details:', error);
-    this.farmName = 'Farm not available';
-    this.areasCovered = [];
+    console.error('Error fetching farm details:', error);
+    this.farmName = 'Error loading seller info';
+    this.areasCovered = ['Contact seller for delivery info'];
   }
 },
     async fetchRelatedProducts() {
@@ -623,11 +825,23 @@ export default {
       }
     },
     showAddToCartModal() {
+      if (!this.isUserAuthenticated()) {
+        this.pendingAction = 'cart';
+        this.showLoginModal = true;
+        return;
+      }
+      
       this.modalSelectedUnit = this.defaultUnit;
       this.modalQuantity = 1;
       this.showAddToCartModalVisible = true;
     },
     showBuyNowModal() {
+      if (!this.isUserAuthenticated()) {
+        this.pendingAction = 'buynow';
+        this.showLoginModal = true;
+        return;
+      }
+      
       this.modalSelectedUnit = this.defaultUnit;
       this.modalQuantity = 1;
       this.showBuyNowModalVisible = true;
@@ -638,73 +852,272 @@ export default {
     closeBuyNowModal() {
       this.showBuyNowModalVisible = false;
     },
-    increaseModalQuantity() {
-      if (this.modalQuantity < this.getMaxQuantity(this.modalSelectedUnit)) {
-        this.modalQuantity++;
-      } else {
-        this.showNotificationMessage(`Maximum available ${this.modalSelectedUnit} reached`, 'error');
-      }
+    closeLoginModal() {
+      this.showLoginModal = false;
+      this.pendingAction = null;
+      // Reset form
+      this.loginEmail = '';
+      this.loginPassword = '';
+      this.rememberMe = false;
+      this.showPassword = false;
+      this.isLoggingIn = false;
     },
-    decreaseModalQuantity() {
-      if (this.modalQuantity > 1) {
-        this.modalQuantity--;
+    continueWithPendingAction() {
+      if (this.pendingAction === 'cart') {
+        this.modalSelectedUnit = this.defaultUnit;
+        this.modalQuantity = 1;
+        this.showAddToCartModalVisible = true;
+      } else if (this.pendingAction === 'buynow') {
+        this.modalSelectedUnit = this.defaultUnit;
+        this.modalQuantity = 1;
+        this.showBuyNowModalVisible = true;
       }
+      
+      this.closeLoginModal();
     },
-    async handleAddToCartConfirm() {
-      if (!auth.currentUser) {
-        this.showNotificationMessage('Please sign in to add items to cart', 'error');
+    togglePassword() {
+      this.showPassword = !this.showPassword;
+    },
+    async handleEmailLogin() {
+      if (!this.loginEmail || !this.loginPassword) {
+        this.showNotificationMessage('Please enter both email and password', 'error');
         return;
       }
-
+      
+      this.isLoggingIn = true;
+      
       try {
-        const cartItem = {
-          userId: auth.currentUser.uid,
-          productId: this.productId,
-          productName: this.productName,
-          productImage: this.productImage,
-          unit: this.modalSelectedUnit,
-          quantity: this.modalQuantity,
-          unitPrice: this.getUnitPrice(this.modalSelectedUnit),
-          totalPrice: this.getUnitPrice(this.modalSelectedUnit) * this.modalQuantity,
-          farmName: this.farmName,
-          sellerId: this.sellerId,
-          createdAt: serverTimestamp()
-        };
-
-        await addDoc(collection(db, 'carts'), cartItem);
-        this.closeAddToCartModal();
-        this.showNotificationMessage('Item added to cart successfully', 'success');
+        // Set persistence based on remember me checkbox
+        if (this.rememberMe) {
+          await setPersistence(auth, browserLocalPersistence);
+          localStorage.setItem("authPersist", "true");
+          localStorage.setItem("rememberMe", "true");
+        } else {
+          await setPersistence(auth, browserSessionPersistence);
+          sessionStorage.setItem("authPersist", "true");
+          localStorage.removeItem("rememberMe");
+        }
+        
+        // Sign in with email and password
+        const userCredential = await signInWithEmailAndPassword(auth, this.loginEmail, this.loginPassword);
+        const user = userCredential.user;
+        
+        // Check email verification for email/password users
+        if (!user.emailVerified) {
+          await auth.signOut();
+          this.showNotificationMessage('Please verify your email before logging in', 'warning');
+          this.isLoggingIn = false;
+          return;
+        }
+        
+        // Store user session data
+        this.storeUserSession(user);
+        
+        this.showNotificationMessage('Successfully logged in!', 'success');
+        this.continueWithPendingAction();
+        
       } catch (error) {
-        console.error('Error adding to cart:', error);
-        this.showNotificationMessage('Failed to add item to cart', 'error');
+        console.error('Email login error:', error);
+        let errorMessage = 'Login failed';
+        
+        switch (error.code) {
+          case 'auth/user-not-found':
+            errorMessage = 'No account found with this email';
+            break;
+          case 'auth/wrong-password':
+            errorMessage = 'Invalid password';
+            break;
+          case 'auth/invalid-email':
+            errorMessage = 'Invalid email address';
+            break;
+          case 'auth/too-many-requests':
+            errorMessage = 'Too many failed attempts. Please try again later';
+            break;
+          default:
+            errorMessage = 'Invalid email or password';
+        }
+        
+        this.showNotificationMessage(errorMessage, 'error');
+      } finally {
+        this.isLoggingIn = false;
       }
     },
-    handleBuyNowConfirm() {
-      if (!this.sellerId) {
-        this.showNotificationMessage('Seller information is missing', 'error');
-        return;
-      }
-
-      const buyNowItem = {
-        productId: this.productId,
-        productName: this.productName,
-        productImage: this.productImage,
-        unit: this.modalSelectedUnit,
-        quantity: this.modalQuantity,
-        unitPrice: this.getUnitPrice(this.modalSelectedUnit),
-        totalPrice: this.getUnitPrice(this.modalSelectedUnit) * this.modalQuantity,
-        sellerId: this.sellerId,
-        farmName: this.farmName || 'Unknown Farm',
-        isBuyNow: true
-      };
-
-      this.closeBuyNowModal();
-      this.router.push({
-        name: 'Checkout',
-        query: {
-          items: JSON.stringify([buyNowItem])
+    async loginWithGoogle() {
+      try {
+        // Set persistence based on remember me checkbox (if applicable)
+        if (this.rememberMe) {
+          await setPersistence(auth, browserLocalPersistence);
+          localStorage.setItem("authPersist", "true");
+          localStorage.setItem("rememberMe", "true");
+        } else {
+          await setPersistence(auth, browserSessionPersistence);
+          sessionStorage.setItem("authPersist", "true");
+          localStorage.removeItem("rememberMe");
         }
-      });
+        
+        const provider = new GoogleAuthProvider();
+        const result = await signInWithPopup(auth, provider);
+        const user = result.user;
+        
+        // Store user session data
+        this.storeUserSession(user);
+        
+        this.showNotificationMessage('Successfully logged in with Google!', 'success');
+        this.continueWithPendingAction();
+        
+      } catch (error) {
+        console.error('Google login error:', error);
+        this.showNotificationMessage('Failed to login with Google', 'error');
+      }
+    },
+    async loginWithFacebook() {
+      try {
+        // Set persistence based on remember me checkbox
+        if (this.rememberMe) {
+          await setPersistence(auth, browserLocalPersistence);
+          localStorage.setItem("authPersist", "true");
+          localStorage.setItem("rememberMe", "true");
+        } else {
+          await setPersistence(auth, browserSessionPersistence);
+          sessionStorage.setItem("authPersist", "true");
+          localStorage.removeItem("rememberMe");
+        }
+        
+        const provider = new FacebookAuthProvider();
+        const result = await signInWithPopup(auth, provider);
+        const user = result.user;
+        
+        // Store user session data
+        this.storeUserSession(user);
+        
+        this.showNotificationMessage('Successfully logged in with Facebook!', 'success');
+        this.continueWithPendingAction();
+        
+      } catch (error) {
+        console.error('Facebook login error:', error);
+        this.showNotificationMessage('Failed to login with Facebook', 'error');
+      }
+    },
+    async loginWithApple() {
+      try {
+        // Set persistence based on remember me checkbox
+        if (this.rememberMe) {
+          await setPersistence(auth, browserLocalPersistence);
+          localStorage.setItem("authPersist", "true");
+          localStorage.setItem("rememberMe", "true");
+        } else {
+          await setPersistence(auth, browserSessionPersistence);
+          sessionStorage.setItem("authPersist", "true");
+          localStorage.removeItem("rememberMe");
+        }
+        
+        const provider = new OAuthProvider('apple.com');
+        const result = await signInWithPopup(auth, provider);
+        const user = result.user;
+        
+        // Store user session data
+        this.storeUserSession(user);
+        
+        this.showNotificationMessage('Successfully logged in with Apple!', 'success');
+        this.continueWithPendingAction();
+        
+      } catch (error) {
+        console.error('Apple login error:', error);
+        this.showNotificationMessage('Failed to login with Apple', 'error');
+      }
+    },
+    
+    // Store user session data
+    storeUserSession(user) {
+      const userSessionData = {
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName,
+        photoURL: user.photoURL,
+        emailVerified: user.emailVerified,
+        loginTime: new Date().toISOString()
+      };
+      
+      if (this.rememberMe) {
+        // Store in localStorage for persistent login
+        localStorage.setItem('userSession', JSON.stringify(userSessionData));
+        localStorage.setItem('lastLoginMethod', 'email');
+      } else {
+        // Store in sessionStorage for session-only login
+        sessionStorage.setItem('userSession', JSON.stringify(userSessionData));
+        sessionStorage.setItem('lastLoginMethod', 'email');
+      }
+    },
+    
+    // Check for existing session on component mount
+    checkExistingSession() {
+      // Check localStorage first (persistent login)
+      const localStorageSession = localStorage.getItem('userSession');
+      const sessionStorageSession = sessionStorage.getItem('userSession');
+      
+      if (localStorageSession) {
+        try {
+          const userData = JSON.parse(localStorageSession);
+          console.log('Found persistent user session:', userData.email);
+          // Session exists, user is logged in
+          return true;
+        } catch (error) {
+          console.error('Error parsing localStorage session:', error);
+          localStorage.removeItem('userSession');
+        }
+      } else if (sessionStorageSession) {
+        try {
+          const userData = JSON.parse(sessionStorageSession);
+          console.log('Found session user session:', userData.email);
+          // Session exists, user is logged in
+          return true;
+        } catch (error) {
+          console.error('Error parsing sessionStorage session:', error);
+          sessionStorage.removeItem('userSession');
+        }
+      }
+      
+      return false;
+    },
+    
+    // Clear session data on logout
+    clearUserSession() {
+      localStorage.removeItem('userSession');
+      localStorage.removeItem('authPersist');
+      localStorage.removeItem('rememberMe');
+      localStorage.removeItem('lastLoginMethod');
+      sessionStorage.removeItem('userSession');
+      sessionStorage.removeItem('authPersist');
+      sessionStorage.removeItem('lastLoginMethod');
+    },
+    
+    // Updated authentication check
+    isUserAuthenticated() {
+      // Check Firebase auth first
+      if (auth.currentUser) {
+        return true;
+      }
+      
+      // Check stored session data
+      return this.checkExistingSession();
+    },
+    closeLoginModal() {
+      this.showLoginModal = false;
+      this.pendingAction = null;
+      // Reset form
+      this.loginEmail = '';
+      this.loginPassword = '';
+      this.rememberMe = false;
+      this.showPassword = false;
+      this.isLoggingIn = false;
+    },
+    goToForgotPassword() {
+      this.closeLoginModal();
+      this.router.push('/forgot-password');
+    },
+    goToSignup() {
+      this.closeLoginModal();
+      this.router.push('/signup');
     },
     visitStore() {
       if (this.sellerId) {
@@ -712,8 +1125,11 @@ export default {
           name: 'farmStore',
           params: { sellerId: this.sellerId }
         });
+      } else {
+        this.showNotificationMessage('Seller information not available', 'error');
       }
     },
+
     viewProduct(product) {
       this.router.push({ path: `/product/${product.id}` });
     },
@@ -738,10 +1154,214 @@ export default {
       } catch (error) {
         console.error('Error incrementing view count:', error);
       }
+    },
+
+    // Add this method to get complete seller information
+    async fetchSellerInfo() {
+      if (!this.sellerId) return;
+
+      try {
+        // Query the sellers collection where userId field matches the sellerId
+        const sellersQuery = query(
+          collection(db, 'sellers'), 
+          where('userId', '==', this.sellerId)
+        );
+        
+        const sellersSnapshot = await getDocs(sellersQuery);
+        
+        if (!sellersSnapshot.empty) {
+          const sellerDoc = sellersSnapshot.docs[0];
+          const sellerData = sellerDoc.data();
+          
+          // Store additional seller info if needed
+          this.sellerInfo = {
+            farmName: sellerData.farmDetails?.farmName || 'Farm not specified',
+
+            // Delivery info
+            areasCovered: sellerData.deliveryInfo?.areasCovered || [],
+            
+     
+          };
+          
+          console.log('Complete seller info:', this.sellerInfo);
+        }
+      } catch (error) {
+        console.error('Error fetching seller info:', error);
+      }
+    },
+    // Add method to get current user data
+    getCurrentUserData() {
+      // Check localStorage first (persistent login)
+      const localStorageSession = localStorage.getItem('userSession');
+      const sessionStorageSession = sessionStorage.getItem('userSession');
+      
+      if (localStorageSession) {
+        try {
+          return JSON.parse(localStorageSession);
+        } catch (error) {
+          console.error('Error parsing localStorage session:', error);
+          localStorage.removeItem('userSession');
+        }
+      } else if (sessionStorageSession) {
+        try {
+          return JSON.parse(sessionStorageSession);
+        } catch (error) {
+          console.error('Error parsing sessionStorage session:', error);
+          sessionStorage.removeItem('userSession');
+        }
+      }
+      
+      // Check Firebase auth as fallback
+      if (auth.currentUser) {
+        return {
+          uid: auth.currentUser.uid,
+          email: auth.currentUser.email,
+          displayName: auth.currentUser.displayName
+        };
+      }
+      
+      return null;
+    },
+
+    async handleAddToCartConfirm() {
+      try {
+        // Get current user data from custom session storage
+        const userData = this.getCurrentUserData();
+        if (!userData) {
+          this.showNotificationMessage('Please log in to add items to cart', 'error');
+          return;
+        }
+
+        // Validate stock before adding to cart
+        const stockValidation = this.validateStock(this.modalSelectedUnit, this.modalQuantity);
+        if (!stockValidation.isValid) {
+          this.showNotificationMessage(stockValidation.message, 'error');
+          return;
+        }
+
+        const unitPrice = this.getUnitPrice(this.modalSelectedUnit);
+
+        const cartItem = {
+          userId: userData.uid,
+          productId: this.productId,
+          productName: this.productName,
+          productImage: this.productImage,
+          unit: this.modalSelectedUnit,
+          quantity: this.modalQuantity,
+          unitPrice: unitPrice,
+          totalPrice: unitPrice * this.modalQuantity,
+          pricePerKg: unitPrice,
+          price: unitPrice,
+          farmName: this.farmName,
+          sellerId: this.sellerId,
+          createdAt: serverTimestamp()
+        };
+
+        await addDoc(collection(db, 'carts'), cartItem);
+        this.closeAddToCartModal();
+        this.showNotificationMessage('Item added to cart successfully', 'success');
+      } catch (error) {
+        console.error('Error adding to cart:', error);
+        this.showNotificationMessage('Failed to add item to cart', 'error');
+      }
+    },
+async handleBuyNowConfirm() {
+    try {
+      // Get current user data from custom session storage
+      const userData = this.getCurrentUserData();
+      if (!userData) {
+        this.showNotificationMessage('Please log in to make a purchase', 'error');
+        return;
+      }
+
+      if (!this.sellerId) {
+        this.showNotificationMessage('Seller information is missing', 'error');
+        return;
+      }
+
+      // Validate stock before proceeding to checkout
+      const stockValidation = this.validateStock(this.modalSelectedUnit, this.modalQuantity);
+      if (!stockValidation.isValid) {
+        this.showNotificationMessage(stockValidation.message, 'error');
+        return;
+      }
+
+      const unitPrice = this.getUnitPrice(this.modalSelectedUnit);
+      const buyNowItem = {
+        productId: this.productId,
+        productName: this.productName,
+        productImage: this.productImage,
+        weight: this.modalQuantity,
+        packagingType: this.modalSelectedUnit,
+        totalPrice: unitPrice * this.modalQuantity,
+        sellerId: this.sellerId,
+        farmName: this.farmName || 'Unknown Farm',
+        unitPrice: unitPrice,
+        pricePerKg: unitPrice,
+        price: unitPrice,
+        unit: this.modalSelectedUnit,
+        quantity: this.modalQuantity,
+        isBuyNow: true
+      };
+
+      console.log('Buy Now Item being sent to checkout:', buyNowItem);
+
+      this.closeBuyNowModal();
+      this.router.push({
+        name: 'Checkout',
+        query: {
+          items: JSON.stringify([buyNowItem])
+        }
+      });
+    } catch (error) {
+      console.error('Error processing buy now:', error);
+      this.showNotificationMessage('Failed to process order', 'error');
     }
+  },
+  // Add stock validation method
+  validateStock(unit, quantity) {
+    const availableStock = this.getMaxQuantity(unit);
+    console.log(`Validating stock: Unit=${unit}, Requested=${quantity}, Available=${availableStock}`);
+    
+    if (availableStock === 0) {
+      return {
+        isValid: false,
+        message: `This item is currently out of stock`
+      };
+    }
+    
+    if (quantity > availableStock) {
+      return {
+        isValid: false,
+        message: `Cannot proceed. Only ${availableStock} ${unit} available in stock, but you're trying to order ${quantity} ${unit}`
+      };
+    }
+    
+    return { isValid: true };
+  },
+
+  // Add method to validate modal quantity input
+  validateModalQuantity() {
+    const maxStock = this.getMaxQuantity(this.modalSelectedUnit);
+    if (this.modalQuantity > maxStock) {
+      this.modalQuantity = maxStock;
+      this.showNotificationMessage(`Maximum available stock is ${maxStock} ${this.modalSelectedUnit}`, 'error');
+    }
+    if (this.modalQuantity < 1) {
+      this.modalQuantity = 1;
+    }
+  },
+
+  // Add method to check if product is out of stock
+  isOutOfStock(unit) {
+    return this.getMaxQuantity(unit) === 0;
+  },
   },
   async mounted() {
   console.log('Component mounted, productId:', this.productId);
+  
+  // Check for existing session
+  this.checkExistingSession();
   
   await this.fetchProduct();
   console.log('Product fetched. Seller ID:', this.sellerId);
@@ -1048,6 +1668,7 @@ export default {
   background-color: white;
   border: 1px solid #e0e0e0;
   color: #2e5c31;
+  cursor: pointer;
 }
 
 .quantity {
@@ -1168,53 +1789,222 @@ export default {
   font-size: 1.1rem;
   font-weight: 600;
   color: #333;
+  text-align: center;
 }
 
 .related-products-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  padding: 0 5px;
 }
 
 .related-product {
   background-color: white;
-  border-radius: 10px;
+  border-radius: 8px;
   overflow: hidden;
-}
-.related-badge {
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  padding: 3px 6px;
-  border-radius: 4px;
-  font-size: 10px;
-  font-weight: 500;
-  color: white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  cursor: pointer;
+  transition: transform 0.2s ease;
 }
 
-.related-badge.sale {
-  background-color: #ef4444;
+.related-product:hover {
+  transform: translateY(-2px);
+}
+
+.related-product-image {
+  height: 80px;
+  position: relative;
+  overflow: hidden;
+}
+
+.related-product-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.related-badge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-size: 8px;
+  font-weight: 600;
+  background-color: #ff4444;
+  color: white;
+  margin: 0;
 }
 
 .related-product-info {
-  padding: 10px;
+  padding: 8px;
+  text-align: center;
 }
 
 .related-product-info h4 {
-  font-size: 0.9rem;
-  margin: 0 0 8px 0;
-  white-space: nowrap;
+  font-size: 0.75rem;
+  margin: 0 0 4px 0;
+  color: #333;
+  font-weight: 600;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
+  height: 2.4em;
 }
 
 .related-price {
-  font-size: 0.9rem;
+  font-size: 0.7rem;
   font-weight: 600;
   color: #2e5c31;
   margin: 0;
 }
 
+/* Desktop/Web responsive adjustments for related products */
+@media (min-width: 768px) {
+  .related-products-grid {
+    gap: 15px;
+    padding: 0 10px;
+  }
+  
+  .related-product {
+    border-radius: 12px;
+  }
+  
+  .related-product-image {
+    height: 150px;
+  }
+  
+  .related-product-info {
+    padding: 12px;
+  }
+  
+  .related-product-info h4 {
+    font-size: 0.9rem;
+    height: 2.7em;
+  }
+  
+  .related-price {
+    font-size: 0.85rem;
+  }
+  
+  .related-badge {
+    font-size: 10px;
+    padding: 3px 6px;
+    top: 5px;
+    right: 5px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .related-products-grid {
+    gap: 20px;
+    padding: 0 15px;
+  }
+  
+  .related-product-image {
+    height: 180px;
+  }
+  
+  .related-product-info {
+    padding: 15px;
+  }
+  
+  .related-product_info h4 {
+    font-size: 1rem;
+    height: 3em;
+  }
+  
+  .related-price {
+    font-size: 0.9rem;
+  }
+  
+  .section-header h3 {
+    font-size: 1.3rem;
+  }
+}
+
+@media (min-width: 1200px) {
+  .related-products-grid {
+    gap: 25px;
+    padding: 0 20px;
+  }
+  
+  .related-product-image {
+    height: 200px;
+  }
+  
+  .related-product-info {
+    padding: 18px;
+  }
+  
+  .related-product_info h4 {
+    font-size: 1.1rem;
+    height: 3.3em;
+  }
+  
+  .related-price {
+    font-size: 1rem;
+  }
+  
+  .related-badge {
+    font-size: 11px;
+    padding: 4px 8px;
+  }
+}
+
+/* Mobile responsive adjustments for related products */
+@media (max-width: 480px) {
+  .related-products-grid {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    padding: 0 3px;
+  }
+  
+  .related-product-image {
+    height: 70px;
+  }
+  
+  .related-product-info {
+    padding: 6px;
+  }
+  
+  .related-product-info h4 {
+    font-size: 0.7rem;
+    height: 2.1em;
+  }
+  
+  .related-price {
+    font-size: 0.65rem;
+  }
+  
+  .related-badge {
+    font-size: 7px;
+    padding: 1px 3px;
+  }
+}
+
+@media (max-width: 360px) {
+  .related-products-grid {
+    gap: 4px;
+    padding: 0 2px;
+  }
+  
+  .related-product-image {
+    height: 60px;
+  }
+  
+  .related-product-info h4 {
+    font-size: 0.65rem;
+  }
+  
+  .related-price {
+    font-size: 0.6rem;
+  }
+}
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -1335,6 +2125,7 @@ export default {
   justify-content: space-between;
   margin-bottom: 8px;
 }
+
 .price-row.total {
   font-weight: bold;
   margin-top: 10px;
@@ -1364,27 +2155,280 @@ export default {
   background-color: #1e4a21;
 }
 
+/* Login Modal Styles - Fixed to match design */
+.login-modal {
+  background: linear-gradient(135deg, #e8f5e8, #f0f9f0);
+  border-radius: 20px 20px 0 0;
+  width: 100%;
+  max-width: 400px;
+  animation: slideUp 0.3s ease-out;
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.1);
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateX(-50%) translateY(100%);
+  }
+  to {
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.login-header {
+  display: flex;
+  justify-content: flex-end;
+  padding: 15px 20px 0;
+}
+
+.login-header .close-button {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #666;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-content {
+  padding: 20px 30px 40px;
+  text-align: center;
+}
+
+.app-branding {
+  margin-bottom: 40px;
+}
+
+.logo {
+  width: 60px;
+  height: 60px;
+  margin-bottom: 15px;
+}
+
+.app-title {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #2e5c31;
+  margin: 0 0 5px;
+  letter-spacing: -0.5px;
+}
+
+.app-subtitle {
+  font-size: 1rem;
+  color: #2e5c31;
+  margin: 0 0 0 0;
+  font-weight: 400;
+  letter-spacing: 1px;
+}
+
+.login-form {
+  max-width: 320px;
+  margin: 0 auto;
+}
+
+.input-group {
+  margin-bottom: 20px;
+}
+
+.input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: white;
+  border-radius: 25px;
+}
+
+.form-options {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 25px;
+  font-size: 0.9rem;
+}
+
+.remember-me {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  color: #2e5c31;
+  font-weight: 500;
+}
+
+.remember-me input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin-right: 8px;
+  accent-color: #2e5c31;
+}
+
+.checkmark {
+  display: none; /* Hide custom checkmark since we're using native checkbox */
+}
+
+.forgot-password {
+  color: #2e5c31;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.forgot-password:hover {
+  text-decoration: underline;
+}
+
+.login-button {
+  text-decoration: underline;
+}
+
+.login-button {
+  width: 100%;
+  padding: 15px;
+  background: linear-gradient(135deg, #2e5c31, #1e4a21);
+  color: white;
+  border: none;
+  border-radius: 25px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: 20px;
+}
+
+.login-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(46, 92, 49, 0.3);
+}
+
+.login-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.login-divider {
+  position: relative;
+  margin: 20px 0;
+  text-align: center;
+}
+
+.login-divider::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background-color: #e0e0e0;
+}
+
+.login-divider span {
+  background: linear-gradient(135deg, #e8f5e8, #f0f9f0);
+  padding: 0 15px;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.google-login-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 25px;
+  font-size: 1rem;
+  font-weight: 500;
+  border: 1px solid #e0e0e0;
+  background-color: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: 20px;
+}
+
+.google-login-btn:hover {
+  background-color: #f9f9f9;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.signup-text {
+  font-size: 0.9rem;
+  color: #666;
+  margin: 0;
+}
+
+.signup-link {
+  color: #2e5c31;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.signup-link:hover {
+  text-decoration: underline;
+}
+
+/* Override modal-overlay for login modal */
+.modal-overlay:has(.login-modal) {
+  align-items: flex-end;
+}
+
+/* Mobile responsive adjustments */
 @media (max-width: 480px) {
-  .quantity-section {
-    flex-wrap: wrap;
+  .login-modal {
+    width: 100%;
+    border-radius: 20px 20px 0 0;
   }
   
-  .add-to-cart, .buy-now-button {
-    flex: 0 0 100%;
-    margin-top: 10px;
+  .login-content {
+    padding: 15px 20px 30px;
   }
   
-  .product-stats-container {
-    padding: 8px;
+  .login-form {
+    max-width: 100%;
   }
   
-  .stat-item {
-    min-width: 60px;
+  .app-title {
+    font-size: 1.8rem;
   }
   
-  .popularity-badge {
-    font-size: 10px;
-    padding: 4px 8px;
+  .input-wrapper {
+    padding: 0 15px;
   }
+  
+  .login-input {
+    padding: 12px 0;
+    font-size: 0.95rem;
+  }
+}
+.out-of-stock {
+  color: #e74c3c !important;
+  font-weight: 600;
+}
+
+.add-to-cart:disabled,
+.buy-now-button:disabled,
+.quantity-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background-color: #f5f5f5;
+  color: #999;
+}
+
+.stock-warning {
+  color: #e74c3c;
+  font-size: 0.8rem;
+  margin-top: 5px;
+  display: block;
+}
+
+.modal-footer .confirm-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background-color: #ccc;
 }
 </style>

@@ -13,10 +13,7 @@
         
         <div class="user-profile" @click="toggleProfileMenu" ref="profileRef">
          <div class="notification-wrapper">
-            <div class="notification-icon" @click.stop="handleNotificationClick">
-              <Bell size="20" />
-              <span v-if="unreadNotificationsCount > 0" class="notification-badge">{{ unreadNotificationsCount }}</span>
-            </div>
+           
             <NotificationSystem 
               ref="notificationSystem" 
               :userId="currentUserId" 
@@ -167,13 +164,13 @@
             :currentSales="currentMonthSales"
             :currency="'₱'"
           />
-          
-          <!-- Top Selling Products -->
+            <!-- Top Selling Products -->
           <TopProducts 
             :salesItems="topProducts" 
             :timePeriods="timePeriods" 
             :activePeriod="topProductsPeriod" 
             @setActivePeriod="setTopProductsPeriod" 
+            @updateSalesData="handleSalesDataUpdate"
           />
         </div>
         
@@ -220,10 +217,10 @@ import {
   TrendingDown
 } from 'lucide-vue-next';
 import Sidebar from '@/components/Sidebar.vue';
-import FarmRevenueChart from '@/components/SalesRevenueChart.vue';
+import FarmRevenueChart from '@/components/sellerside/SalesRevenueChart.vue';
 import OrientalMindoroMap from '@/components/sellerside/OrientalMindoroMap.vue';
-import FarmPerformance from '@/components/SalesPerformance.vue';
-import TopProducts from '@/components/TopSales.vue';
+import FarmPerformance from '@/components/sellerside/SalesPerformance.vue';
+import TopProducts from '@/components/sellerside/TopSales.vue';
 import RecentOrders from '@/components/RecentOrders.vue';
 import NotificationSystem from '@/components/NotificationSystem.vue';
 import { getFirestore, doc, getDoc, collection, query, where, getDocs, orderBy, limit, onSnapshot } from 'firebase/firestore';
@@ -297,14 +294,8 @@ const totalRevenue = ref(158700);
 const unreadNotificationsCount = ref(0);
 
 
-// Top products
-const topProducts = ref([
-  { name: 'Organic Rice', percentage: 95, image: '/images/rice.jpg' },
-  { name: 'Fresh Tomatoes', percentage: 85, image: '/images/tomatoes.jpg' },
-  { name: 'Eggplant', percentage: 70, image: '/images/eggplant.jpg' },
-  { name: 'Pumpkin', percentage: 55, image: '/images/pumpkin.jpg' },
-  { name: 'Bananas', percentage: 50, image: '/images/bananas.jpg' }
-]);
+// Top products - will be updated from TopSales component
+const topProducts = ref([]);
 
 // Methods
 const handleNotificationClick = async () => {
@@ -336,9 +327,15 @@ const navigateToEditProfile = () => {
 };
 
 const navigateToFarmStore = () => {
-  router.push('/farmstore');
-  showProfileMenu.value = false;
-};
+      if (currentUserId.value) {
+        router.push({
+          name: 'farmStore',
+          params: { sellerId: currentUserId.value }
+        });
+      } else {
+        alert('Seller information not available');
+      }
+    };
 
 const navigateToAddProduct = () => {
   router.push('/seller/add-product');
@@ -507,8 +504,14 @@ const setRevenuePeriod = (period) => {
 
 const setTopProductsPeriod = (period) => {
   topProductsPeriod.value = period;
-  // In a real app, you would fetch data for the selected period
+  // The TopSales component will automatically fetch new data based on the period
   console.log('Top products period changed to:', period);
+};
+
+// Handle sales data updates from TopSales component
+const handleSalesDataUpdate = (salesData) => {
+  console.log('Sales data updated:', salesData);
+  topProducts.value = salesData;
 };
 
 // Watch for changes in time periods to update data

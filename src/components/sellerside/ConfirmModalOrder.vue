@@ -1,7 +1,7 @@
 <template>
     <div v-if="isVisible" class="modal-overlay">
         <div class="modal-content">
-            <p>Are you sure you want to delete this product?</p>
+            <p>Are you sure you want to cancel this order?</p>
             <div class="modal-buttons">
                 <button @click="confirmDelete">Yes</button>
                 <button @click="cancelDelete">No</button>

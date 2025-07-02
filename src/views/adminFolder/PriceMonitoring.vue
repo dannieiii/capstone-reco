@@ -3,276 +3,314 @@
     <AdminSidebar />
     
     <div class="content-wrapper">
-      <div class="price-monitoring">
-        <div class="header">
+      <div class="header">
+        <h1>Price Monitoring</h1>
+        <div class="header-actions">
+          <button class="view-toggle-btn" :class="{ active: currentView === 'monitoring' }" @click="setView('monitoring')">
+            <i class="fas fa-chart-line"></i> Price Monitoring
+          </button>
+          <button class="view-toggle-btn" :class="{ active: currentView === 'overpriced' }" @click="setView('overpriced')">
+            <i class="fas fa-exclamation-triangle"></i> Overpriced Products ({{ overpricedProducts.length }})
+          </button>
+          <button class="refresh-btn" @click="refreshData" title="Refresh Data">
+            <i class="fas fa-sync-alt"></i> Refresh
+          </button>
+        </div>
+      </div>
+
+      <!-- Summary Cards -->
+      <div class="summary-cards">
+        <div class="summary-card">
+          <div class="card-icon">
+            <i class="fas fa-chart-line"></i>
+          </div>
+          <div class="card-content">
+            <h3>Average Price Deviation</h3>
+            <div class="card-value" :class="avgDeviationClass">
+              {{ avgDeviation }}
+              <i :class="avgDeviationIconClass"></i>
+            </div>
+            <div class="card-period">From D.A. reference prices</div>
+          </div>
+        </div>
+        
+        <div class="summary-card">
+          <div class="card-icon">
+            <i class="fas fa-tags"></i>
+          </div>
+          <div class="card-content">
+            <h3>Products Monitored</h3>
+            <div class="card-value">{{ monitoredProducts.length }}</div>
+            <div class="card-period">{{ customProducts.length }} custom products</div>
+          </div>
+        </div>
+        
+        <div class="summary-card">
+          <div class="card-icon">
+            <i class="fas fa-exclamation-triangle"></i>
+          </div>
+          <div class="card-content">
+            <h3>Overpriced Products</h3>
+            <div class="card-value text-warning">{{ overpricedProducts.length }}</div>
+            <div class="card-period">{{ severeOverpriced.length }} severe cases</div>
+          </div>
+        </div>
+        
+        <div class="summary-card">
+          <div class="card-icon">
+            <i class="fas fa-store"></i>
+          </div>
+          <div class="card-content">
+            <h3>Sellers</h3>
+            <div class="card-value">{{ sellersCount }}</div>
+            <div class="card-period">{{ flaggedSellers.length }} flagged</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Price Monitoring View -->
+      <div v-if="currentView === 'monitoring'">
+        <!-- Filters Section -->
+        <div class="filters-section">
+          <div class="filter-group">
+            <label>Category</label>
+            <select v-model="selectedCategory" @change="applyFilters">
+              <option value="">All Categories</option>
+              <option v-for="category in categories" :key="category" :value="category">
+                {{ category }}
+              </option>
+            </select>
+          </div>
           
-          <h1>Price Monitoring</h1>
+          <div class="filter-group">
+            <label>Product Type</label>
+            <select v-model="selectedProductType" @change="applyFilters">
+              <option value="">All Products</option>
+              <option value="da-reference">D.A. Reference Products</option>
+              <option value="custom">Custom Products</option>
+            </select>
+          </div>
+          
+          <div class="filter-group">
+            <label>Price Status</label>
+            <select v-model="selectedPriceStatus" @change="applyFilters">
+              <option value="">All Prices</option>
+              <option value="within-range">Within D.A. Range</option>
+              <option value="above-range">Above D.A. Range</option>
+              <option value="below-range">Below D.A. Range</option>
+              <option value="no-reference">No Reference</option>
+            </select>
+          </div>
+          
+          <div class="filter-group">
+            <label>Sort By</label>
+            <select v-model="sortBy" @change="applyFilters">
+              <option value="productName">Product Name</option>
+              <option value="deviation">Price Deviation</option>
+              <option value="price">Current Price</option>
+              <option value="seller">Seller</option>
+            </select>
+          </div>
+          
+          <button class="reset-btn" @click="resetFilters">Reset Filters</button>
         </div>
 
-        <div class="dashboard-container">
-          <!-- Summary Cards -->
-          <div class="summary-cards">
-            <div class="summary-card">
-              <div class="card-icon">
-                <i class="fas fa-chart-line"></i>
-              </div>
-              <div class="card-content">
-                <h3>Average Price Change</h3>
-                <div class="card-value" :class="avgPriceChangeClass">
-                  {{ avgPriceChange }}
-                  <i :class="avgPriceChangeIconClass"></i>
-                </div>
-                <div class="card-period">Last 30 days</div>
-              </div>
-            </div>
-            
-            <div class="summary-card">
-              <div class="card-icon">
-                <i class="fas fa-tags"></i>
-              </div>
-              <div class="card-content">
-                <h3>Products Monitored</h3>
-                <div class="card-value">{{ productsMonitored }}</div>
-                <div class="card-period">Across {{ categoriesCount }} categories</div>
-              </div>
-            </div>
-            
-            <div class="summary-card">
-              <div class="card-icon">
-                <i class="fas fa-exclamation-triangle"></i>
-              </div>
-              <div class="card-content">
-                <h3>Price Alerts</h3>
-                <div class="card-value">{{ priceAlerts }}</div>
-                <div class="card-period">{{ newAlertsToday }} new today</div>
-              </div>
-            </div>
-            
-            <div class="summary-card">
-              <div class="card-icon">
-                <i class="fas fa-store"></i>
-              </div>
-              <div class="card-content">
-                <h3>Sellers</h3>
-                <div class="card-value">{{ sellersCount }}</div>
-                <div class="card-period">{{ activeSellersCount }} active</div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Filters Section -->
-          <div class="filters-section">
-            <div class="filter-group">
-              <label>Category</label>
-              <select v-model="selectedCategory" @change="applyFilters">
-                <option value="">All Categories</option>
-                <option v-for="category in categories" :key="category" :value="category">
-                  {{ category }}
-                </option>
-              </select>
-            </div>
-            
-            <div class="filter-group">
-              <label>Time Period</label>
-              <select v-model="selectedTimePeriod" @change="applyFilters">
-                <option value="7">Last 7 days</option>
-                <option value="30">Last 30 days</option>
-                <option value="90">Last 3 months</option>
-                <option value="180">Last 6 months</option>
-                <option value="365">Last year</option>
-              </select>
-            </div>
-            
-            <div class="filter-group">
-              <label>Price Change</label>
-              <select v-model="selectedPriceChange" @change="applyFilters">
-                <option value="">All Changes</option>
-                <option value="increase">Price Increases</option>
-                <option value="decrease">Price Decreases</option>
-                <option value="stable">Stable Prices</option>
-              </select>
-            </div>
-            
-            <div class="filter-group">
-              <label>Sort By</label>
-              <select v-model="sortBy" @change="applyFilters">
-                <option value="productName">Product Name</option>
-                <option value="price">Current Price</option>
-                <option value="change">Price Change %</option>
-                <option value="stock">Stock Level</option>
-              </select>
-            </div>
-            
-            <button class="reset-btn" @click="resetFilters">Reset Filters</button>
-          </div>
-
-          <!-- Main Content Area -->
-          <div class="content-area">
-            <!-- Price Trend Chart -->
-            <div class="chart-section">
-              <div class="section-header">
-                <h2>Price Trends</h2>
-                <div class="chart-controls">
-                  <button 
-                    v-for="view in chartViews" 
-                    :key="view.value" 
-                    :class="{ active: currentChartView === view.value }"
-                    @click="setChartView(view.value)">
-                    {{ view.label }}
-                  </button>
-                </div>
-              </div>
-              <div class="chart-container">
-                <canvas ref="priceChart"></canvas>
-              </div>
-            </div>
-            
-            <!-- Products Table -->
-            <div class="table-section">
-              <div class="section-header">
-                <h2>Product Price Monitoring</h2>
-                <div class="search-container">
-                  <input 
-                    type="text" 
-                    v-model="searchQuery" 
-                    placeholder="Search products..." 
-                    @input="applyFilters"
-                  />
-                  <i class="fas fa-search"></i>
-                </div>
-              </div>
-              
-              <div class="table-container">
-                <table>
-                  <thead>
-                    <tr>
-                      <th @click="sortTable('productName')">
-                        Product Name
-                        <i class="fas fa-sort"></i>
-                      </th>
-                      <th @click="sortTable('category')">
-                        Category
-                        <i class="fas fa-sort"></i>
-                      </th>
-                      <th @click="sortTable('sellerName')">
-                        Seller
-                        <i class="fas fa-sort"></i>
-                      </th>
-                      <th @click="sortTable('price')">
-                        Current Price
-                        <i class="fas fa-sort"></i>
-                      </th>
-                      <th @click="sortTable('previousPrice')">
-                        Previous Price
-                        <i class="fas fa-sort"></i>
-                      </th>
-                      <th @click="sortTable('change')">
-                        Change %
-                        <i class="fas fa-sort"></i>
-                      </th>
-                      <th @click="sortTable('stock')">
-                        Stock
-                        <i class="fas fa-sort"></i>
-                      </th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="(product, index) in filteredProducts" :key="product.productId">
-                      <td>
-                        <div class="product-cell">
-                          <div class="product-image" :style="{ backgroundImage: `url(${getImageUrl(product.image)})` }"></div>
-                          <span>{{ product.productName }}</span>
-                        </div>
-                      </td>
-                      <td>{{ product.category }}</td>
-                      <td>{{ product.sellerName || 'Unknown' }}</td>
-                      <td>₱{{ product.price.toFixed(2) }}</td>
-                      <td>₱{{ product.previousPrice ? product.previousPrice.toFixed(2) : 'N/A' }}</td>
-                      <td :class="getPriceChangeClass(product.change)">
-                        {{ formatPriceChange(product.change) }}
-                      </td>
-                      <td>
-                        <div class="volatility-indicator" :class="getStockLevelClass(product.stock)">
-                          {{ product.stock }}
-                        </div>
-                      </td>
-                      <td>
-                        <div class="action-buttons">
-                          <button class="action-btn view-btn" @click="viewProductDetails(product)">
-                            <i class="fas fa-eye"></i>
-                          </button>
-                          <button class="action-btn alert-btn" @click="togglePriceAlert(product)">
-                            <i :class="product.hasAlert ? 'fas fa-bell' : 'far fa-bell'"></i>
-                          </button>
-                          <button class="action-btn more-btn" @click="showMoreOptions(product)">
-                            <i class="fas fa-ellipsis-v"></i>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              
-              <div class="pagination">
-                <button 
-                  :disabled="currentPage === 1" 
-                  @click="changePage(currentPage - 1)"
-                  class="pagination-btn"
-                >
-                  <i class="fas fa-chevron-left"></i> Previous
-                </button>
-                <div class="page-info">
-                  Page {{ currentPage }} of {{ totalPages }}
-                </div>
-                <button 
-                  :disabled="currentPage === totalPages" 
-                  @click="changePage(currentPage + 1)"
-                  class="pagination-btn"
-                >
-                  Next <i class="fas fa-chevron-right"></i>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Price Alerts Section -->
-          <div class="alerts-section">
-            <div class="section-header">
-              <h2>Price Alerts</h2>
-              <button class="add-alert-btn" @click="showAddAlertModal">
-                <i class="fas fa-plus"></i> Add Alert
+        <!-- Price Trend Chart -->
+        <div class="chart-section">
+          <div class="section-header">
+            <h2>Price Deviation Analysis</h2>
+            <div class="chart-controls">
+              <button 
+                v-for="view in chartViews" 
+                :key="view.value" 
+                :class="{ active: currentChartView === view.value }"
+                @click="setChartView(view.value)">
+                {{ view.label }}
               </button>
             </div>
-            
-            <div class="alerts-container">
-              <div v-if="alerts.length === 0" class="no-alerts">
-                <i class="fas fa-bell-slash"></i>
-                <p>No active price alerts</p>
-              </div>
-              
-              <div v-else class="alert-items">
-                <div v-for="(alert, index) in alerts" :key="index" class="alert-item">
-                  <div class="alert-icon" :class="getAlertTypeClass(alert.type)">
-                    <i :class="getAlertTypeIcon(alert.type)"></i>
-                  </div>
-                  <div class="alert-content">
-                    <div class="alert-header">
-                      <h4>{{ alert.productName }}</h4>
-                      <span class="alert-date">{{ formatDate(alert.date) }}</span>
-                    </div>
-                    <p>{{ alert.message }}</p>
-                    <div class="alert-footer">
-                      <span class="alert-type">{{ alert.type }}</span>
-                      <button class="dismiss-btn" @click="dismissAlert(index)">
-                        Dismiss
-                      </button>
-                    </div>
-                  </div>
-                </div>
+          </div>
+          <div class="chart-container">
+            <canvas ref="priceChart"></canvas>
+          </div>
+        </div>
+        
+        <!-- Products Table -->
+        <div class="table-section">
+          <div class="section-header">
+            <h2>Product Price Analysis</h2>
+            <div class="header-actions">
+              <button class="refresh-btn" @click="refreshData" title="Refresh Data">
+                <i class="fas fa-sync-alt"></i> Refresh
+              </button>
+              <div class="search-container">
+                <input 
+                  type="text" 
+                  v-model="searchQuery" 
+                  placeholder="Search products..." 
+                  @input="applyFilters"
+                />
+                <i class="fas fa-search"></i>
               </div>
             </div>
+          </div>
+          
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th @click="sortTable('productName')">
+                    Product Name
+                    <i class="fas fa-sort"></i>
+                  </th>
+                  <th @click="sortTable('category')">
+                    Category
+                    <i class="fas fa-sort"></i>
+                  </th>
+                  <th @click="sortTable('sellerName')">
+                    Seller
+                    <i class="fas fa-sort"></i>
+                  </th>
+                  <th @click="sortTable('price')">
+                    Seller Price
+                    <i class="fas fa-sort"></i>
+                  </th>
+                  <th>D.A. Reference</th>
+                  <th @click="sortTable('deviation')">
+                    Deviation
+                    <i class="fas fa-sort"></i>
+                  </th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="product in filteredProducts" :key="product.id">
+                  <td>
+                    <div class="product-cell">
+                      <div class="product-image" :style="{ backgroundImage: `url(${getImageUrl(product.image)})` }"></div>
+                      <div class="product-info">
+                        <span class="product-name">{{ product.productName }}</span>
+                        <div class="product-meta">
+                          <span class="unit-badge">{{ getDisplayUnit(product) }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                  <td>{{ product.category }}</td>
+                  <td>{{ getSellerName(product.sellerId) }}</td>
+                  <td>
+                    <div class="price-display">
+                      <span class="current-price">₱{{ formatPrice(product.currentPrice) }}</span>
+                      <small class="price-unit">{{ getDisplayUnit(product) }}</small>
+                    </div>
+                  </td>
+                  <td>
+                    <div v-if="product.daReference" class="reference-price">
+                      <span class="reference-range">₱{{ product.daReference.minPrice }}-{{ product.daReference.maxPrice }}</span>
+                      <small class="reference-unit">{{ product.daReference.unit }}</small>
+                    </div>
+                    <span v-else class="no-reference">No Reference</span>
+                  </td>
+                  <td>
+                    <div v-if="product.deviation !== null" class="deviation-display" :class="getDeviationClass(product.deviation)">
+                      {{ formatDeviation(product.deviation) }}
+                    </div>
+                    <span v-else class="no-deviation">N/A</span>
+                  </td>
+                  <td>
+                    <div class="status-indicator" :class="getPriceStatusClass(product.priceStatus)">
+                      {{ getPriceStatusText(product.priceStatus) }}
+                    </div>
+                  </td>
+                  <td>
+                    <div class="action-buttons">
+                      <button class="action-btn view-btn" @click="viewProductDetails(product)" title="View Details">
+                        <i class="fas fa-eye"></i>
+                      </button>
+                      <button class="action-btn alert-btn" @click="togglePriceAlert(product)" title="Toggle Alert">
+                        <i :class="product.hasAlert ? 'fas fa-bell' : 'far fa-bell'"></i>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          
+          <div class="pagination">
+            <button 
+              :disabled="currentPage === 1" 
+              @click="changePage(currentPage - 1)"
+              class="pagination-btn"
+            >
+              <i class="fas fa-chevron-left"></i> Previous
+            </button>
+            <div class="page-info">
+              Page {{ currentPage }} of {{ totalPages }}
+            </div>
+            <button 
+              :disabled="currentPage === totalPages" 
+              @click="changePage(currentPage + 1)"
+              class="pagination-btn"
+            >
+              Next <i class="fas fa-chevron-right"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Overpriced Products View -->
+      <OverpricedProducts 
+        v-if="currentView === 'overpriced'" 
+        :overpriced-products="overpricedProducts"
+        :is-dark-mode="isDarkMode"
+        @send-warning="sendWarning"
+        @view-seller="viewSellerProfile"
+        @send-custom-message="sendCustomMessage"
+      />
+    </div>
+
+    <!-- Warning Message Modal -->
+    <div v-if="showWarningModal" class="modal-overlay" @click="closeWarningModal">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h2>Send Price Warning</h2>
+          <button class="close-btn" @click="closeWarningModal">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div v-if="warningTarget" class="warning-details">
+            <div class="product-summary">
+              <h3>{{ warningTarget.productName }}</h3>
+              <p><strong>Seller:</strong> {{ getSellerName(warningTarget.sellerId) }}</p>
+              <p><strong>Current Price:</strong> ₱{{ formatPrice(warningTarget.currentPrice?.price || warningTarget.price) }}</p>
+              <p><strong>D.A. Max Price:</strong> ₱{{ warningTarget.daReference?.maxPrice || 'N/A' }}</p>
+              <p><strong>Excess:</strong> <span class="text-danger">₱{{ formatPrice(warningTarget.excessAmount) }} ({{ formatDeviation(warningTarget.deviation) }})</span></p>
+            </div>
+            
+            <div class="warning-message">
+              <label>Warning Message:</label>
+              <textarea v-model="warningMessage" rows="6" placeholder="Enter warning message..."></textarea>
+            </div>
+            
+            <div class="warning-options">
+              <label>
+                <input type="checkbox" v-model="includeGuidelines">
+                Include pricing guidelines
+              </label>
+              <label>
+                <input type="checkbox" v-model="requestResponse">
+                Request response within 24 hours
+              </label>
+            </div>
+          </div>
+          
+          <div class="modal-actions">
+            <button class="secondary-btn" @click="closeWarningModal">Cancel</button>
+            <button class="primary-btn" @click="confirmSendWarning" :disabled="!warningMessage.trim()">
+              <i class="fas fa-paper-plane"></i> Send Warning
+            </button>
           </div>
         </div>
       </div>
@@ -280,98 +318,95 @@
 
     <!-- Product Details Modal -->
     <div v-if="showProductModal" class="modal-overlay" @click="closeProductModal">
-      <div class="modal-content" @click.stop>
+      <div class="modal-content large-modal" @click.stop>
         <div class="modal-header">
-          <h2>Product Price History</h2>
+          <h2>Product Price Analysis</h2>
           <button class="close-btn" @click="closeProductModal">
             <i class="fas fa-times"></i>
           </button>
         </div>
         <div class="modal-body" v-if="selectedProduct">
-          <div class="product-details">
-            <div class="product-image-large" :style="{ backgroundImage: `url(${getImageUrl(selectedProduct.image)})` }"></div>
-            <div class="product-info">
-              <h3>{{ selectedProduct.productName }}</h3>
-              <div class="product-meta">
-                <div class="meta-item">
-                  <span class="meta-label">Category:</span>
-                  <span class="meta-value">{{ selectedProduct.category }}</span>
+          <div class="product-analysis">
+            <div class="product-details">
+              <div class="product-image-large" :style="{ backgroundImage: `url(${getImageUrl(selectedProduct.image)})` }"></div>
+              <div class="product-info">
+                <h3>{{ selectedProduct.productName }}</h3>
+                <div class="product-meta">
+                  <div class="meta-item">
+                    <span class="meta-label">Category:</span>
+                    <span class="meta-value">{{ selectedProduct.category }}</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-label">Seller:</span>
+                    <span class="meta-value">{{ getSellerName(selectedProduct.sellerId) }}</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-label">Current Price:</span>
+                    <span class="meta-value">₱{{ formatPrice(selectedProduct.currentPrice) }}</span>
+                  </div>
+                  <div class="meta-item">
+                    <span class="meta-label">Price Status:</span>
+                    <span class="meta-value" :class="getPriceStatusClass(selectedProduct.priceStatus)">
+                      {{ getPriceStatusText(selectedProduct.priceStatus) }}
+                    </span>
+                  </div>
                 </div>
-                <div class="meta-item">
-                  <span class="meta-label">Seller:</span>
-                  <span class="meta-value">{{ selectedProduct.sellerName || 'Unknown' }}</span>
+              </div>
+            </div>
+            
+            <div v-if="selectedProduct.daReference" class="reference-comparison">
+              <h4>D.A. Reference Comparison</h4>
+              <div class="comparison-grid">
+                <div class="comparison-item">
+                  <span class="comparison-label">D.A. Min Price:</span>
+                  <span class="comparison-value">₱{{ selectedProduct.daReference.minPrice }}</span>
                 </div>
-                <div class="meta-item">
-                  <span class="meta-label">Current Price:</span>
-                  <span class="meta-value">₱{{ selectedProduct.price.toFixed(2) }}</span>
+                <div class="comparison-item">
+                  <span class="comparison-label">D.A. Max Price:</span>
+                  <span class="comparison-value">₱{{ selectedProduct.daReference.maxPrice }}</span>
                 </div>
-                <div class="meta-item">
-                  <span class="meta-label">Price Change:</span>
-                  <span class="meta-value" :class="getPriceChangeClass(selectedProduct.change)">
-                    {{ formatPriceChange(selectedProduct.change) }}
-                  </span>
+                <div class="comparison-item">
+                  <span class="comparison-label">Seller Price:</span>
+                  <span class="comparison-value" :class="getPriceComparisonClass(selectedProduct)">₱{{ formatPrice(selectedProduct.currentPrice) }}</span>
                 </div>
+                <div class="comparison-item">
+                  <span class="comparison-label">Deviation:</span>
+                  <span class="comparison-value" :class="getDeviationClass(selectedProduct.deviation)">{{ formatDeviation(selectedProduct.deviation) }}</span>
+                </div>
+              </div>
+            </div>
+            
+            <div class="price-history-chart">
+              <h4>Price History</h4>
+              <canvas ref="productHistoryChart"></canvas>
+            </div>
+            
+            <div class="price-statistics">
+              <div class="stat-card">
+                <h4>Current Stock</h4>
+                <div class="stat-value">{{ selectedProduct.stock || 'N/A' }}</div>
+              </div>
+              <div class="stat-card">
+                <h4>Units Available</h4>
+                <div class="stat-value">{{ selectedProduct.availableUnits?.length || 0 }}</div>
+              </div>
+              <div class="stat-card">
+                <h4>Warning Count</h4>
+                <div class="stat-value">{{ selectedProduct.warningCount || 0 }}</div>
+              </div>
+              <div class="stat-card">
+                <h4>Last Updated</h4>
+                <div class="stat-value">{{ formatDate(selectedProduct.updatedAt) }}</div>
               </div>
             </div>
           </div>
           
-          <div class="price-history-chart">
-            <canvas ref="productHistoryChart"></canvas>
-          </div>
-          
-          <div class="price-statistics">
-            <div class="stat-card">
-              <h4>Current Stock</h4>
-              <div class="stat-value">{{ selectedProduct.stock }}</div>
-              <div class="stat-date">{{ formatDate(selectedProduct.updatedAt) }}</div>
-            </div>
-            <div class="stat-card">
-              <h4>Cost Price</h4>
-              <div class="stat-value">₱{{ selectedProduct.cost.toFixed(2) }}</div>
-              <div class="stat-date">Base cost</div>
-            </div>
-            <div class="stat-card">
-              <h4>Profit</h4>
-              <div class="stat-value">₱{{ selectedProduct.profit }}</div>
-              <div class="stat-date">Per unit</div>
-            </div>
-            <div class="stat-card">
-              <h4>Status</h4>
-              <div class="stat-value">{{ selectedProduct.status }}</div>
-              <div class="volatility-indicator" :class="getStatusClass(selectedProduct.status)"></div>
-            </div>
-          </div>
-          
-          <div class="price-history-table">
-            <h3>Order History</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Price</th>
-                  <th>Quantity</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(order, index) in productOrders" :key="index">
-                  <td>{{ formatDate(order.timestamp) }}</td>
-                  <td>₱{{ order.totalPrice.toFixed(2) }}</td>
-                  <td>{{ order.stock - order.remainingStock }}</td>
-                  <td :class="getOrderStatusClass(order.status)">
-                    {{ order.status }}
-                  </td>
-                </tr>
-                <tr v-if="productOrders.length === 0">
-                  <td colspan="4" class="text-center">No order history available</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          
           <div class="modal-actions">
-            <button class="secondary-btn" @click="exportPriceHistory(selectedProduct)">
-              <i class="fas fa-download"></i> Export History
+            <button class="secondary-btn" @click="exportProductReport(selectedProduct)">
+              <i class="fas fa-download"></i> Export Report
+            </button>
+            <button v-if="selectedProduct.priceStatus === 'overpriced'" class="warning-btn" @click="sendWarningFromModal(selectedProduct)">
+              <i class="fas fa-exclamation-triangle"></i> Send Warning
             </button>
             <button class="primary-btn" @click="setupPriceAlert(selectedProduct)">
               <i class="fas fa-bell"></i> Set Price Alert
@@ -387,42 +422,44 @@
 import { ref, onMounted, computed, watch } from 'vue';
 import Chart from 'chart.js/auto';
 import AdminSidebar from '@/components/AdminSidebar.vue';
+import OverpricedProducts from '@/components/OverpricedProducts.vue';
 import { db } from '@/firebase/firebaseConfig';
-import { collection, getDocs, query, where, orderBy, limit, Timestamp, doc, getDoc, addDoc, serverTimestamp } from "firebase/firestore";
-import { getAuth } from "firebase/auth"; // Import Firebase Auth
+import { collection, getDocs, query, where, orderBy, limit, Timestamp, doc, getDoc, updateDoc, addDoc, serverTimestamp } from "firebase/firestore";
 
 export default {
   components: {
-    AdminSidebar
+    AdminSidebar,
+    OverpricedProducts
   },
   setup() {
-    const auth = getAuth();
     const isDarkMode = ref(false);
     const priceChart = ref(null);
     const productHistoryChart = ref(null);
     const chartInstance = ref(null);
     const productChartInstance = ref(null);
     
+    // View state
+    const currentView = ref('monitoring');
+    
     // Data collections
     const products = ref([]);
-    const orders = ref([]);
+    const daProducts = ref([]);
     const sellers = ref([]);
     const alerts = ref([]);
-    const productOrders = ref([]);
+    const monitoredProducts = ref([]);
+    const overpricedProducts = ref([]);
+    const customProducts = ref([]);
     
     // Summary data
-    const avgPriceChange = ref('0.0%');
-    const productsMonitored = ref(0);
-    const categoriesCount = ref(0);
-    const priceAlerts = ref(0);
-    const newAlertsToday = ref(0);
+    const avgDeviation = ref('0.0%');
     const sellersCount = ref(0);
-    const activeSellersCount = ref(0);
+    const flaggedSellers = ref([]);
+    const severeOverpriced = ref([]);
     
     // Filters
     const selectedCategory = ref('');
-    const selectedTimePeriod = ref('30');
-    const selectedPriceChange = ref('');
+    const selectedProductType = ref('');
+    const selectedPriceStatus = ref('');
     const sortBy = ref('productName');
     const searchQuery = ref('');
     
@@ -432,24 +469,68 @@ export default {
     const totalItems = ref(0);
     
     // Chart views
-    const currentChartView = ref('category');
+    const currentChartView = ref('deviation');
     const chartViews = [
+      { label: 'Price Deviation', value: 'deviation' },
       { label: 'By Category', value: 'category' },
-      { label: 'By Seller', value: 'seller' },
-      { label: 'Top Products', value: 'products' }
+      { label: 'Warning Levels', value: 'warnings' }
     ];
     
     // Modal state
     const showProductModal = ref(false);
+    const showWarningModal = ref(false);
     const selectedProduct = ref(null);
+    const warningTarget = ref(null);
+    const warningMessage = ref('');
+    const includeGuidelines = ref(true);
+    const requestResponse = ref(true);
     
     // Categories
     const categories = ref([]);
-    
+
+    // Unit conversion mapping
+    const unitConversions = {
+      'per kg': 1,
+      'per sack': 50, // Assuming 1 sack = 50kg
+      'per tali': 1,
+      'per kaing': 12, // Assuming 1 kaing = 12kg
+      'per bundle': 1,
+      'per tray': 1,
+      'per piece': 1
+    };
+
     // Fetch data from Firebase
     const fetchData = async () => {
       try {
-        // Fetch products
+        console.log('Starting data fetch...');
+        
+        // Fetch D.A. reference products from productPrices collection
+        const daProductsSnapshot = await getDocs(collection(db, 'productPrices'));
+        const daProductsData = [];
+        
+        daProductsSnapshot.forEach((doc) => {
+          const data = doc.data();
+          daProductsData.push({
+            id: doc.id,
+            productName: data.productName || '',
+            category: data.category || '',
+            variety: data.variety || 'Normal',
+            unitPricing: data.unitPricing || {},
+            createdAt: data.createdAt,
+            updatedAt: data.updatedAt
+          });
+        });
+        
+        console.log('D.A. products fetched:', daProductsData.length);
+        console.log('Sample D.A. products:', daProductsData.slice(0, 3).map(p => ({
+          name: p.productName,
+          category: p.category,
+          variety: p.variety,
+          units: Object.keys(p.unitPricing || {})
+        })));
+        daProducts.value = daProductsData;
+        
+        // Fetch seller products
         const productsSnapshot = await getDocs(collection(db, 'products'));
         const productsData = [];
         const uniqueCategories = new Set();
@@ -459,191 +540,557 @@ export default {
           if (productData.category) {
             uniqueCategories.add(productData.category);
           }
-          
-          // Calculate previous price (for demo, using cost as previous price)
-          const previousPrice = productData.cost || productData.price * 0.9;
-          const change = ((productData.price - previousPrice) / previousPrice) * 100;
-          
           productsData.push({
-            ...productData,
-            previousPrice,
-            change,
-            hasAlert: false,
-            priceHistory: []
+            id: doc.id,
+            ...productData
           });
         });
         
+        console.log('Products fetched:', productsData.length);
+        console.log('Sample seller products:', productsData.slice(0, 3).map(p => ({
+          name: p.productName,
+          category: p.category,
+          variety: p.variety,
+          prices: {
+            pricePerKilo: p.pricePerKilo,
+            pricePerSack: p.pricePerSack,
+            pricePerTali: p.pricePerTali
+          }
+        })));
         products.value = productsData;
         categories.value = Array.from(uniqueCategories);
+        console.log('Categories:', categories.value);
         
         // Fetch sellers
         const sellersSnapshot = await getDocs(collection(db, 'sellers'));
         const sellersData = [];
-        const activeSellers = [];
         
         sellersSnapshot.forEach((doc) => {
-          const sellerData = doc.data();
-          sellersData.push(sellerData);
-          
-          if (sellerData.status === 'Active') {
-            activeSellers.push(sellerData);
-          }
+          sellersData.push({
+            id: doc.id,
+            sellerId: doc.data().userId || doc.id,
+            ...doc.data(),
+            personalInfo: doc.data().personalInfo || {},
+            farmDetails: doc.data().farmDetails || {},
+          });
         });
         
+        console.log('Sellers fetched:', sellersData.length);
         sellers.value = sellersData;
         
-        // Fetch orders
-        const ordersSnapshot = await getDocs(collection(db, 'orders'));
-        const ordersData = [];
+        // Process and analyze products
+        console.log('Starting product analysis...');
+        await processProductAnalysis();
         
-        ordersSnapshot.forEach((doc) => {
-          const orderData = doc.data();
-          ordersData.push(orderData);
-        });
-        
-        orders.value = ordersData;
-        
-        // Add seller names to products
-        products.value = products.value.map(product => {
-          const seller = sellers.value.find(s => s.sellerId === product.sellerId);
-          return {
-            ...product,
-            sellerName: seller ? `${seller.farmName}` : 'Unknown Seller'
-          };
-        });
-        
-        // Update summary data
-        productsMonitored.value = products.value.length;
-        categoriesCount.value = categories.value.length;
-        sellersCount.value = sellers.value.length;
-        activeSellersCount.value = activeSellers.length;
-        
-        // Calculate average price change
-        const totalChange = products.value.reduce((sum, product) => sum + (product.change || 0), 0);
-        const avgChange = products.value.length > 0 ? totalChange / products.value.length : 0;
-        avgPriceChange.value = avgChange > 0 ? `+${avgChange.toFixed(1)}%` : `${avgChange.toFixed(1)}%`;
-        
-        // Generate sample alerts (in a real app, these would come from Firebase)
-        generateSampleAlerts();
+        // Generate alerts
+        generatePriceAlerts();
         
         // Render chart
         setTimeout(() => {
           renderChart();
         }, 100);
         
+        console.log('Data fetch complete!');
+        
       } catch (error) {
         console.error("Error fetching data:", error);
       }
     };
-    
-    // Generate sample alerts
-    const generateSampleAlerts = () => {
-      const sampleAlerts = [];
-      const alertTypes = ['Price Increase', 'Price Decrease', 'Low Stock', 'High Demand'];
+
+    // Add a refresh function
+    const refreshData = async () => {
+      console.log('Refreshing data...');
+      await fetchData();
+    };
+
+    // Process product analysis
+    const processProductAnalysis = async () => {
+      const analyzed = [];
+      const overpriced = [];
+      const custom = [];
       
-      // Use 5 random products for alerts
-      const randomProducts = [...products.value].sort(() => 0.5 - Math.random()).slice(0, 5);
+      console.log('Processing product analysis...');
+      console.log('Total products:', products.value.length);
+      console.log('Total D.A. products:', daProducts.value.length);
       
-      randomProducts.forEach(product => {
-        const alertType = alertTypes[Math.floor(Math.random() * alertTypes.length)];
-        const date = new Date();
-        date.setHours(date.getHours() - Math.floor(Math.random() * 48)); // Random time in the last 48 hours
+      for (const product of products.value) {
+        // Skip inactive products
+        if (product.status === 'inactive') continue;
         
-        let message = '';
-        switch (alertType) {
-          case 'Price Increase':
-            message = `Price increased by ${(Math.random() * 10 + 5).toFixed(1)}% in the last 24 hours.`;
-            break;
-          case 'Price Decrease':
-            message = `Price decreased by ${(Math.random() * 10 + 5).toFixed(1)}% in the last 24 hours.`;
-            break;
-          case 'Low Stock':
-            message = `Stock level is low (${product.stock} units remaining).`;
-            break;
-          case 'High Demand':
-            message = `Unusual demand detected. Multiple orders in 24 hours.`;
-            break;
+        // Debug specific product
+        if (product.productName.toLowerCase().includes('onion')) {
+          console.log(`\n🧅 DEBUGGING ONION PRODUCT:`);
+          console.log(`Product details:`, {
+            id: product.id,
+            productName: product.productName,
+            category: product.category,
+            variety: product.variety,
+            status: product.status,
+            pricePerKilo: product.pricePerKilo,
+            pricePerSack: product.pricePerSack,
+            sellerId: product.sellerId
+          });
         }
         
-        sampleAlerts.push({
-          productId: product.productId,
-          productName: product.productName,
-          type: alertType,
-          message: message,
-          date: date.toISOString()
+        const sellerName = getSellerName(product.sellerId);
+        
+        // Find matching D.A. reference product
+        const daReference = findDAReference(product);
+        
+        // Calculate current price (get the first available unit price)
+        const currentPrice = getCurrentPrice(product);
+        
+        if (!currentPrice) {
+          console.log(`❌ No current price found for product: ${product.productName}`);
+          if (product.productName.toLowerCase().includes('onion')) {
+            console.log(`🧅 ONION DEBUG - Available price fields:`, Object.keys(product).filter(key => key.includes('price')));
+          }
+          continue;
+        }
+        
+        const analyzedProduct = {
+          ...product,
+          sellerName,
+          currentPrice,
+          daReference,
+          isCustomProduct: !daReference,
+          deviation: null,
+          priceStatus: 'no-reference',
+          excessAmount: 0,
+          warningLevel: 'none',
+          warningCount: 0,
+          lastWarning: null
+        };
+        
+        if (daReference) {
+          // Calculate price deviation
+          const { deviation, status, excess } = calculatePriceDeviation(currentPrice, daReference, product);
+          analyzedProduct.deviation = deviation;
+          analyzedProduct.priceStatus = status;
+          analyzedProduct.excessAmount = excess;
+          
+          console.log(`✓ Product: ${product.productName}`);
+          console.log(`  - Seller Price: ₱${currentPrice.price} ${currentPrice.unitLabel}`);
+          console.log(`  - DA Reference: ₱${daReference.minPrice}-₱${daReference.maxPrice} ${daReference.unit}`);
+          console.log(`  - Deviation: ${deviation?.toFixed(2)}%`);
+          console.log(`  - Status: ${status}`);
+          
+          // Determine warning level and add to overpriced if necessary
+          if (status === 'overpriced') {
+            if (deviation > 50) {
+              analyzedProduct.warningLevel = 'severe';
+            } else if (deviation > 25) {
+              analyzedProduct.warningLevel = 'moderate';
+            } else if (deviation > 10) {
+              analyzedProduct.warningLevel = 'mild';
+            }
+            
+            // Add to overpriced list
+            overpriced.push(analyzedProduct);
+          }
+        } else {
+          // No D.A. reference found - mark as custom product
+          custom.push(analyzedProduct);
+          
+          if (product.productName.toLowerCase().includes('onion')) {
+            console.log(`🧅 ONION DEBUG - No D.A. reference found!`);
+            console.log(`  - Looking for product: ${product.productName}`);
+            console.log(`  - In category: ${product.category}`);
+            console.log(`  - With variety: ${product.variety || 'Normal'}`);
+            console.log(`  - Total D.A. products available: ${daProducts.value.length}`);
+          }
+          
+          console.log(`✗ No D.A. reference found for: ${product.productName} (Category: ${product.category}, Variety: ${product.variety || 'Normal'})`);
+        }
+        
+        analyzed.push(analyzedProduct);
+      }
+      
+      console.log('Analysis complete:');
+      console.log(`- Analyzed products: ${analyzed.length}`);
+      console.log(`- Overpriced products: ${overpriced.length}`);
+      console.log(`- Custom products: ${custom.length}`);
+      
+      monitoredProducts.value = analyzed;
+      overpricedProducts.value = overpriced;
+      customProducts.value = custom;
+      
+      // Calculate summary statistics
+      calculateSummaryStats();
+    };
+
+    // Get seller name using the same logic as OverpricedProducts
+    const getSellerName = (sellerId) => {
+      // First try to find by sellerId (which might be the userId)
+      let seller = sellers.value.find(s => s.sellerId === sellerId);
+      
+      // If not found, try to find by document ID
+      if (!seller) {
+        seller = sellers.value.find(s => s.id === sellerId);
+      }
+      
+      if (seller) {
+        // Try personalInfo first
+        if (seller.personalInfo?.firstName && seller.personalInfo?.lastName) {
+          return `${seller.personalInfo.firstName} ${seller.personalInfo.lastName}`;
+        }
+        
+        // Try farmDetails.farmName
+        if (seller.farmDetails?.farmName) {
+          return seller.farmDetails.farmName;
+        }
+        
+        // Try top-level farmName (in case structure is different)
+        if (seller.farmName) {
+          return seller.farmName;
+        }
+        
+        // Try email as fallback
+        if (seller.personalInfo?.email) {
+          return seller.personalInfo.email;
+        }
+        
+        return `Seller ${seller.id}`;
+      } else {
+        return 'Unknown Seller';
+      }
+    };
+
+    // Find D.A. reference for a product
+    const findDAReference = (product) => {
+      console.log(`🔍 Finding D.A. reference for: ${product.productName} (Category: ${product.category}, Variety: ${product.variety || 'Normal'})`);
+      
+      // Try to find matching D.A. reference product
+      let match = daProducts.value.find(da => {
+        // Clean and normalize product names for comparison
+        const cleanProductName = product.productName.toLowerCase()
+          .replace(/[()]/g, '') // Remove parentheses
+          .replace(/\s+/g, ' ') // Normalize whitespace
+          .trim();
+        
+        const cleanDAName = da.productName.toLowerCase()
+          .replace(/[()]/g, '') // Remove parentheses
+          .replace(/\s+/g, ' ') // Normalize whitespace
+          .trim();
+        
+        // Extract base name (before any parentheses or special characters)
+        const baseProductName = cleanProductName.split(/[\s(,]/)[0];
+        const baseDAName = cleanDAName.split(/[\s(,]/)[0];
+        
+        // Multiple matching strategies
+        const exactMatch = cleanDAName === cleanProductName;
+        const baseNameMatch = baseDAName === baseProductName && baseProductName.length >= 3;
+        const containsMatch = cleanDAName.includes(baseProductName) || cleanProductName.includes(baseDAName);
+        const baseNameContains = (product.baseProductName || '').toLowerCase() === cleanDAName;
+        
+        const nameMatch = exactMatch || baseNameMatch || containsMatch || baseNameContains;
+        const categoryMatch = da.category === product.category;
+        const varietyMatch = !product.variety || product.variety === 'Normal' || 
+                           da.variety === product.variety || !da.variety || da.variety === 'Normal';
+        
+        const isMatch = nameMatch && categoryMatch && varietyMatch;
+        
+        if (isMatch) {
+          console.log(`  ✓ Found potential match: ${da.productName} (Category: ${da.category}, Variety: ${da.variety || 'Normal'})`);
+          console.log(`    Match type: ${exactMatch ? 'exact' : baseNameMatch ? 'base name' : containsMatch ? 'contains' : 'base product name'}`);
+        }
+        
+        return isMatch;
+      });
+      
+      if (!match) {
+        console.log(`  ✗ No exact match found. Available D.A. products in category "${product.category}":`);
+        const sameCategory = daProducts.value.filter(da => da.category === product.category);
+        sameCategory.forEach(da => {
+          console.log(`    - ${da.productName} (Variety: ${da.variety || 'Normal'})`);
         });
         
-        // Mark product as having an alert
-        const index = products.value.findIndex(p => p.productId === product.productId);
-        if (index !== -1) {
-          products.value[index].hasAlert = true;
+        // Also show all D.A. products if no category match
+        if (sameCategory.length === 0) {
+          console.log(`  No products in category "${product.category}". All D.A. products:`);
+          daProducts.value.forEach(da => {
+            console.log(`    - ${da.productName} (Category: ${da.category}, Variety: ${da.variety || 'Normal'})`);
+          });
         }
-      });
-      
-      alerts.value = sampleAlerts;
-      priceAlerts.value = sampleAlerts.length;
-      
-      // Count alerts from today
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const todayAlerts = sampleAlerts.filter(alert => {
-        const alertDate = new Date(alert.date);
-        return alertDate >= today;
-      });
-      
-      newAlertsToday.value = todayAlerts.length;
-    };
-    
-    // Fetch orders for a specific product
-    const fetchProductOrders = async (productId) => {
-      try {
-        productOrders.value = orders.value.filter(order => 
-          order.productName === selectedProduct.value.productName
-        );
-      } catch (error) {
-        console.error("Error fetching product orders:", error);
-        productOrders.value = [];
+        
+        return null;
       }
+      
+      if (match && match.unitPricing) {
+        console.log(`  📊 Processing unit pricing for ${match.productName}...`);
+        console.log(`  Available units:`, Object.keys(match.unitPricing));
+        
+        // Find the best matching unit for the current product
+        const currentPrice = getCurrentPrice(product);
+        if (currentPrice) {
+          console.log(`  💰 Current product price: ₱${currentPrice.price} ${currentPrice.unitLabel}`);
+          
+          // Try to find exact unit match in D.A. data
+          const currentUnitLabel = currentPrice.unitLabel.toLowerCase();
+          
+          // Check all available units in D.A. reference
+          for (const [daUnit, pricing] of Object.entries(match.unitPricing)) {
+            if (pricing && typeof pricing === 'object' && 
+                pricing.minPrice !== undefined && pricing.maxPrice !== undefined) {
+              
+              // Normalize unit names for comparison
+              const normalizedDAUnit = daUnit.toLowerCase();
+              const normalizedCurrentUnit = currentUnitLabel.replace('per ', '');
+              
+              console.log(`    Comparing: "${normalizedCurrentUnit}" vs D.A. unit "${normalizedDAUnit}"`);
+              
+              // Direct match or close match
+              if (normalizedDAUnit.includes(normalizedCurrentUnit) || 
+                  normalizedCurrentUnit.includes(normalizedDAUnit.replace('per ', '')) ||
+                  normalizedDAUnit === currentUnitLabel) {
+                
+                console.log(`    ✓ Unit match found! Using ${daUnit}: ₱${pricing.minPrice}-₱${pricing.maxPrice}`);
+                
+                return {
+                  ...match,
+                  unit: daUnit,
+                  minPrice: pricing.minPrice,
+                  maxPrice: pricing.maxPrice,
+                  unitPricing: match.unitPricing
+                };
+              }
+            }
+          }
+          
+          // If no exact match, use the first available unit
+          console.log(`    ⚠️ No exact unit match, using first available unit...`);
+          const firstUnit = Object.entries(match.unitPricing).find(([unit, pricing]) => 
+            pricing && typeof pricing === 'object' && 
+            pricing.minPrice !== undefined && pricing.maxPrice !== undefined
+          );
+          
+          if (firstUnit) {
+            const [unit, pricing] = firstUnit;
+            console.log(`    📌 Using fallback unit ${unit}: ₱${pricing.minPrice}-₱${pricing.maxPrice}`);
+            return {
+              ...match,
+              unit: unit,
+              minPrice: pricing.minPrice,
+              maxPrice: pricing.maxPrice,
+              unitPricing: match.unitPricing
+            };
+          } else {
+            console.log(`    ❌ No valid pricing units found in D.A. reference`);
+          }
+        } else {
+          console.log(`    ❌ No current price found for product`);
+        }
+      } else if (match) {
+        console.log(`  ⚠️ Match found but no unitPricing data available`);
+      }
+      
+      return null;
     };
-    
-    // Helper function to get image URL
-    const getImageUrl = (imageData) => {
-      if (!imageData) return '/placeholder.svg?height=50&width=50';
+
+    // Get current price from product (first available unit)
+    const getCurrentPrice = (product) => {
+      const units = ['pricePerKilo', 'pricePerSack', 'pricePerTali', 'pricePerKaing', 'pricePerBundle', 'pricePerTray', 'pricePerPiece'];
       
-      // If it's already a URL, return it
-      if (imageData.startsWith('http')) return imageData;
+      console.log(`  💰 Getting current price for ${product.productName}...`);
       
-      // If it's a base64 image, return it as is
-      if (imageData.startsWith('data:image')) return imageData;
+      for (const unit of units) {
+        if (product[unit] && product[unit] > 0) {
+          const priceInfo = {
+            price: product[unit],
+            unit: unit,
+            unitLabel: getUnitLabel(unit)
+          };
+          console.log(`    ✓ Found price: ₱${priceInfo.price} ${priceInfo.unitLabel} (${unit})`);
+          return priceInfo;
+        }
+      }
       
-      // Default placeholder
-      return '/placeholder.svg?height=50&width=50';
+      console.log(`    ❌ No price found for ${product.productName}. Available fields:`, Object.keys(product).filter(key => key.includes('price')));
+      return null;
     };
-    
+
+    // Calculate price deviation
+    const calculatePriceDeviation = (currentPrice, daReference, product) => {
+      if (!daReference || !currentPrice) {
+        return { deviation: null, status: 'no-reference', excess: 0 };
+      }
+      
+      // Ensure D.A. reference has valid price data
+      if (!daReference.minPrice || !daReference.maxPrice || 
+          daReference.minPrice <= 0 || daReference.maxPrice <= 0) {
+        console.log(`    ⚠️ Invalid D.A. reference prices for ${product.productName}`);
+        return { deviation: null, status: 'no-reference', excess: 0 };
+      }
+      
+      const sellerPrice = currentPrice.price;
+      const daMin = daReference.minPrice;
+      const daMax = daReference.maxPrice;
+      
+      console.log(`    📊 Calculating deviation: Seller=₱${sellerPrice}, DA=₱${daMin}-₱${daMax}`);
+      
+      let deviation = 0;
+      let status = 'within-range';
+      let excess = 0;
+      
+      if (sellerPrice > daMax) {
+        // Overpriced
+        deviation = ((sellerPrice - daMax) / daMax) * 100;
+        status = 'overpriced';
+        excess = sellerPrice - daMax;
+        console.log(`    🔴 OVERPRICED by ${deviation.toFixed(1)}% (₱${excess.toFixed(2)} excess)`);
+      } else if (sellerPrice < daMin) {
+        // Underpriced  
+        deviation = ((daMin - sellerPrice) / daMin) * 100 * -1; // Negative for underpriced
+        status = 'underpriced';
+        excess = 0;
+        console.log(`    🔵 UNDERPRICED by ${Math.abs(deviation).toFixed(1)}%`);
+      } else {
+        // Within range
+        const midPoint = (daMin + daMax) / 2;
+        deviation = ((sellerPrice - midPoint) / midPoint) * 100;
+        status = 'within-range';
+        excess = 0;
+        console.log(`    🟢 WITHIN RANGE (${deviation.toFixed(1)}% from midpoint)`);
+      }
+      
+      return { deviation, status, excess };
+    };
+
+    // Convert prices for comparison
+    const convertPricesForComparison = (currentPrice, daReference, product) => {
+      let convertedPrice = currentPrice.price;
+      let convertedMin = daReference.minPrice;
+      let convertedMax = daReference.maxPrice;
+      
+      // Get unit conversion factors
+      const currentUnit = currentPrice.unit;
+      const daUnit = daReference.unit;
+      
+      // If units are different, try to convert
+      if (currentUnit !== daUnit) {
+        const currentFactor = getUnitConversionFactor(currentUnit, product);
+        const daFactor = getUnitConversionFactor(daUnit, product);
+        
+        if (currentFactor && daFactor) {
+          // Convert to per kg equivalent
+          const currentPerKg = convertedPrice / currentFactor;
+          const daMinPerKg = convertedMin / daFactor;
+          const daMaxPerKg = convertedMax / daFactor;
+          
+          convertedPrice = currentPerKg;
+          convertedMin = daMinPerKg;
+          convertedMax = daMaxPerKg;
+        }
+      }
+      
+      return { convertedPrice, convertedMin, convertedMax };
+    };
+
+    // Get unit conversion factor
+    const getUnitConversionFactor = (unit, product) => {
+      const unitMap = {
+        'pricePerKilo': 1,
+        'pricePerSack': product.sackWeight || 50,
+        'pricePerTali': 1,
+        'pricePerKaing': product.kaingWeight || 12,
+        'pricePerBundle': product.bundleWeight || 1,
+        'pricePerTray': 1,
+        'pricePerPiece': 1
+      };
+      
+      return unitMap[unit] || 1;
+    };
+
+    // Get unit label
+    const getUnitLabel = (unit) => {
+      const labels = {
+        'pricePerKilo': 'per kg',
+        'pricePerSack': 'per sack',
+        'pricePerTali': 'per tali',
+        'pricePerKaing': 'per kaing',
+        'pricePerBundle': 'per bundle',
+        'pricePerTray': 'per tray',
+        'pricePerPiece': 'per piece'
+      };
+      
+      return labels[unit] || unit;
+    };
+
+    // Calculate summary statistics
+    const calculateSummaryStats = () => {
+      const productsWithDeviation = monitoredProducts.value.filter(p => p.deviation !== null);
+      
+      if (productsWithDeviation.length > 0) {
+        const totalDeviation = productsWithDeviation.reduce((sum, p) => sum + Math.abs(p.deviation), 0);
+        const avgDev = totalDeviation / productsWithDeviation.length;
+        avgDeviation.value = `${avgDev.toFixed(1)}%`;
+      }
+      
+      sellersCount.value = sellers.value.length;
+      
+      // Find flagged sellers (sellers with multiple overpriced products)
+      const sellerOverpriceCount = {};
+      overpricedProducts.value.forEach(product => {
+        sellerOverpriceCount[product.sellerId] = (sellerOverpriceCount[product.sellerId] || 0) + 1;
+      });
+      
+      flaggedSellers.value = Object.keys(sellerOverpriceCount).filter(sellerId => 
+        sellerOverpriceCount[sellerId] >= 3
+      );
+      
+      severeOverpriced.value = overpricedProducts.value.filter(p => p.warningLevel === 'severe');
+    };
+
+    // Generate price alerts
+    const generatePriceAlerts = () => {
+      const newAlerts = [];
+      
+      // Generate alerts for overpriced products
+      overpricedProducts.value.slice(0, 5).forEach(product => {
+        newAlerts.push({
+          productId: product.id,
+          productName: product.productName,
+          type: 'Price Violation',
+          message: `Product is ${formatDeviation(product.deviation)} above D.A. maximum price.`,
+          date: new Date().toISOString(),
+          severity: product.warningLevel
+        });
+      });
+      
+      // Generate alerts for products without reference
+      customProducts.value.slice(0, 3).forEach(product => {
+        newAlerts.push({
+          productId: product.id,
+          productName: product.productName,
+          type: 'No Reference',
+          message: `Custom product without D.A. price reference.`,
+          date: new Date().toISOString(),
+          severity: 'info'
+        });
+      });
+      
+      alerts.value = newAlerts;
+    };
+
     // Computed properties
     const filteredProducts = computed(() => {
-      let result = [...products.value];
+      let result = [...monitoredProducts.value];
       
-      // Apply category filter
+      // Apply filters
       if (selectedCategory.value) {
-        result = result.filter(product => 
-          product.category === selectedCategory.value
-        );
+        result = result.filter(product => product.category === selectedCategory.value);
       }
       
-      // Apply price change filter
-      if (selectedPriceChange.value) {
-        switch (selectedPriceChange.value) {
-          case 'increase':
-            result = result.filter(product => product.change > 0);
-            break;
-          case 'decrease':
-            result = result.filter(product => product.change < 0);
-            break;
-          case 'stable':
-            result = result.filter(product => Math.abs(product.change) < 1);
-            break;
+      if (selectedProductType.value) {
+        if (selectedProductType.value === 'da-reference') {
+          result = result.filter(product => !product.isCustomProduct);
+        } else if (selectedProductType.value === 'custom') {
+          result = result.filter(product => product.isCustomProduct);
         }
+      }
+      
+      if (selectedPriceStatus.value) {
+        result = result.filter(product => product.priceStatus === selectedPriceStatus.value);
       }
       
       // Apply search filter
@@ -661,12 +1108,12 @@ export default {
         switch (sortBy.value) {
           case 'productName':
             return a.productName.localeCompare(b.productName);
+          case 'deviation':
+            return (b.deviation || 0) - (a.deviation || 0);
           case 'price':
-            return b.price - a.price;
-          case 'change':
-            return b.change - a.change;
-          case 'stock':
-            return a.stock - b.stock;
+            return (b.currentPrice?.price || 0) - (a.currentPrice?.price || 0);
+          case 'seller':
+            return (a.sellerName || '').localeCompare(b.sellerName || '');
           default:
             return 0;
         }
@@ -679,55 +1126,176 @@ export default {
       const endIndex = startIndex + itemsPerPage.value;
       return result.slice(startIndex, endIndex);
     });
-    
+
     const totalPages = computed(() => {
       return Math.ceil(totalItems.value / itemsPerPage.value);
     });
-    
-    const avgPriceChangeClass = computed(() => {
-      const value = parseFloat(avgPriceChange.value);
-      if (value > 0) return 'price-up';
-      if (value < 0) return 'price-down';
-      return 'price-stable';
+
+    const avgDeviationClass = computed(() => {
+      const value = parseFloat(avgDeviation.value);
+      if (value > 15) return 'text-danger';
+      if (value > 5) return 'text-warning';
+      return 'text-success';
     });
-    
-    const avgPriceChangeIconClass = computed(() => {
-      const value = parseFloat(avgPriceChange.value);
-      if (value > 0) return 'fas fa-arrow-up';
-      if (value < 0) return 'fas fa-arrow-down';
-      return 'fas fa-equals';
+
+    const avgDeviationIconClass = computed(() => {
+      const value = parseFloat(avgDeviation.value);
+      if (value > 15) return 'fas fa-arrow-up';
+      if (value > 5) return 'fas fa-exclamation-triangle';
+      return 'fas fa-check-circle';
     });
-    
+
     // Methods
-    const applyFilters = () => {
-      currentPage.value = 1; // Reset to first page when filters change
-      renderChart(); // Update chart based on new filters
+    const setView = (view) => {
+      currentView.value = view;
     };
-    
+
+    const applyFilters = () => {
+      currentPage.value = 1;
+      renderChart();
+    };
+
     const resetFilters = () => {
       selectedCategory.value = '';
-      selectedTimePeriod.value = '30';
-      selectedPriceChange.value = '';
+      selectedProductType.value = '';
+      selectedPriceStatus.value = '';
       sortBy.value = 'productName';
       searchQuery.value = '';
       currentPage.value = 1;
       renderChart();
     };
-    
+
     const changePage = (page) => {
       currentPage.value = page;
     };
-    
+
     const sortTable = (column) => {
       sortBy.value = column;
       applyFilters();
     };
-    
+
     const setChartView = (view) => {
       currentChartView.value = view;
       renderChart();
     };
-    
+
+    // Warning and notification methods
+    const sendWarning = (product) => {
+      warningTarget.value = product;
+      warningMessage.value = generateWarningMessage(product);
+      showWarningModal.value = true;
+    };
+
+    const sendWarningFromModal = (product) => {
+      closeProductModal();
+      sendWarning(product);
+    };
+
+    const generateWarningMessage = (product) => {
+      const deviation = formatDeviation(product.deviation);
+      const excess = formatPrice(product.excessAmount);
+      const sellerName = getSellerName(product.sellerId);
+      
+      return `Dear ${sellerName},
+
+We have noticed that your product "${product.productName}" is priced at ₱${formatPrice(product.currentPrice.price)} ${product.currentPrice.unitLabel}, which is ${deviation} above the Department of Agriculture's maximum recommended price of ₱${product.daReference.maxPrice} ${product.daReference.unit}.
+
+This represents an excess of ₱${excess} above the recommended maximum price.
+
+We kindly request that you review and adjust your pricing to align with the D.A. guidelines to ensure fair pricing for consumers.
+
+Thank you for your cooperation.
+
+Best regards,
+Agricultural Marketplace Administration`;
+    };
+
+    const confirmSendWarning = async () => {
+      try {
+        // In a real app, this would send the warning via email/SMS
+        console.log('Sending warning to:', getSellerName(warningTarget.value.sellerId));
+        console.log('Message:', warningMessage.value);
+        
+        // Create notification in Firebase for the seller
+        const notificationsRef = collection(db, 'notifications');
+        await addDoc(notificationsRef, {
+          userId: warningTarget.value.sellerId,
+          title: 'Price Warning Received',
+          message: `Your product "${warningTarget.value.productName}" is priced ${formatDeviation(warningTarget.value.deviation)} above D.A. guidelines. Please review your pricing.`,
+          type: 'alert',
+          read: false,
+          timestamp: serverTimestamp(),
+          productId: warningTarget.value.id,
+          link: `/seller/products/edit/${warningTarget.value.id}`,
+          warningLevel: warningTarget.value.warningLevel,
+          excessAmount: warningTarget.value.excessAmount
+        });
+        
+        // Update warning count and last warning date
+        const productIndex = overpricedProducts.value.findIndex(p => p.id === warningTarget.value.id);
+        if (productIndex !== -1) {
+          overpricedProducts.value[productIndex].warningCount = (overpricedProducts.value[productIndex].warningCount || 0) + 1;
+          overpricedProducts.value[productIndex].lastWarning = new Date().toISOString();
+        }
+        
+        // Add to alerts
+        alerts.value.unshift({
+          productId: warningTarget.value.id,
+          productName: warningTarget.value.productName,
+          type: 'Warning Sent',
+          message: `Warning sent to ${getSellerName(warningTarget.value.sellerId)} for overpricing.`,
+          date: new Date().toISOString(),
+          severity: 'warning'
+        });
+        
+        closeWarningModal();
+        
+        // Show success message
+        alert('Warning sent successfully!');
+        
+      } catch (error) {
+        console.error('Error sending warning:', error);
+        alert('Failed to send warning. Please try again.');
+      }
+    };
+
+    const sendCustomMessage = (product) => {
+      // This would open a custom message modal
+      alert(`Send custom message to ${getSellerName(product.sellerId)}`);
+    };
+
+    const closeWarningModal = () => {
+      showWarningModal.value = false;
+      warningTarget.value = null;
+      warningMessage.value = '';
+    };
+
+    // Product details and analysis
+    const viewProductDetails = async (product) => {
+      selectedProduct.value = product;
+      showProductModal.value = true;
+      
+      setTimeout(() => {
+        renderProductChart();
+      }, 100);
+    };
+
+    const closeProductModal = () => {
+      showProductModal.value = false;
+      selectedProduct.value = null;
+      
+      if (productChartInstance.value) {
+        productChartInstance.value.destroy();
+        productChartInstance.value = null;
+      }
+    };
+
+    const viewSellerProfile = (product) => {
+      // This would navigate to seller profile
+      alert(`View profile for ${getSellerName(product.sellerId)}`);
+    };
+
+    // Chart rendering
     const renderChart = () => {
       if (!priceChart.value) return;
       
@@ -737,331 +1305,119 @@ export default {
       
       const ctx = priceChart.value.getContext('2d');
       
-      // Prepare data based on current view
       let labels = [];
       let datasets = [];
       
-      // Set chart colors based on dark mode
       const primaryColor = isDarkMode.value ? '#6abe6e' : '#2e5c31';
-      const secondaryColor = isDarkMode.value ? '#4a8f4d' : '#4a8f4d';
-      const tertiaryColor = isDarkMode.value ? '#3a7f3d' : '#3a7f3d';
+      const dangerColor = '#ef4444';
+      const warningColor = '#f59e0b';
+      const successColor = '#10b981';
       const textColor = isDarkMode.value ? '#e0e0e0' : '#333';
       
-      if (currentChartView.value === 'category') {
-        // Group by category
-        const categoryData = {};
-        categories.value.forEach(category => {
-          categoryData[category] = 0;
-        });
+      if (currentChartView.value === 'deviation') {
+        // Show price deviation distribution
+        const deviationRanges = {
+          'Severe (>50%)': 0,
+          'Moderate (25-50%)': 0,
+          'Mild (10-25%)': 0,
+          'Within Range': 0,
+          'Below Range': 0
+        };
         
-        // Calculate average price for each category
-        products.value.forEach(product => {
-          if (product.category && categoryData[product.category] !== undefined) {
-            categoryData[product.category] += product.price;
-          }
-        });
-        
-        // Count products in each category for average calculation
-        const categoryCounts = {};
-        products.value.forEach(product => {
-          if (product.category) {
-            categoryCounts[product.category] = (categoryCounts[product.category] || 0) + 1;
-          }
-        });
-        
-        // Calculate average price for each category
-        Object.keys(categoryData).forEach(category => {
-          if (categoryCounts[category] > 0) {
-            categoryData[category] = categoryData[category] / categoryCounts[category];
-          }
-        });
-        
-        // Create labels and data arrays
-        labels = Object.keys(categoryData);
-        const data = Object.values(categoryData);
-        
-        // Create dataset
-        datasets.push({
-          label: 'Average Price by Category',
-          data: data,
-          backgroundColor: labels.map((_, i) => {
-            const colors = [primaryColor, secondaryColor, tertiaryColor, '#5aaf5d', '#7ac97d'];
-            return colors[i % colors.length] + '80';
-          }),
-          borderColor: labels.map((_, i) => {
-            const colors = [primaryColor, secondaryColor, tertiaryColor, '#5aaf5d', '#7ac97d'];
-            return colors[i % colors.length];
-          }),
-          borderWidth: 1
-        });
-        
-        // Create chart
-        chartInstance.value = new Chart(ctx, {
-          type: 'bar',
-          data: {
-            labels: labels,
-            datasets: datasets
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: {
-                display: false
-              },
-              tooltip: {
-                callbacks: {
-                  label: function(context) {
-                    return `${context.dataset.label}: ₱${context.parsed.y.toFixed(2)}`;
-                  }
-                }
-              }
-            },
-            scales: {
-              x: {
-                grid: {
-                  display: false,
-                  color: isDarkMode.value ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'
-                },
-                ticks: {
-                  color: textColor
-                }
-              },
-              y: {
-                beginAtZero: true,
-                grid: {
-                  color: isDarkMode.value ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'
-                },
-                ticks: {
-                  color: textColor,
-                  callback: function(value) {
-                    return `₱${value.toFixed(2)}`;
-                  }
-                }
-              }
-            }
-          }
-        });
-      } else if (currentChartView.value === 'seller') {
-        // Group by seller
-        const sellerData = {};
-        const sellerNames = {};
-        
-        // Get seller names
-        sellers.value.forEach(seller => {
-          sellerNames[seller.sellerId] = seller.farmName || 'Unknown';
-        });
-        
-        // Group products by seller
-        products.value.forEach(product => {
-          if (product.sellerId) {
-            const sellerName = sellerNames[product.sellerId] || 'Unknown';
-            if (!sellerData[sellerName]) {
-              sellerData[sellerName] = {
-                totalPrice: 0,
-                count: 0
-              };
-            }
-            sellerData[sellerName].totalPrice += product.price;
-            sellerData[sellerName].count += 1;
-          }
-        });
-        
-        // Calculate average price per seller
-        Object.keys(sellerData).forEach(seller => {
-          if (sellerData[seller].count > 0) {
-            sellerData[seller] = sellerData[seller].totalPrice / sellerData[seller].count;
+        monitoredProducts.value.forEach(product => {
+          if (product.deviation === null) return;
+          
+          if (product.priceStatus === 'overpriced') {
+            if (product.deviation > 50) deviationRanges['Severe (>50%)']++;
+            else if (product.deviation > 25) deviationRanges['Moderate (25-50%)']++;
+            else deviationRanges['Mild (10-25%)']++;
+          } else if (product.priceStatus === 'within-range') {
+            deviationRanges['Within Range']++;
           } else {
-            sellerData[seller] = 0;
+            deviationRanges['Below Range']++;
           }
         });
         
-        // Create labels and data arrays
-        labels = Object.keys(sellerData);
-        const data = Object.values(sellerData);
+        labels = Object.keys(deviationRanges);
+        const data = Object.values(deviationRanges);
+        const colors = [dangerColor, warningColor, '#fbbf24', successColor, '#3b82f6'];
         
-        // Create dataset
         datasets.push({
-          label: 'Average Price by Seller',
+          label: 'Products by Price Deviation',
+          data: data,
+          backgroundColor: colors.map(color => color + '80'),
+          borderColor: colors,
+          borderWidth: 1
+        });
+        
+      } else if (currentChartView.value === 'category') {
+        // Show average deviation by category
+        const categoryDeviations = {};
+        const categoryCounts = {};
+        
+        monitoredProducts.value.forEach(product => {
+          if (product.deviation === null) return;
+          
+          if (!categoryDeviations[product.category]) {
+            categoryDeviations[product.category] = 0;
+            categoryCounts[product.category] = 0;
+          }
+          
+          categoryDeviations[product.category] += Math.abs(product.deviation);
+          categoryCounts[product.category]++;
+        });
+        
+        // Calculate averages
+        Object.keys(categoryDeviations).forEach(category => {
+          if (categoryCounts[category] > 0) {
+            categoryDeviations[category] = categoryDeviations[category] / categoryCounts[category];
+          }
+        });
+        
+        labels = Object.keys(categoryDeviations);
+        const data = Object.values(categoryDeviations);
+        
+        datasets.push({
+          label: 'Average Price Deviation by Category (%)',
           data: data,
           backgroundColor: labels.map((_, i) => {
-            const colors = [primaryColor, secondaryColor, tertiaryColor, '#5aaf5d', '#7ac97d', '#8ad98d'];
+            const colors = [primaryColor, warningColor, dangerColor, successColor, '#8b5cf6'];
             return colors[i % colors.length] + '80';
           }),
           borderColor: labels.map((_, i) => {
-            const colors = [primaryColor, secondaryColor, tertiaryColor, '#5aaf5d', '#7ac97d', '#8ad98d'];
+            const colors = [primaryColor, warningColor, dangerColor, successColor, '#8b5cf6'];
             return colors[i % colors.length];
           }),
           borderWidth: 1
         });
         
-        // Create chart
-        chartInstance.value = new Chart(ctx, {
-          type: 'bar',
-          data: {
-            labels: labels,
-            datasets: datasets
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: {
-                display: false
-              },
-              tooltip: {
-                callbacks: {
-                  label: function(context) {
-                    return `${context.dataset.label}: ₱${context.parsed.y.toFixed(2)}`;
-                  }
-                }
-              }
-            },
-            scales: {
-              x: {
-                grid: {
-                  display: false,
-                  color: isDarkMode.value ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'
-                },
-                ticks: {
-                  color: textColor
-                }
-              },
-              y: {
-                beginAtZero: true,
-                grid: {
-                  color: isDarkMode.value ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'
-                },
-                ticks: {
-                  color: textColor,
-                  callback: function(value) {
-                    return `₱${value.toFixed(2)}`;
-                  }
-                }
-              }
-            }
-          }
-        });
-      } else if (currentChartView.value === 'products') {
-        // Show top 5 products by price
-        const topProducts = [...products.value]
-          .sort((a, b) => b.price - a.price)
-          .slice(0, 5);
+      } else if (currentChartView.value === 'warnings') {
+        // Show warning levels distribution
+        const warningLevels = {
+          'Severe': severeOverpriced.value.length,
+          'Moderate': overpricedProducts.value.filter(p => p.warningLevel === 'moderate').length,
+          'Mild': overpricedProducts.value.filter(p => p.warningLevel === 'mild').length,
+          'No Issues': monitoredProducts.value.filter(p => p.priceStatus === 'within-range').length
+        };
         
-        // Create labels and data arrays
-        labels = topProducts.map(product => product.productName);
+        labels = Object.keys(warningLevels);
+        const data = Object.values(warningLevels);
+        const colors = [dangerColor, warningColor, '#fbbf24', successColor];
         
-        const data = topProducts.map(product => product.price);
-        
-        // Create dataset
         datasets.push({
-          label: 'Top Products by Price',
+          label: 'Products by Warning Level',
           data: data,
-          backgroundColor: labels.map((_, i) => {
-            const colors = [primaryColor, secondaryColor, tertiaryColor, '#5aaf5d', '#7ac97d'];
-            return colors[i % colors.length] + '80';
-          }),
-          borderColor: labels.map((_, i) => {
-            const colors = [primaryColor, secondaryColor, tertiaryColor, '#5aaf5d', '#7ac97d'];
-            return colors[i % colors.length];
-          }),
+          backgroundColor: colors.map(color => color + '80'),
+          borderColor: colors,
           borderWidth: 1
         });
-        
-        // Create chart
-        chartInstance.value = new Chart(ctx, {
-          type: 'bar',
-          data: {
-            labels: labels,
-            datasets: datasets
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: {
-                display: false
-              },
-              tooltip: {
-                callbacks: {
-                  label: function(context) {
-                    return `${context.dataset.label}: ₱${context.parsed.y.toFixed(2)}`;
-                  }
-                }
-              }
-            },
-            scales: {
-              x: {
-                grid: {
-                  display: false,
-                  color: isDarkMode.value ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'
-                },
-                ticks: {
-                  color: textColor
-                }
-              },
-              y: {
-                beginAtZero: true,
-                grid: {
-                  color: isDarkMode.value ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'
-                },
-                ticks: {
-                  color: textColor,
-                  callback: function(value) {
-                    return `₱${value.toFixed(2)}`;
-                  }
-                }
-              }
-            }
-          }
-        });
-      }
-    };
-    
-    const renderProductChart = () => {
-      if (!productHistoryChart.value || !selectedProduct.value) return;
-      
-      if (productChartInstance.value) {
-        productChartInstance.value.destroy();
       }
       
-      const ctx = productHistoryChart.value.getContext('2d');
-      
-      // For demo purposes, generate some price history data
-      // In a real app, this would come from Firebase
-      const today = new Date();
-      const labels = [];
-      const prices = [];
-      
-      for (let i = 30; i >= 0; i--) {
-        const date = new Date();
-        date.setDate(today.getDate() - i);
-        labels.push(formatDate(date.toISOString()));
-        
-        // Generate a price that fluctuates around the current price
-        const fluctuation = (Math.random() * 0.2) - 0.1; // -10% to +10%
-        const historicalPrice = selectedProduct.value.price * (1 + fluctuation);
-        prices.push(historicalPrice);
-      }
-      
-      // Set chart colors based on dark mode
-      const primaryColor = isDarkMode.value ? '#6abe6e' : '#2e5c31';
-      const textColor = isDarkMode.value ? '#e0e0e0' : '#333';
-      
-      productChartInstance.value = new Chart(ctx, {
-        type: 'line',
+      chartInstance.value = new Chart(ctx, {
+        type: 'bar',
         data: {
           labels: labels,
-          datasets: [
-            {
-              label: 'Price History',
-              data: prices,
-              borderColor: primaryColor,
-              backgroundColor: primaryColor + '20',
-              tension: 0.3,
-              fill: true
-            }
-          ]
+          datasets: datasets
         },
         options: {
           responsive: true,
@@ -1073,7 +1429,135 @@ export default {
             tooltip: {
               callbacks: {
                 label: function(context) {
-                  return `Price: ₱${context.parsed.y.toFixed(2)}`;
+                  if (currentChartView.value === 'category') {
+                    return `${context.dataset.label}: ${context.parsed.y.toFixed(1)}%`;
+                  }
+                  return `${context.dataset.label}: ${context.parsed.y}`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: {
+                display: false,
+                color: isDarkMode.value ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'
+              },
+              ticks: {
+                color: textColor
+              }
+            },
+            y: {
+              beginAtZero: true,
+              grid: {
+                color: isDarkMode.value ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'
+              },
+              ticks: {
+                color: textColor,
+                callback: function(value) {
+                  if (currentChartView.value === 'category') {
+                    return `${value.toFixed(1)}%`;
+                  }
+                  return value;
+                }
+              }
+            }
+          }
+        }
+      });
+    };
+
+    const renderProductChart = () => {
+      if (!productHistoryChart.value || !selectedProduct.value) return;
+      
+      if (productChartInstance.value) {
+        productChartInstance.value.destroy();
+      }
+      
+      const ctx = productHistoryChart.value.getContext('2d');
+      
+      // Generate sample price history data
+      const today = new Date();
+      const labels = [];
+      const prices = [];
+      const daMin = [];
+      const daMax = [];
+      
+      for (let i = 30; i >= 0; i--) {
+        const date = new Date();
+        date.setDate(today.getDate() - i);
+        labels.push(formatDate(date.toISOString()));
+        
+        // Generate price fluctuation around current price
+        const fluctuation = (Math.random() * 0.3) - 0.15; // -15% to +15%
+        const historicalPrice = selectedProduct.value.currentPrice.price * (1 + fluctuation);
+        prices.push(historicalPrice);
+        
+        // Add D.A. reference lines if available
+        if (selectedProduct.value.daReference) {
+          daMin.push(selectedProduct.value.daReference.minPrice);
+          daMax.push(selectedProduct.value.daReference.maxPrice);
+        }
+      }
+      
+      const primaryColor = isDarkMode.value ? '#6abe6e' : '#2e5c31';
+      const dangerColor = '#ef4444';
+      const successColor = '#10b981';
+      const textColor = isDarkMode.value ? '#e0e0e0' : '#333';
+      
+      const datasets = [
+        {
+          label: 'Seller Price',
+          data: prices,
+          borderColor: primaryColor,
+          backgroundColor: primaryColor + '20',
+          tension: 0.3,
+          fill: false
+        }
+      ];
+      
+      if (selectedProduct.value.daReference) {
+        datasets.push({
+          label: 'D.A. Max Price',
+          data: daMax,
+          borderColor: dangerColor,
+          backgroundColor: 'transparent',
+          borderDash: [5, 5],
+          tension: 0,
+          fill: false
+        });
+        
+        datasets.push({
+          label: 'D.A. Min Price',
+          data: daMin,
+          borderColor: successColor,
+          backgroundColor: 'transparent',
+          borderDash: [5, 5],
+          tension: 0,
+          fill: false
+        });
+      }
+      
+      productChartInstance.value = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: datasets
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: true,
+              labels: {
+                color: textColor
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  return `${context.dataset.label}: ₱${context.parsed.y.toFixed(2)}`;
                 }
               }
             }
@@ -1106,172 +1590,37 @@ export default {
         }
       });
     };
-    
-    const viewProductDetails = async (product) => {
-      selectedProduct.value = product;
-      showProductModal.value = true;
-      
-      // Fetch orders for this product
-      await fetchProductOrders(product.productId);
-      
-      // Render product chart after modal is shown
-      setTimeout(() => {
-        renderProductChart();
-      }, 100);
+
+    // Utility methods
+    const getImageUrl = (imageData) => {
+      if (!imageData) return '/placeholder.svg?height=50&width=50';
+      if (imageData.startsWith('http')) return imageData;
+      if (imageData.startsWith('data:image')) return imageData;
+      return '/placeholder.svg?height=50&width=50';
     };
-    
-    const closeProductModal = () => {
-      showProductModal.value = false;
-      selectedProduct.value = null;
-      productOrders.value = [];
-      
-      if (productChartInstance.value) {
-        productChartInstance.value.destroy();
-        productChartInstance.value = null;
+
+    const getDisplayUnit = (product) => {
+      if (product.currentPrice) {
+        return product.currentPrice.unitLabel;
       }
+      return 'N/A';
     };
-    
-    const togglePriceAlert = async (product) => {
-      try {
-        const sellerId = product.sellerId;
-        if (!sellerId) {
-          console.error('No seller ID found for product:', product.productId);
-          return;
-        }
 
-        // Check existing alerts in notifadmin collection
-        const notifadminRef = collection(db, 'notifadmin');
-        const q = query(
-          notifadminRef,
-          where('productId', '==', product.productId),
-          where('sellerId', '==', sellerId)
-        );
-        
-        const snapshot = await getDocs(q);
-        const existingAlerts = snapshot.docs.map(doc => doc.data());
-        
-        // Count attempts
-        const attemptCount = existingAlerts.length;
-        
-        if (attemptCount >= 3) {
-          alert('Maximum alert attempts reached. Product will be terminated.');
-          // Here you would add logic to terminate/hide the product
-          return;
-        }
-
-        // Create new alert
-        const alertData = {
-          productId: product.productId,
-          sellerId: sellerId,
-          productName: product.productName,
-          currentPrice: product.price,
-          attemptNumber: attemptCount + 1,
-          message: `Price Alert: Your product "${product.productName}" is priced above market average. This is attempt ${attemptCount + 1} of 3.`,
-          timestamp: serverTimestamp(),
-          status: 'unread',
-          type: 'price_alert'
-        };
-
-        await addDoc(notifadminRef, alertData);
-
-        // Update local state
-        const index = products.value.findIndex(p => p.productId === product.productId);
-        if (index !== -1) {
-          products.value[index].hasAlert = true;
-        }
-
-        alert(`Price alert sent to seller. Attempt ${attemptCount + 1} of 3.`);
-      } catch (error) {
-        console.error('Error creating price alert:', error);
-        alert('Error creating price alert. Please try again.');
+    const formatPrice = (price) => {
+      if (typeof price === 'object' && price.price) {
+        return price.price.toFixed(2);
       }
+      return parseFloat(price).toFixed(2);
     };
-    
-    const showMoreOptions = (product) => {
-      // This would show a dropdown menu with more options
-      alert(`More options for ${product.productName}`);
-    };
-    
-    const dismissAlert = (index) => {
-      const alert = alerts.value[index];
-      alerts.value.splice(index, 1);
-      priceAlerts.value = alerts.value.length;
-      
-      // If this was the last alert for a product, update the product's hasAlert property
-      if (alert && alert.productId) {
-        const productIndex = products.value.findIndex(p => p.productId === alert.productId);
-        if (productIndex !== -1 && !alerts.value.some(a => a.productId === alert.productId)) {
-          products.value[productIndex].hasAlert = false;
-        }
-      }
-    };
-    
-    const showAddAlertModal = () => {
-      // This would show a modal to add a new price alert
-      alert('Add new price alert');
-    };
-    
-    const exportPriceHistory = (product) => {
-      // This would export the price history to CSV or PDF
-      alert(`Exporting price history for ${product.productName}`);
-    };
-    
-    const setupPriceAlert = async (product) => {
-      try {
-        const sellerId = product.sellerId;
-        if (!sellerId) {
-          console.error('No seller ID found for product:', product.productId);
-          return;
-        }
 
-        // Check existing alerts
-        const notifadminRef = collection(db, 'notifadmin');
-        const q = query(
-          notifadminRef,
-          where('productId', '==', product.productId),
-          where('sellerId', '==', sellerId)
-        );
-        
-        const snapshot = await getDocs(q);
-        const existingAlerts = snapshot.docs.map(doc => doc.data());
-        
-        // Count attempts
-        const attemptCount = existingAlerts.length;
-        
-        if (attemptCount >= 3) {
-          alert('Maximum alert attempts reached. Product will be terminated.');
-          // Here you would add logic to terminate/hide the product
-          return;
-        }
-
-        // Create new alert
-        const alertData = {
-          productId: product.productId,
-          sellerId: sellerId,
-          productName: product.productName,
-          currentPrice: product.price,
-          attemptNumber: attemptCount + 1,
-          message: `Price Alert: Your product "${product.productName}" is priced above market average. This is attempt ${attemptCount + 1} of 3.`,
-          timestamp: serverTimestamp(),
-          status: 'unread',
-          type: 'price_alert'
-        };
-
-        await addDoc(notifadminRef, alertData);
-        alert(`Price alert sent to seller. Attempt ${attemptCount + 1} of 3.`);
-        
-        // Close the modal
-        closeProductModal();
-      } catch (error) {
-        console.error('Error setting up price alert:', error);
-        alert('Error setting up price alert. Please try again.');
-      }
+    const formatDeviation = (deviation) => {
+      if (deviation === null || deviation === undefined) return 'N/A';
+      return deviation > 0 ? `+${deviation.toFixed(1)}%` : `${deviation.toFixed(1)}%`;
     };
-    
+
     const formatDate = (dateString) => {
       if (!dateString) return 'N/A';
       
-      // Handle Firestore Timestamp objects
       if (dateString instanceof Timestamp) {
         const date = dateString.toDate();
         return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -1280,82 +1629,78 @@ export default {
       const date = new Date(dateString);
       return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     };
-    
-    const formatPriceChange = (change) => {
-      if (change === undefined || change === null) return 'N/A';
-      return change > 0 ? `+${change.toFixed(2)}%` : `${change.toFixed(2)}%`;
+
+    const getDeviationClass = (deviation) => {
+      if (deviation === null || deviation === undefined) return '';
+      if (Math.abs(deviation) > 50) return 'text-danger';
+      if (Math.abs(deviation) > 25) return 'text-warning';
+      if (Math.abs(deviation) > 10) return 'text-info';
+      return 'text-success';
     };
-    
-    const getPriceChangeClass = (change) => {
-      if (change === undefined || change === null) return '';
-      if (change > 0) return 'price-up';
-      if (change < 0) return 'price-down';
-      return 'price-stable';
-    };
-    
-    const getStockLevelClass = (stock) => {
-      if (stock === undefined || stock === null) return '';
-      if (stock < 10) return 'volatility-high';
-      if (stock < 30) return 'volatility-medium';
-      return 'volatility-low';
-    };
-    
-    const getStatusClass = (status) => {
-      if (!status) return '';
-      switch (status.toLowerCase()) {
-        case 'active':
-          return 'volatility-low';
-        case 'inactive':
-          return 'volatility-high';
-        default:
-          return 'volatility-medium';
-      }
-    };
-    
-    const getOrderStatusClass = (status) => {
-      if (!status) return '';
-      switch (status.toLowerCase()) {
-        case 'delivered':
-        case 'completed':
-          return 'price-up';
-        case 'cancelled':
-        case 'rejected':
-          return 'price-down';
-        default:
-          return 'price-stable';
-      }
-    };
-    
-    const getAlertTypeClass = (type) => {
-      switch (type) {
-        case 'Price Increase':
-          return 'alert-increase';
-        case 'Price Decrease':
-          return 'alert-decrease';
-        case 'Low Stock':
-          return 'alert-threshold';
-        case 'High Demand':
-          return 'alert-volatility';
+
+    const getPriceStatusClass = (status) => {
+      switch (status) {
+        case 'overpriced':
+          return 'status-danger';
+        case 'underpriced':
+          return 'status-info';
+        case 'within-range':
+          return 'status-success';
+        case 'no-reference':
+          return 'status-warning';
         default:
           return '';
       }
     };
-    
-    const getAlertTypeIcon = (type) => {
-      switch (type) {
-        case 'Price Increase':
-          return 'fas fa-arrow-up';
-        case 'Price Decrease':
-          return 'fas fa-arrow-down';
-        case 'Low Stock':
-          return 'fas fa-exclamation-circle';
-        case 'High Demand':
-          return 'fas fa-exchange-alt';
+
+    const getPriceStatusText = (status) => {
+      switch (status) {
+        case 'overpriced':
+          return 'Overpriced';
+        case 'underpriced':
+          return 'Underpriced';
+        case 'within-range':
+          return 'Within Range';
+        case 'no-reference':
+          return 'No Reference';
         default:
-          return 'fas fa-bell';
+          return 'Unknown';
       }
     };
-    
+
+    const getPriceComparisonClass = (product) => {
+      if (!product.daReference) return '';
+      return getPriceStatusClass(product.priceStatus);
+    };
+
+    // Additional methods
+    const togglePriceAlert = (product) => {
+      const index = monitoredProducts.value.findIndex(p => p.id === product.id);
+      if (index !== -1) {
+        monitoredProducts.value[index].hasAlert = !monitoredProducts.value[index].hasAlert;
+        
+        if (monitoredProducts.value[index].hasAlert) {
+          alerts.value.unshift({
+            productId: product.id,
+            productName: product.productName,
+            type: 'Price Alert Set',
+            message: `Price alert activated for ${product.productName}.`,
+            date: new Date().toISOString(),
+            severity: 'info'
+          });
+        }
+      }
+    };
+
+    const exportProductReport = (product) => {
+      console.log('Exporting product report for:', product.productName);
+      alert(`Product report for ${product.productName} exported successfully!`);
+    };
+
+    const setupPriceAlert = (product) => {
+      alert(`Setting up price alert for ${product.productName}`);
+    };
+
     // Watch for dark mode changes
     watch(() => isDarkMode.value, () => {
       renderChart();
@@ -1363,7 +1708,7 @@ export default {
         renderProductChart();
       }
     });
-    
+
     onMounted(() => {
       // Check for dark mode
       isDarkMode.value = document.body.classList.contains('dark');
@@ -1371,21 +1716,22 @@ export default {
       // Fetch data from Firebase
       fetchData();
     });
-    
+
     return {
       isDarkMode,
       priceChart,
       productHistoryChart,
-      avgPriceChange,
-      productsMonitored,
-      categoriesCount,
-      priceAlerts,
-      newAlertsToday,
+      currentView,
+      avgDeviation,
+      monitoredProducts,
+      overpricedProducts,
+      customProducts,
+      severeOverpriced,
       sellersCount,
-      activeSellersCount,
+      flaggedSellers,
       selectedCategory,
-      selectedTimePeriod,
-      selectedPriceChange,
+      selectedProductType,
+      selectedPriceStatus,
       sortBy,
       searchQuery,
       currentPage,
@@ -1396,32 +1742,42 @@ export default {
       filteredProducts,
       alerts,
       showProductModal,
+      showWarningModal,
       selectedProduct,
-      productOrders,
-      avgPriceChangeClass,
-      avgPriceChangeIconClass,
+      warningTarget,
+      warningMessage,
+      includeGuidelines,
+      requestResponse,
+      avgDeviationClass,
+      avgDeviationIconClass,
+      setView,
       getImageUrl,
+      getDisplayUnit,
+      formatPrice,
+      formatDeviation,
+      formatDate,
+      getDeviationClass,
+      getPriceStatusClass,
+      getPriceStatusText,
+      getPriceComparisonClass,
+      getSellerName,
       applyFilters,
       resetFilters,
       changePage,
       sortTable,
       setChartView,
+      sendWarning,
+      sendWarningFromModal,
+      confirmSendWarning,
+      sendCustomMessage,
+      closeWarningModal,
       viewProductDetails,
       closeProductModal,
+      viewSellerProfile,
       togglePriceAlert,
-      showMoreOptions,
-      dismissAlert,
-      showAddAlertModal,
-      exportPriceHistory,
+      exportProductReport,
       setupPriceAlert,
-      formatDate,
-      formatPriceChange,
-      getPriceChangeClass,
-      getStockLevelClass,
-      getStatusClass,
-      getOrderStatusClass,
-      getAlertTypeClass,
-      getAlertTypeIcon
+      refreshData
     };
   }
 };
@@ -1441,13 +1797,13 @@ export default {
 
 .content-wrapper {
   flex: 1;
-  margin-left: 260px; /* Match the sidebar width */
+  margin-left: 260px;
   padding: 20px;
   transition: margin-left 0.3s ease;
 }
 
 .price-monitoring {
-  max-width: 1200px;
+  max-width: 1400px;
   margin: 0 auto;
   background: #f9f9f9;
   border-radius: 10px;
@@ -1461,10 +1817,10 @@ export default {
 .header {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
   background: #2e5c31;
   color: white;
-  padding: 15px;
+  padding: 15px 20px;
   border-radius: 10px 10px 0 0;
   margin-bottom: 20px;
 }
@@ -1473,8 +1829,55 @@ export default {
   background: #1a3a1c;
 }
 
-.header i {
-  font-size: 20px;
+.header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.header-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.view-toggle-btn {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.view-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.view-toggle-btn.active {
+  background: white;
+  color: #2e5c31;
+}
+
+.refresh-btn {
+  background: #10b981;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.refresh-btn:hover {
+  background: #059669;
 }
 
 .dashboard-container {
@@ -1521,14 +1924,6 @@ export default {
   color: #222;
 }
 
-.card-icon i {
-  font-size: 20px;
-}
-
-.card-content {
-  flex: 1;
-}
-
 .card-content h3 {
   font-size: 14px;
   color: #666;
@@ -1559,16 +1954,20 @@ export default {
   color: #999;
 }
 
-.price-up {
-  color: #4caf50;
+.text-danger {
+  color: #ef4444;
 }
 
-.price-down {
-  color: #f44336;
+.text-warning {
+  color: #f59e0b;
 }
 
-.price-stable {
-  color: #ff9800;
+.text-success {
+  color: #10b981;
+}
+
+.text-info {
+  color: #3b82f6;
 }
 
 /* Filters Section */
@@ -1633,14 +2032,6 @@ export default {
 .dark-mode .reset-btn {
   background: #444;
   color: #e0e0e0;
-}
-
-.reset-btn:hover {
-  background: #e0e0e0;
-}
-
-.dark-mode .reset-btn:hover {
-  background: #555;
 }
 
 /* Content Area */
@@ -1730,6 +2121,38 @@ export default {
   width: 300px;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.refresh-btn {
+  background: #6abe6e;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: background-color 0.2s;
+}
+
+.refresh-btn:hover {
+  background: #5aa85f;
+}
+
+.dark-mode .refresh-btn {
+  background: #2e5c31;
+}
+
+.dark-mode .refresh-btn:hover {
+  background: #1e3f21;
+}
+
 .search-container input {
   width: 100%;
   padding: 8px 12px 8px 35px;
@@ -1750,10 +2173,6 @@ export default {
   top: 50%;
   transform: translateY(-50%);
   color: #999;
-}
-
-.dark-mode .search-container i {
-  color: #aaa;
 }
 
 .table-container {
@@ -1789,11 +2208,6 @@ th {
   color: #6abe6e;
 }
 
-th i {
-  margin-left: 5px;
-  font-size: 12px;
-}
-
 tr:hover {
   background: #f9f9f9;
 }
@@ -1815,48 +2229,158 @@ tr:hover {
   background-size: cover;
   background-position: center;
   background-color: #f0f0f0;
+  flex-shrink: 0;
 }
 
 .dark-mode .product-image {
   background-color: #444;
 }
 
-.volatility-indicator {
-  display: inline-block;
+.product-info {
+  flex: 1;
+}
+
+.product-name {
+  font-weight: 500;
+  color: #333;
+}
+
+.dark-mode .product-name {
+  color: #e0e0e0;
+}
+
+.product-meta {
+  display: flex;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.custom-badge,
+.variety-badge,
+.unit-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+.custom-badge {
+  background: #fbbf24;
+  color: #92400e;
+}
+
+.variety-badge {
+  background: #a78bfa;
+  color: #5b21b6;
+}
+
+.unit-badge {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.dark-mode .unit-badge {
+  background: #4b5563;
+  color: #d1d5db;
+}
+
+.price-display {
+  display: flex;
+  flex-direction: column;
+}
+
+.current-price {
+  font-weight: 600;
+  color: #333;
+}
+
+.dark-mode .current-price {
+  color: #e0e0e0;
+}
+
+.price-unit {
+  color: #666;
+  font-size: 12px;
+}
+
+.dark-mode .price-unit {
+  color: #999;
+}
+
+.reference-price {
+  display: flex;
+  flex-direction: column;
+}
+
+.reference-range {
+  font-weight: 500;
+  color: #059669;
+}
+
+.reference-unit {
+  color: #666;
+  font-size: 12px;
+}
+
+.no-reference {
+  color: #999;
+  font-style: italic;
+}
+
+.deviation-display {
+  font-weight: 600;
+}
+
+.no-deviation {
+  color: #999;
+  font-style: italic;
+}
+
+.status-indicator {
   padding: 4px 8px;
   border-radius: 4px;
   font-size: 12px;
   font-weight: 500;
 }
 
-.volatility-low {
-  background: #e8f5e9;
-  color: #2e7d32;
+.status-success {
+  background: #d1fae5;
+  color: #065f46;
 }
 
-.volatility-medium {
-  background: #fff8e1;
-  color: #ff8f00;
+.status-warning {
+  background: #fef3c7;
+  color: #92400e;
 }
 
-.volatility-high {
-  background: #ffebee;
-  color: #c62828;
+.status-danger {
+  background: #fee2e2;
+  color: #991b1b;
 }
 
-.dark-mode .volatility-low {
-  background: rgba(46, 125, 50, 0.2);
-  color: #81c784;
+.status-info {
+  background: #dbeafe;
+  color: #1e40af;
 }
 
-.dark-mode .volatility-medium {
-  background: rgba(255, 143, 0, 0.2);
-  color: #ffd54f;
+.dark-mode .status-success {
+  background: rgba(5, 95, 70, 0.2);
+  color: #6ee7b7;
 }
 
-.dark-mode .volatility-high {
-  background: rgba(198, 40, 40, 0.2);
-  color: #ef9a9a;
+.dark-mode .status-warning {
+  background: rgba(146, 64, 14, 0.2);
+  color: #fcd34d;
+}
+
+.dark-mode .status-danger {
+  background: rgba(153, 27, 27, 0.2);
+  color: #fca5a5;
+}
+
+.dark-mode .status-info {
+  background: rgba(30, 64, 175, 0.2);
+  color: #93c5fd;
 }
 
 .action-buttons {
@@ -1888,30 +2412,11 @@ tr:hover {
 }
 
 .alert-btn:hover {
-  background: #fff8e1;
-  color: #ff8f00;
+  background: #f3e8ff;
+  color: #7c3aed;
 }
 
-.more-btn:hover {
-  background: #f5f5f5;
-  color: #333;
-}
-
-.dark-mode .view-btn:hover {
-  background: rgba(25, 118, 210, 0.2);
-  color: #64b5f6;
-}
-
-.dark-mode .alert-btn:hover {
-  background: rgba(255, 143, 0, 0.2);
-  color: #ffd54f;
-}
-
-.dark-mode .more-btn:hover {
-  background: #555;
-  color: #e0e0e0;
-}
-
+/* Pagination */
 .pagination {
   display: flex;
   justify-content: space-between;
@@ -1949,193 +2454,6 @@ tr:hover {
   color: #aaa;
 }
 
-/* Alerts Section */
-.alerts-section {
-  background: white;
-  padding: 15px;
-  border-radius: 8px;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
-}
-
-.dark-mode .alerts-section {
-  background: #333;
-}
-
-.add-alert-btn {
-  background: #2e5c31;
-  color: white;
-  border: none;
-  padding: 8px 15px;
-  border-radius: 4px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-weight: 500;
-}
-
-.dark-mode .add-alert-btn {
-  background: #6abe6e;
-  color: #222;
-}
-
-.no-alerts {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 30px;
-  color: #999;
-}
-
-.dark-mode .no-alerts {
-  color: #777;
-}
-
-.no-alerts i {
-  font-size: 40px;
-  margin-bottom: 10px;
-  opacity: 0.5;
-}
-
-.alert-items {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.alert-item {
-  display: flex;
-  gap: 15px;
-  padding: 15px;
-  background: #f9f9f9;
-  border-radius: 8px;
-}
-
-.dark-mode .alert-item {
-  background: #3a3a3a;
-}
-
-.alert-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.alert-increase {
-  background: #e8f5e9;
-  color: #2e7d32;
-}
-
-.alert-decrease {
-  background: #e3f2fd;
-  color: #1976d2;
-}
-
-.alert-volatility {
-  background: #fff8e1;
-  color: #ff8f00;
-}
-
-.alert-threshold {
-  background: #ffebee;
-  color: #c62828;
-}
-
-.dark-mode .alert-increase {
-  background: rgba(46, 125, 50, 0.2);
-  color: #81c784;
-}
-
-.dark-mode .alert-decrease {
-  background: rgba(25, 118, 210, 0.2);
-  color: #64b5f6;
-}
-
-.dark-mode .alert-volatility {
-  background: rgba(255, 143, 0, 0.2);
-  color: #ffd54f;
-}
-
-.dark-mode .alert-threshold {
-  background: rgba(198, 40, 40, 0.2);
-  color: #ef9a9a;
-}
-
-.alert-content {
-  flex: 1;
-}
-
-.alert-header {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 5px;
-}
-
-.alert-header h4 {
-  margin: 0;
-  color: #333;
-  font-size: 16px;
-}
-
-.dark-mode .alert-header h4 {
-  color: #e0e0e0;
-}
-
-.alert-date {
-  color: #999;
-  font-size: 12px;
-}
-
-.dark-mode .alert-date {
-  color: #777;
-}
-
-.alert-content p {
-  margin: 0 0 10px 0;
-  color: #666;
-}
-
-.dark-mode .alert-content p {
-  color: #aaa;
-}
-
-.alert-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.alert-type {
-  font-size: 12px;
-  color: #999;
-  background: #f0f0f0;
-  padding: 3px 8px;
-  border-radius: 12px;
-}
-
-.dark-mode .alert-type {
-  background: #444;
-  color: #777;
-}
-
-.dismiss-btn {
-  background: none;
-  border: none;
-  color: #999;
-  cursor: pointer;
-  font-size: 12px;
-  text-decoration: underline;
-}
-
-.dark-mode .dismiss-btn {
-  color: #777;
-}
-
 /* Modal */
 .modal-overlay {
   position: fixed;
@@ -2154,10 +2472,14 @@ tr:hover {
   background: white;
   border-radius: 8px;
   width: 90%;
-  max-width: 800px;
+  max-width: 600px;
   max-height: 90vh;
   overflow-y: auto;
   box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+}
+
+.large-modal {
+  max-width: 900px;
 }
 
 .dark-mode .modal-content {
@@ -2194,18 +2516,83 @@ tr:hover {
   cursor: pointer;
 }
 
-.dark-mode .close-btn {
-  color: #777;
-}
-
 .modal-body {
   padding: 20px;
+}
+
+.warning-details {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.product-summary {
+  background: #f9f9f9;
+  padding: 15px;
+  border-radius: 8px;
+}
+
+.dark-mode .product-summary {
+  background: #3a3a3a;
+}
+
+.product-summary h3 {
+  margin: 0 0 10px 0;
+  color: #2e5c31;
+}
+
+.dark-mode .product-summary h3 {
+  color: #6abe6e;
+}
+
+.warning-message label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 500;
+  color: #333;
+}
+
+.dark-mode .warning-message label {
+  color: #e0e0e0;
+}
+
+.warning-message textarea {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.dark-mode .warning-message textarea {
+  background: #444;
+  border-color: #555;
+  color: #e0e0e0;
+}
+
+.warning-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.warning-options label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.product-analysis {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
 .product-details {
   display: flex;
   gap: 20px;
-  margin-bottom: 20px;
 }
 
 .product-image-large {
@@ -2265,16 +2652,79 @@ tr:hover {
   color: #e0e0e0;
 }
 
+.reference-comparison {
+  background: #f9f9f9;
+  padding: 15px;
+  border-radius: 8px;
+}
+
+.dark-mode .reference-comparison {
+  background: #3a3a3a;
+}
+
+.reference-comparison h4 {
+  margin: 0 0 15px 0;
+  color: #2e5c31;
+}
+
+.dark-mode .reference-comparison h4 {
+  color: #6abe6e;
+}
+
+.comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 15px;
+}
+
+.comparison-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
+  background: white;
+  border-radius: 4px;
+}
+
+.dark-mode .comparison-item {
+  background: #444;
+}
+
+.comparison-label {
+  font-size: 14px;
+  color: #666;
+}
+
+.dark-mode .comparison-label {
+  color: #aaa;
+}
+
+.comparison-value {
+  font-weight: 600;
+  color: #333;
+}
+
+.dark-mode .comparison-value {
+  color: #e0e0e0;
+}
+
 .price-history-chart {
   height: 250px;
-  margin-bottom: 20px;
+}
+
+.price-history-chart h4 {
+  margin: 0 0 15px 0;
+  color: #2e5c31;
+}
+
+.dark-mode .price-history-chart h4 {
+  color: #6abe6e;
 }
 
 .price-statistics {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 15px;
-  margin-bottom: 20px;
 }
 
 .stat-card {
@@ -2302,47 +2752,20 @@ tr:hover {
   font-size: 20px;
   font-weight: bold;
   color: #2e5c31;
-  margin-bottom: 5px;
 }
 
 .dark-mode .stat-value {
   color: #6abe6e;
 }
 
-.stat-date {
-  font-size: 12px;
-  color: #999;
-}
-
-.dark-mode .stat-date {
-  color: #777;
-}
-
-.price-history-table {
-  margin-bottom: 20px;
-}
-
-.price-history-table h3 {
-  margin: 0 0 10px 0;
-  color: #2e5c31;
-  font-size: 18px;
-}
-
-.dark-mode .price-history-table h3 {
-  color: #6abe6e;
-}
-
-.text-center {
-  text-align: center;
-}
-
 .modal-actions {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+  margin-top: 20px;
 }
 
-.primary-btn, .secondary-btn {
+.primary-btn, .secondary-btn, .warning-btn {
   padding: 10px 15px;
   border-radius: 4px;
   border: none;
@@ -2373,6 +2796,17 @@ tr:hover {
   color: #e0e0e0;
 }
 
+.warning-btn {
+  background: #ef4444;
+  color: white;
+}
+
+.primary-btn:disabled,
+.warning-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 @media (max-width: 1024px) {
   .summary-cards {
     grid-template-columns: repeat(2, 1fr);
@@ -2381,12 +2815,16 @@ tr:hover {
   .price-statistics {
     grid-template-columns: repeat(2, 1fr);
   }
+  
+  .comparison-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 768px) {
   .content-wrapper {
     margin-left: 0;
-    padding-top: 60px; /* Add space for mobile header */
+    padding-top: 60px;
   }
   
   .filters-section {
@@ -2409,6 +2847,16 @@ tr:hover {
   .product-meta {
     grid-template-columns: 1fr;
   }
+  
+  .header-actions {
+    flex-direction: column;
+    gap: 5px;
+  }
+  
+  .view-toggle-btn {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 @media (max-width: 576px) {
@@ -2418,21 +2866,6 @@ tr:hover {
   
   .price-statistics {
     grid-template-columns: 1fr;
-  }
-  
-  .section-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
-  }
-  
-  .search-container {
-    width: 100%;
-  }
-  
-  .chart-controls {
-    width: 100%;
-    overflow-x: auto;
   }
 }
 </style>

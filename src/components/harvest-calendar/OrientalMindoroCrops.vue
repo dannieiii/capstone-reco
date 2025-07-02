@@ -110,6 +110,13 @@
             <div class="crop-notes">
               <p>{{ crop.notes || 'No additional information available.' }}</p>
             </div>
+
+            <div v-if="crop.growingTips && crop.growingTips.length > 0" class="growing-tips">
+              <h4>Growing Tips</h4>
+              <ul>
+                <li v-for="(tip, index) in crop.growingTips" :key="index">{{ tip }}</li>
+              </ul>
+            </div>
             
             <button @click="addToCalendar(crop)" class="add-to-calendar-btn">
               <CalendarPlus size="16" />
@@ -536,7 +543,7 @@ onMounted(() => {
 .crop-details {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 15px;
+  gap: 12px;
   margin-bottom: 15px;
 }
 
@@ -628,6 +635,33 @@ onMounted(() => {
   font-size: 0.9rem;
   color: #6b7280;
   margin: 0;
+}
+
+.growing-tips {
+  background-color: #f0f9ff;
+  padding: 15px;
+  border-radius: 6px;
+  margin-bottom: 15px;
+  border-left: 4px solid #2e5c31;
+}
+
+.growing-tips h4 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #111827;
+  margin: 0 0 10px 0;
+}
+
+.growing-tips ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.growing-tips li {
+  font-size: 0.85rem;
+  color: #374151;
+  margin-bottom: 5px;
+  line-height: 1.4;
 }
 
 .add-to-calendar-btn {
@@ -788,6 +822,7 @@ onMounted(() => {
 @media (max-width: 768px) {
   .crop-details {
     grid-template-columns: 1fr;
+    gap: 10px;
   }
   
   .form-row {

@@ -78,7 +78,6 @@ import {
   ShoppingBag,
   Layers,
   TrendingUp,
-  DollarSign,
   MessageSquare, 
   Bell,
   Settings,
@@ -87,7 +86,10 @@ import {
   Sun,
   Moon,
   UserPlus,
-  Shield
+  Shield,
+  Tag,
+  MessageCircle,
+  LineChart
 } from 'lucide-vue-next';
 
 const route = useRoute();
@@ -104,10 +106,11 @@ const otherMenuItems = [
   { name: 'Sellers', path: '/admin/sellers', icon: Store },
   { name: 'Customers', path: '/admin/customers', icon: Users },
   { name: 'Product Categories', path: '/admin/categories', icon: Layers },
-  { name: 'Products', path: '/admin/products', icon: ShoppingBag },
-  { name: 'Forecasting', path: '/admin/forecasting', icon: TrendingUp },
-  { name: 'Price Monitoring', path: '/admin/price-monitoring', icon: DollarSign },
+  { name: 'Product Prices', path: '/admin/product-prices', icon: Tag },
+  { name: 'Forecasting', path: '/admin-forecasting', icon: TrendingUp },
+  { name: 'Price Monitoring', path: '/admin/price-monitoring', icon: LineChart },
   { name: 'Reports', path: '/admin/reports', icon: FileText },
+  { name: 'Feedbacks', path: '/admin/feedbacks', icon: MessageCircle },
   { name: 'Settings', path: '/admin/settings', icon: Settings },
   { name: 'Help', path: '/admin/help', icon: HelpCircle }
 ];
@@ -130,9 +133,7 @@ const setActiveItem = (itemName) => {
   activeItem.value = itemName;
 };
 
-watch(() => route.path, () => {
-  setActiveItemFromRoute();
-});
+watch(() => route.path, setActiveItemFromRoute);
 
 onMounted(() => {
   setActiveItemFromRoute();

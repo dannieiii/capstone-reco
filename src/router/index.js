@@ -9,9 +9,7 @@ import ChangePassword from '../views/ChangePassword.vue';
 import HomeView from '../views/HomeView.vue';
 
 // Admin components
-
 import AddCategory from '../views/adminFolder/AddCategory.vue';
-import AdminSeller from '../views/adminFolder/AdminSeller.vue';
 import AdminCustomer from '../views/adminFolder/AdminCustomer.vue';
 import AdminRegister from '../views/adminFolder/AdminRegister.vue';
 import AdminDashboard from '../views/adminFolder/AdminDashboard.vue';
@@ -23,9 +21,13 @@ import ProductCategories from '../views/adminFolder/ProductCategories.vue';
 import SellerDetails from '../views/adminFolder/SellerDetails.vue';
 import AdminEditProfile from '../views/adminFolder/AdminEditProfile.vue';
 import PriceMonitoring from '../views/adminFolder/PriceMonitoring.vue';
-import Overpricing from '../views/adminFolder/Overpricing.vue';
 import AddAdmin from '../views/adminFolder/AddAdmin.vue';
 import AdminForecasting from '@/views/adminFolder/AdminForecasting.vue';
+import ProductTable from '@/views/adminFolder/ProductTable.vue';
+import AdminNotification from '@/views/adminFolder/AdminNotification.vue';
+import Help from '@/views/adminFolder/Help.vue';
+import AdminFeedbacks from '@/views/adminFolder/AdminFeedbacks.vue';
+import AdminReports from '@/views/adminFolder/AdminReports.vue';
 
 
 
@@ -39,9 +41,13 @@ import Messages from '../views/customerFolder/Messages.vue';
 import CustomerOrders from '../views/customerFolder/CustomerOrders.vue';
 import Cart from '../views/customerFolder/Cart.vue';
 import FarmStore from '../views/customerFolder/FarmStore.vue';
-import PaymentSuccess from '../views/customerFolder/PaymentSuccess.vue';
-import PaymentFailed from '../views/customerFolder/PaymentFailed.vue';
 import CommunityView from '../views/customerFolder/CommunityView.vue';
+import CustomerNotifications from '../views/customerFolder/CustomerNotifications.vue';
+
+// Payment components
+import PaymentSuccess from '../components/gcashalerts/PaymentSuccess.vue';
+import PaymentFailed from '../components/gcashalerts/PaymentFailed.vue';
+import PaymentDemo from '../views/PaymentDemo.vue';
 
 
 // Seller components
@@ -61,9 +67,17 @@ import CustomersTable from '@/views/sellerFolder/CustomersTable.vue';
 import Analytics from '@/views/sellerFolder/Analytics.vue';
 import HelpSeller from '@/views/sellerFolder/HelpSeller.vue';
 import HarvestCalendarPage from '@/views/sellerFolder/HarvestCalendarPage.vue';
+import Notifications from '@/views/sellerFolder/Notifications.vue';
+import Feedback from '@/views/sellerFolder/Feedback.vue';
 
 
 const routes = [
+  {
+    path: '/admin/product-prices',
+    name: 'ProductTable',
+    component: ProductTable,
+    meta: { requiresAuth: true, allowedRoles: ['admin'] }, // Only admins can access
+  },
   {
     path: '/chat',
     name: 'Chat',
@@ -126,6 +140,25 @@ const routes = [
     component: ProductDetails,
     props: true // Your props: true (unchanged)
   },
+  // Payment routes
+  {
+    path: '/payment/success',
+    name: 'PaymentSuccess',
+    component: PaymentSuccess,
+    meta: { requiresAuth: true, allowedRoles: ['customer'] },
+  },
+  {
+    path: '/payment/failed',
+    name: 'PaymentFailed',
+    component: PaymentFailed,
+    meta: { requiresAuth: true, allowedRoles: ['customer'] },
+  },
+  {
+    path: '/payment/demo',
+    name: 'PaymentDemo',
+    component: PaymentDemo,
+    meta: { requiresAuth: true, allowedRoles: ['customer'] },
+  },
   {
     path: '/',
     name: 'homeview',
@@ -157,6 +190,12 @@ const routes = [
     meta: { requiresAuth: true }, // Requires authentication
   },
   {
+    path: '/customer/notifications',
+    name: 'CustomerNotifications',
+    component: CustomerNotifications,
+    meta: { requiresAuth: true, allowedRoles: ['customer'] }, // Only admins can access
+  },
+  {
     path: '/register-seller',
     name: 'registerseller',
     component: RegisterSeller,
@@ -181,11 +220,30 @@ const routes = [
     meta: { requiresAuth: true, allowedRoles: ['admin'] }, // Only admins can access
   },
   {
-    path: '/admin-seller',
-    name: 'AdminSeller',
-    component: AdminSeller,
+    path: '/admin/notifications',
+    name: 'AdminNotification',
+    component: AdminNotification,
     meta: { requiresAuth: true, allowedRoles: ['admin'] }, // Only admins can access
   },
+   {
+    path: '/admin/help',
+    name: 'Help',
+    component: Help,
+    meta: { requiresAuth: true, allowedRoles: ['admin'] }, // Only admins can access
+  },
+   {
+    path: '/admin/reports',
+    name: 'AdminReports',
+    component: AdminReports,
+    meta: { requiresAuth: true, allowedRoles: ['admin'] }, // Only admins can access
+  },
+   {
+    path: '/admin/feedbacks',
+    name: 'AdminFeedbacks',
+    component: AdminFeedbacks,
+    meta: { requiresAuth: true, allowedRoles: ['admin'] }, // Only admins can access
+  },
+ 
   {
     path: '/seller-dashboard',
     name: 'seller-dashboard',
@@ -204,7 +262,12 @@ const routes = [
     component: Product,
     meta: { requiresAuth: true, allowedRoles: ['seller'] }, // Only sellers can access
   },
- 
+  {
+    path: '/notifications',
+    name: 'Notifications',
+    component: Notifications,
+    meta: { requiresAuth: true, allowedRoles: ['seller'] }, // Only admins can access
+  },
   {
     path: '/add-category',
     name: 'addcategory',
@@ -213,8 +276,14 @@ const routes = [
   },
   {
     path: '/seller-home',
-    name: 'sellerhome',
+    name: 'Feedback',
     component: SellerHome,
+    meta: { requiresAuth: true, allowedRoles: ['seller'] }, // Only sellers can access
+  },
+   {
+    path: '/seller/feedbacks',
+    name: 'Feedback',
+    component: Feedback,
     meta: { requiresAuth: true, allowedRoles: ['seller'] }, // Only sellers can access
   },
   {
@@ -312,15 +381,12 @@ const routes = [
       }
     })
   },
+
   {
-    path: '/overpricing',
-    name: 'overpricing',
-    component: Overpricing
-  },
-  {
-    path: '/farmstore',
+    path: '/farmstore/:sellerId',
     name: 'farmStore',
-    component: FarmStore
+    component: FarmStore,
+    props: true
   },
   {
     path: '/sellerhelp',
@@ -345,18 +411,7 @@ const routes = [
     component: AdminForecasting,
     meta: { requiresAuth: true, allowedRoles: ['admin'] }, // Only admins can access
   },
-  {
-    path: '/payment/success',
-    name: 'PaymentSuccess',
-    component: PaymentSuccess,
-    meta: { requiresAuth: true, allowedRoles: ['customer'] }
-  },
-  {
-    path: '/payment/failed',
-    name: 'PaymentFailed',
-    component: PaymentFailed,
-    meta: { requiresAuth: true, allowedRoles: ['customer'] }
-  },
+
   {
     path: '/community',
     name: 'CommunityView',
@@ -381,9 +436,47 @@ router.beforeEach(async (to, from, next) => {
   if (requiresAuth && !user) {
     // Redirect to login if the route requires authentication and the user is not logged in
     next('/login');
-  } else if (requiresAuth && allowedRoles && !allowedRoles.includes(role)) {
-    // Redirect to home or a "not authorized" page if the user's role is not allowed
-    next('/');
+  } else if (requiresAuth && allowedRoles) {
+    // Special handling for seller dashboard
+    if (to.name === 'seller-dashboard' && allowedRoles.includes('seller')) {
+      // For seller dashboard, check if user is an approved seller
+      try {
+        const { auth, db } = await import('@/firebase/firebaseConfig');
+        const { doc, getDoc } = await import('firebase/firestore');
+        
+        const currentUser = auth.currentUser;
+        if (currentUser) {
+          const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            
+            // Check if user is an approved seller
+            if (userData.isSeller && !userData.isSellerPending) {
+              console.log('✅ Seller access granted');
+              next();
+              return;
+            } else if (userData.isSellerPending) {
+              console.log('⏳ Seller application pending');
+              alert('Your seller application is still being reviewed. Please wait for approval.');
+              next('/');
+              return;
+            }
+          }
+        }
+        
+        console.log('❌ Seller access denied');
+        alert('You need to be an approved seller to access this page.');
+        next('/');
+      } catch (error) {
+        console.error('Error checking seller status:', error);
+        next('/');
+      }
+    } else if (!allowedRoles.includes(role)) {
+      // Standard role check for other routes
+      next('/');
+    } else {
+      next();
+    }
   } else {
     // Proceed to the route
     next();

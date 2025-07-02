@@ -6,9 +6,6 @@
       </button>
       <h1>My Cart</h1>
       <div class="header-buttons">
-        <button class="icon-button profile-icon">
-          <img src="https://randomuser.me/api/portraits/men/32.jpg" alt="Profile" />
-        </button>
       </div>
     </div>
     
@@ -94,7 +91,7 @@
       </template>
     </div>
     
-    <bottom-navigation active-tab="cart" @navigate="$emit('navigate', $event)" />
+    <bottom-navigation active-tab="/cart" @navigate="$emit('navigate', $event)" />
   </div>
 </template>
 
@@ -238,14 +235,22 @@ export default {
 
     const hasSelectedItems = computed(() => {
       return selectedItemsCount.value > 0;
-    });
-
-    const proceedToCheckout = () => {
+    });    const proceedToCheckout = () => {
       const selectedItems = cartItems.value.filter(item => item.selected);
+      
+      // Transform cart items to match checkout expectations
+      const checkoutItems = selectedItems.map(item => ({
+        ...item,
+        unitPrice: item.price || item.unitPrice || 0, // Ensure unitPrice field exists
+        productImage: item.image || item.productImage, // Handle different image field names
+      }));
+      
+      console.log('Cart items being sent to checkout:', checkoutItems);
+      
       router.push({
         name: 'Checkout',
         query: {
-          items: JSON.stringify(selectedItems)
+          items: JSON.stringify(checkoutItems)
         }
       });
     };

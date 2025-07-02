@@ -30,17 +30,6 @@
             </select>
           </div>
           
-          <div class="control-group toggle-group">
-            <label>Seasonal Adjustment</label>
-            <div class="toggle-wrapper">
-              <label class="toggle">
-                <input type="checkbox" v-model="useSeasonalAdjustment">
-                <span class="toggle-slider"></span>
-              </label>
-              <span class="toggle-label">{{ useSeasonalAdjustment ? 'On' : 'Off' }}</span>
-            </div>
-          </div>
-          
           <button @click="generateForecast" class="generate-btn" :disabled="loading">
             <RefreshCw v-if="loading" size="16" class="spinner" />
             <span v-else>Generate Forecast</span>
@@ -67,13 +56,45 @@
       
       <div v-else-if="forecastData.length > 0" class="forecast-results">
         <div class="forecast-chart-container">
-          <h2>Product Growth Trends for {{ forecastTitle }}</h2>
-          <p class="chart-explanation">
-            This chart shows how your top 5 products are expected to perform over time. 
-            Each line represents a product's projected growth rate. 
-            Rising lines (usually green) show growing sales, while falling lines (usually red) show declining sales.
-            The percentage values show the expected growth or decline rate compared to previous sales.
-          </p>
+          <div class="chart-header">
+            <div class="chart-title-section">
+              <h2>Product Growth Trends for {{ forecastTitle }}</h2>
+              <p class="chart-explanation">
+                This chart shows how your top 5 products are expected to perform over time based on historical sales data. 
+                Each line represents a product's projected growth rate. 
+                Rising lines (usually green) show growing sales, while falling lines (usually red) show declining sales.
+                The percentage values show the expected growth or decline rate compared to previous sales.
+              </p>
+            </div>
+            
+            <!-- Chart Controls -->
+            <div class="chart-controls">
+              <button @click="showDataTable = !showDataTable" class="toggle-table-btn">
+                <BarChart2 size="16" />
+                {{ showDataTable ? 'Hide' : 'Show' }} Data Table
+              </button>
+              
+              <!-- Chart Export Dropdown -->
+              <div class="export-dropdown" ref="chartExportDropdown">
+                <button @click="toggleChartExportDropdown" class="export-toggle-btn" :disabled="exporting">
+                  <Download v-if="!exporting" size="16" />
+                  <Loader2 v-else size="16" class="spinner" />
+                  Export Chart
+                  <ChevronDown size="14" :class="{ 'rotate-180': showChartExportDropdown }" />
+                </button>
+                
+                <div v-if="showChartExportDropdown" class="export-dropdown-menu">
+                  <div class="export-section">
+                    <button @click="exportCompleteReport" class="export-option complete-report" :disabled="exporting">
+                      <FileText size="14" />
+                      Complete Report (PDF)
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
           <div class="chart-wrapper">
             <canvas ref="forecastChart"></canvas>
           </div>
@@ -92,40 +113,178 @@
             </div>
           </div>
         </div>
-        
-        <div class="forecast-details">
-<div class="forecast-products">
-  <h2>Product Forecasts</h2>
-  <div class="product-cards">
-    <div v-for="product in displayedProducts" :key="product.id" class="product-card">
-      <div class="product-image">
-        <img :src="product.image" :alt="product.name" />
-      </div>
-      <div class="product-info">
-        <h3>{{ product.name }}</h3>
-        <p class="category">{{ product.category }}</p>
-        <div class="forecast-stats">
-          <div class="stat">
-            <span class="stat-label">Projected Sales</span>
-            <div class="unit-sales" v-for="(value, unit) in product.projectedSales" :key="unit">
-              <span class="stat-value">{{ value }} {{ getUnitDisplay(unit) }}</span>
+
+        <!-- Forecast Data Table (Toggleable) -->
+        <div v-if="showDataTable" class="forecast-table-container">
+          <div class="table-header">
+            <h2>Forecast Data Table</h2>
+            <!-- Forecast Table Export Dropdown -->
+            <div class="export-dropdown" ref="forecastTableExportDropdown">
+              <button @click="toggleForecastTableExportDropdown" class="export-toggle-btn small" :disabled="exporting">
+                <Download v-if="!exporting" size="14" />
+                <Loader2 v-else size="14" class="spinner" />
+                Export
+                <ChevronDown size="12" :class="{ 'rotate-180': showForecastTableExportDropdown }" />
+              </button>
+              
+              <div v-if="showForecastTableExportDropdown" class="export-dropdown-menu">
+                <div class="export-section">
+                  <button @click="exportForecastToPDF" class="export-option" :disabled="exporting">
+                    <FileText size="14" />
+                    PDF Report
+                  </button>
+                  <button @click="exportForecastToCSV" class="export-option" :disabled="exporting">
+                    <Download size="14" />
+                    CSV Data
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-          <div class="stat">
-            <span class="stat-label">Projected Revenue</span>
-            <span class="stat-value">₱{{ product.projectedRevenue.toLocaleString() }}</span>
-          </div>
-          <div class="stat">
-            <span class="stat-label">Growth</span>
-            <span class="stat-value" :class="getGrowthClass(product.growth)">
-              {{ product.growth > 0 ? '+' : '' }}{{ product.growth }}%
-            </span>
+          
+          <div class="table-wrapper">
+            <table class="forecast-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Projected Sales (₱)</th>
+                  <th>Growth Rate (%)</th>
+                  <th>Confidence Level</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(day, index) in forecastData" :key="index">
+                  <td>{{ formatDate(day.date) }}</td>
+                  <td>₱{{ Math.round(day.value).toLocaleString() }}</td>
+                  <td :class="getGrowthClass(calculateDayGrowth(index))">
+                    {{ calculateDayGrowth(index) > 0 ? '+' : '' }}{{ calculateDayGrowth(index) }}%
+                  </td>
+                  <td>
+                    <div class="confidence-indicator">
+                      <span class="confidence-text">{{ calculateConfidence(index) }}%</span>
+                      <div class="confidence-bar">
+                        <div class="confidence-fill" :style="{ width: calculateConfidence(index) + '%' }"></div>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
-      </div>
-    </div>
-  </div>
-</div>
+        
+        <div class="forecast-details">
+          <div class="forecast-products">
+            <div class="products-header">
+              <h2>Product Forecasts</h2>
+              
+              <!-- Product Controls: Export and Toggle Cards -->
+              <div class="product-controls">
+                <button @click="showProductCards = !showProductCards" class="toggle-cards-btn">
+                  <Grid v-if="!showProductCards" size="16" />
+                  <List v-else size="16" />
+                  {{ showProductCards ? 'Hide' : 'Show' }} Cards
+                </button>
+                
+                <!-- Product Table Export Dropdown -->
+                <div class="export-dropdown" ref="productTableExportDropdown">
+                  <button @click="toggleProductTableExportDropdown" class="export-toggle-btn small" :disabled="exporting">
+                    <Download v-if="!exporting" size="14" />
+                    <Loader2 v-else size="14" class="spinner" />
+                    Export
+                    <ChevronDown size="12" :class="{ 'rotate-180': showProductTableExportDropdown }" />
+                  </button>
+                  
+                  <div v-if="showProductTableExportDropdown" class="export-dropdown-menu">
+                    <div class="export-section">
+                      <button @click="exportProductsToPDF" class="export-option" :disabled="exporting">
+                        <FileText size="14" />
+                        PDF Report
+                      </button>
+                      <button @click="exportProductsToCSV" class="export-option" :disabled="exporting">
+                        <Download size="14" />
+                        CSV Data
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Product Forecasts Table -->
+            <div class="table-wrapper">
+              <table class="products-table">
+                <thead>
+                  <tr>
+                    <th>Product</th>
+                    <th>Category</th>
+                    <th>Projected Sales</th>
+                    <th>Projected Revenue (₱)</th>
+                    <th>Growth (%)</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="product in displayedProducts" :key="product.id">
+                    <td>
+                      <div class="product-cell">
+                        <img :src="product.image" :alt="product.name" class="product-thumb" />
+                        <span>{{ product.name }}</span>
+                      </div>
+                    </td>
+                    <td>{{ product.category }}</td>
+                    <td>
+                      <div class="sales-breakdown">
+                        <div v-for="(value, unit) in product.projectedSales" :key="unit" class="unit-sales">
+                          {{ value }} {{ getUnitDisplay(unit) }}
+                        </div>
+                      </div>
+                    </td>
+                    <td>₱{{ product.projectedRevenue.toLocaleString() }}</td>
+                    <td :class="getGrowthClass(product.growth)">
+                      {{ product.growth > 0 ? '+' : '' }}{{ product.growth }}%
+                    </td>
+                    <td>
+                      <span class="status-badge" :class="getStatusClass(product.growth)">
+                        {{ getStatusText(product.growth) }}
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Product Cards (toggleable layout) -->
+            <div v-if="showProductCards" class="product-cards">
+              <div v-for="product in displayedProducts" :key="product.id" class="product-card">
+                <div class="product-image">
+                  <img :src="product.image" :alt="product.name" />
+                </div>
+                <div class="product-info">
+                  <h3>{{ product.name }}</h3>
+                  <p class="category">{{ product.category }}</p>
+                  <div class="forecast-stats">
+                    <div class="stat">
+                      <span class="stat-label">Projected Sales</span>
+                      <div class="unit-sales" v-for="(value, unit) in product.projectedSales" :key="unit">
+                        <span class="stat-value">{{ value }} {{ getUnitDisplay(unit) }}</span>
+                      </div>
+                    </div>
+                    <div class="stat">
+                      <span class="stat-label">Projected Revenue</span>
+                      <span class="stat-value">₱{{ product.projectedRevenue.toLocaleString() }}</span>
+                    </div>
+                    <div class="stat">
+                      <span class="stat-label">Growth</span>
+                      <span class="stat-value" :class="getGrowthClass(product.growth)">
+                        {{ product.growth > 0 ? '+' : '' }}{{ product.growth }}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
           
           <div class="forecast-insights">
             <h2>Insights & Recommendations</h2>
@@ -139,30 +298,6 @@
                 <div class="insight-content">
                   <h4>{{ insight.title }}</h4>
                   <p>{{ insight.description }}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <div v-if="useSeasonalAdjustment" class="seasonal-trends">
-            <h2>Seasonal Trends in the Philippines</h2>
-            <div class="seasons-container">
-              <div v-for="season in seasons" :key="season.name" 
-                   class="season-card" 
-                   :class="{ 'active-season': selectedSeason === season.id }">
-                <div class="season-header">
-                  <h3>{{ season.name }}</h3>
-                  <span class="season-months">{{ season.months }}</span>
-                </div>
-                <div class="season-content">
-                  <h4>Top Products:</h4>
-                  <ul class="season-products">
-                    <li v-for="product in season.topProducts" :key="product">{{ product }}</li>
-                  </ul>
-                  <div class="season-impact">
-                    <h4>Seasonal Impact:</h4>
-                    <p>{{ season.impact }}</p>
-                  </div>
                 </div>
               </div>
             </div>
@@ -185,10 +320,17 @@
               </div>
               <div class="model-detail">
                 <h4>Factors Considered</h4>
-                <p>Historical sales{{ useSeasonalAdjustment ? ', seasonal patterns' : '' }}, product categories, and price points</p>
+                <p>Historical sales patterns, product categories, and price points</p>
               </div>
             </div>
           </div>
+        </div>
+        
+        <!-- Export Status -->
+        <div v-if="exportStatus" class="export-status" :class="exportStatus.type">
+          <CheckCircle v-if="exportStatus.type === 'success'" size="16" />
+          <AlertCircle v-else size="16" />
+          {{ exportStatus.message }}
         </div>
       </div>
       
@@ -197,7 +339,7 @@
           <BarChart2 size="48" />
         </div>
         <h2>No Forecast Generated</h2>
-        <p>Select a time period and click "Generate Forecast" to predict future sales</p>
+        <p>Select a time period and click "Generate Forecast" to predict future sales based on historical data</p>
         <button @click="generateForecast" class="generate-btn">Generate Forecast</button>
       </div>
     </div>
@@ -205,7 +347,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch, nextTick } from 'vue';
+import { ref, computed, onMounted, watch, nextTick, onUnmounted } from 'vue';
 import { collection, query, where, getDocs, Timestamp, limit } from 'firebase/firestore';
 import { db, auth } from '@/firebase/firebaseConfig';
 import * as tf from '@tensorflow/tfjs';
@@ -216,7 +358,18 @@ import {
   TrendingUp, 
   TrendingDown, 
   AlertCircle, 
-  RefreshCw 
+  RefreshCw,
+  Download,
+  FileText,
+  ChevronDown,
+  Loader2,
+  CheckCircle,
+  Grid,
+  List,
+  Zap,
+  CalendarDays,
+  Calendar,
+  CalendarCheck
 } from 'lucide-vue-next';
 
 import { useRouter } from 'vue-router';
@@ -226,8 +379,6 @@ const router = useRouter();
 // Data properties
 const forecastPeriod = ref('14');
 const selectedCategory = ref('all');
-const selectedSeason = ref('auto');
-const useSeasonalAdjustment = ref(false);
 const availableCategories = ref([]);
 const loading = ref(false);
 const loadingMessage = ref('');
@@ -238,6 +389,23 @@ const displayedProducts = ref([]);
 const insights = ref([]);
 const forecastChart = ref(null);
 const chartInstance = ref(null);
+const showDataTable = ref(false);
+const showProductCards = ref(true);
+
+// Cache system - New additions
+const cachedForecasts = ref({});
+const cacheExpiryTime = 30 * 60 * 1000; // 30 minutes in milliseconds
+
+// Export dropdown states
+const showChartExportDropdown = ref(false);
+const showForecastTableExportDropdown = ref(false);
+const showProductTableExportDropdown = ref(false);
+const chartExportDropdown = ref(null);
+const forecastTableExportDropdown = ref(null);
+const productTableExportDropdown = ref(null);
+const exporting = ref(false);
+const exportStatus = ref(null);
+
 const trainingStats = ref({
   dataPoints: 0,
   startDate: '',
@@ -264,48 +432,117 @@ const unitDisplayMap = {
   'perPiece': 'Piece'
 };
 
-// Helper function to get unit display name
+// Helper functions
 const getUnitDisplay = (unit) => {
   return unitDisplayMap[unit] || unit || 'Unit';
 };
 
-// Philippine seasons
-const seasons = ref([
-  {
-    id: 'dry',
-    name: 'Dry Season',
-    months: 'March - May',
-    topProducts: ['Mango', 'Pineapple', 'Watermelon', 'Papaya'],
-    impact: 'Higher demand for fruits and cooling vegetables. Prices for water-intensive crops may increase due to limited water supply.'
-  },
-  {
-    id: 'rainy',
-    name: 'Rainy Season',
-    months: 'June - November',
-    topProducts: ['Rice', 'Corn', 'Leafy Vegetables', 'Root Crops'],
-    impact: 'Increased production of water-loving crops. Transportation challenges may affect supply chains and increase prices.'
-  },
-  {
-    id: 'cool',
-    name: 'Cool Season',
-    months: 'December - February',
-    topProducts: ['Cabbage', 'Carrots', 'Strawberries', 'Broccoli'],
-    impact: 'Ideal growing conditions for highland vegetables. Holiday season increases demand for specialty produce.'
+const formatDate = (date) => {
+  return new Date(date).toLocaleDateString('en-US', { 
+    month: 'short', 
+    day: 'numeric',
+    year: 'numeric'
+  });
+};
+
+const calculateDayGrowth = (index) => {
+  if (index === 0 || !forecastData.value[index - 1]) return 0;
+  const current = forecastData.value[index].value;
+  const previous = forecastData.value[index - 1].value;
+  if (previous === 0) return 0;
+  return Math.round(((current - previous) / previous) * 100);
+};
+
+const calculateConfidence = (index) => {
+  const baseConfidence = 95;
+  const decayRate = 2;
+  return Math.max(60, Math.round(baseConfidence - (index * decayRate)));
+};
+
+const getStatusClass = (growth) => {
+  if (growth > 10) return 'status-excellent';
+  if (growth > 0) return 'status-good';
+  if (growth > -10) return 'status-stable';
+  return 'status-declining';
+};
+
+const getStatusText = (growth) => {
+  if (growth > 10) return 'Excellent';
+  if (growth > 0) return 'Growing';
+  if (growth > -10) return 'Stable';
+  return 'Declining';
+};
+
+// Cache-related functions - New additions
+const getCacheKey = () => {
+  return `${forecastPeriod.value}-${selectedCategory.value}`;
+};
+
+const getFromCache = (key) => {
+  const cached = cachedForecasts.value[key];
+  if (!cached) return null;
+  
+  // Check if cache is expired
+  if (Date.now() - cached.timestamp > cacheExpiryTime) {
+    delete cachedForecasts.value[key];
+    return null;
   }
-]);
+  
+  return cached.data;
+};
+
+const addToCache = (key, data) => {
+  cachedForecasts.value[key] = {
+    data: data,
+    timestamp: Date.now()
+  };
+};
+
+// Export dropdown toggles
+const toggleChartExportDropdown = () => {
+  showChartExportDropdown.value = !showChartExportDropdown.value;
+  showForecastTableExportDropdown.value = false;
+  showProductTableExportDropdown.value = false;
+};
+
+const toggleForecastTableExportDropdown = () => {
+  showForecastTableExportDropdown.value = !showForecastTableExportDropdown.value;
+  showChartExportDropdown.value = false;
+  showProductTableExportDropdown.value = false;
+};
+
+const toggleProductTableExportDropdown = () => {
+  showProductTableExportDropdown.value = !showProductTableExportDropdown.value;
+  showChartExportDropdown.value = false;
+  showForecastTableExportDropdown.value = false;
+};
+
+// Close dropdown when clicking outside
+const handleClickOutside = (event) => {
+  if (chartExportDropdown.value && !chartExportDropdown.value.contains(event.target)) {
+    showChartExportDropdown.value = false;
+  }
+  if (forecastTableExportDropdown.value && !forecastTableExportDropdown.value.contains(event.target)) {
+    showForecastTableExportDropdown.value = false;
+  }
+  if (productTableExportDropdown.value && !productTableExportDropdown.value.contains(event.target)) {
+    showProductTableExportDropdown.value = false;
+  }
+};
+
+// Show status message
+const showStatus = (type, message) => {
+  exportStatus.value = { type, message };
+  setTimeout(() => {
+    exportStatus.value = null;
+  }, 3000);
+};
 
 // Computed properties
 const forecastTitle = computed(() => {
-  let title = selectedCategory.value === 'all' ? 'All Products' : selectedCategory.value;
-  
-  if (useSeasonalAdjustment.value && selectedSeason.value !== 'auto') {
-    const seasonObj = seasons.value.find(s => s.id === selectedSeason.value);
-    if (seasonObj) {
-      title += ` (${seasonObj.name})`;
-    }
-  }
-  
-  return `${title} (Next ${forecastPeriod.value} Days)`;
+  return selectedCategory.value === 'all' 
+    ? `All Products (Next ${forecastPeriod.value} Days)` 
+    : `${selectedCategory.value} (Next ${forecastPeriod.value} Days)`;
 });
 
 // Helper function to get growth class
@@ -313,16 +550,6 @@ const getGrowthClass = (growth) => {
   if (growth > 0) return 'positive';
   if (growth < 0) return 'negative';
   return 'neutral';
-};
-
-// Helper function to get current season
-const getCurrentSeason = () => {
-  const now = new Date();
-  const month = now.getMonth() + 1; // 1-12
-  
-  if (month >= 3 && month <= 5) return 'dry';
-  if (month >= 6 && month <= 11) return 'rainy';
-  return 'cool'; // December, January, February
 };
 
 // Simplified fetch sales data from Firestore
@@ -336,7 +563,6 @@ const fetchSalesData = async () => {
     
     debugInfo.value = `User ID: ${currentUser.uid}`;
     
-    // Create a simple query for the sales collection
     const salesQuery = query(
       collection(db, 'sales'),
       where('sellerId', '==', currentUser.uid),
@@ -352,7 +578,6 @@ const fetchSalesData = async () => {
       querySnapshot.forEach((doc) => {
         const data = doc.data();
         
-        // Simple normalization
         const sale = {
           id: doc.id,
           timestamp: data.timestamp instanceof Timestamp ? data.timestamp.toDate() : new Date(data.timestamp || Date.now()),
@@ -368,7 +593,6 @@ const fetchSalesData = async () => {
       
       debugInfo.value += ` | Total sales found: ${sales.length}`;
       
-      // Apply category filter if selected
       if (selectedCategory.value !== 'all') {
         const filteredSales = sales.filter(sale => sale.category === selectedCategory.value);
         debugInfo.value += ` | After category filter: ${filteredSales.length}`;
@@ -397,7 +621,6 @@ const fetchProductsData = async () => {
       throw new Error('User not authenticated');
     }
     
-    // Create a simple query for the products collection
     const productsQuery = query(
       collection(db, 'products'),
       where('sellerId', '==', currentUser.uid),
@@ -413,7 +636,6 @@ const fetchProductsData = async () => {
       querySnapshot.forEach((doc) => {
         const data = doc.data();
         
-        // Simple normalization
         const product = {
           id: doc.id,
           productName: data.productName || data.name || 'Unknown Product',
@@ -421,13 +643,13 @@ const fetchProductsData = async () => {
           price: data.price || 0,
           stock: data.stock || data.quantity || 0,
           unit: data.unit || 'units',
-          image: data.image || '/placeholder.svg?height=100&width=100'
+          image: data.image || '/placeholder.svg?height=100&width=100',
+          availableUnits: data.availableUnits || [data.unit || 'units']
         };
         
         products.push(product);
       });
       
-      // Apply category filter if selected
       if (selectedCategory.value !== 'all') {
         return products.filter(product => product.category === selectedCategory.value);
       }
@@ -444,18 +666,16 @@ const fetchProductsData = async () => {
   }
 };
 
-// Simplified process sales data
+// Process sales data
 const processSalesData = (sales) => {
   loadingMessage.value = 'Processing sales data...';
   
-  // Sort sales by date
   sales.sort((a, b) => a.timestamp - b.timestamp);
   
-  // Group sales by date
   const salesByDate = {};
   
   sales.forEach(sale => {
-    const dateKey = sale.timestamp.toISOString().split('T')[0]; // YYYY-MM-DD
+    const dateKey = sale.timestamp.toISOString().split('T')[0];
     
     if (!salesByDate[dateKey]) {
       salesByDate[dateKey] = {
@@ -472,7 +692,8 @@ const processSalesData = (sales) => {
         quantity: 0,
         revenue: 0,
         name: sale.productName,
-        category: sale.category
+        category: sale.category,
+        unit: 'units'
       };
     }
     
@@ -480,46 +701,38 @@ const processSalesData = (sales) => {
     salesByDate[dateKey].products[sale.productId].revenue += sale.totalPrice;
   });
   
-  // Convert to array and sort by date
   return Object.values(salesByDate).sort((a, b) => a.date - b.date);
 };
 
-// Simplified TensorFlow model creation and training
+// Create and train ML model
 const createAndTrainModel = async (salesData) => {
   loadingMessage.value = 'Creating and training AI model...';
   
   try {
-    // Extract daily sales values
     const salesValues = salesData.map(day => day.totalSales);
     
-    // Need at least 7 days of data
     if (salesValues.length < 7) {
       throw new Error('Not enough sales data for forecasting. Need at least 7 days of data.');
     }
     
-    // Normalize data between 0 and 1
     const max = Math.max(...salesValues);
     const min = Math.min(...salesValues);
-    const range = max - min || 1; // Avoid division by zero
+    const range = max - min || 1;
     
     const normalizedSales = salesValues.map(value => (value - min) / range);
     
-    // Prepare training data with a simple window approach
-    const windowSize = 5; // Use 5 days to predict the next day
+    const windowSize = 5;
     const inputs = [];
     const outputs = [];
     
     for (let i = 0; i < normalizedSales.length - windowSize; i++) {
-      // Create input window
       const inputWindow = normalizedSales.slice(i, i + windowSize);
-      // The target is the next value after the window
       const target = normalizedSales[i + windowSize];
       
       inputs.push(inputWindow);
       outputs.push(target);
     }
     
-    // Reshape inputs for LSTM [samples, time steps, features]
     const inputTensor = tf.tensor3d(
       inputs.map(window => window.map(value => [value])),
       [inputs.length, windowSize, 1]
@@ -527,10 +740,8 @@ const createAndTrainModel = async (salesData) => {
     
     const outputTensor = tf.tensor2d(outputs, [outputs.length, 1]);
     
-    // Create a simple LSTM model
     const model = tf.sequential();
     
-    // Add layers
     model.add(tf.layers.lstm({
       units: 32,
       inputShape: [windowSize, 1],
@@ -539,13 +750,11 @@ const createAndTrainModel = async (salesData) => {
     
     model.add(tf.layers.dense({ units: 1 }));
     
-    // Compile the model
     model.compile({
       optimizer: tf.train.adam(0.01),
       loss: 'meanSquaredError'
     });
     
-    // Train the model
     await model.fit(inputTensor, outputTensor, {
       epochs: 50,
       batchSize: 16,
@@ -559,7 +768,6 @@ const createAndTrainModel = async (salesData) => {
       }
     });
     
-    // Calculate a simple accuracy metric
     const predictions = model.predict(inputTensor);
     const predValues = await predictions.data();
     const actualValues = await outputTensor.data();
@@ -574,18 +782,9 @@ const createAndTrainModel = async (salesData) => {
       }
     }
     
-    // Calculate accuracy, ensuring we don't divide by zero
     const avgError = validPoints > 0 ? sumError / validPoints : 0;
     const accuracy = Math.max(0, Math.min(100, Math.round(100 - (avgError * 100))));
     
-    console.log('Model accuracy calculation:', { 
-      sumError, 
-      validPoints, 
-      avgError, 
-      accuracy 
-    });
-    
-    // Clean up tensors
     inputTensor.dispose();
     outputTensor.dispose();
     predictions.dispose();
@@ -611,55 +810,37 @@ const generateModelForecast = async (modelData, days) => {
   const { model, min, max, windowSize, salesData } = modelData;
   const range = max - min || 1;
   
-  // Get the last window of data
   const salesValues = salesData.map(day => day.totalSales);
   const lastValues = salesValues.slice(-windowSize);
   
-  // Normalize the last window
   const normalizedLastValues = lastValues.map(value => (value - min) / range);
   
-  // Generate predictions
   const forecast = [];
   let currentWindow = [...normalizedLastValues];
   
   for (let i = 0; i < days; i++) {
-    // Reshape for prediction [1, time steps, features]
     const inputTensor = tf.tensor3d(
       [currentWindow.map(value => [value])],
       [1, windowSize, 1]
     );
     
-    // Get prediction
     const predictionTensor = model.predict(inputTensor);
     const predictionValue = await predictionTensor.data();
     
-    // Denormalize the prediction
     let forecastValue = predictionValue[0] * range + min;
-    
-    // Apply seasonal adjustment if enabled
-    if (useSeasonalAdjustment.value) {
-      const seasonalFactor = getSeasonalFactor(i);
-      forecastValue *= seasonalFactor;
-    }
-    
-    // Ensure no negative values
     forecastValue = Math.max(0, forecastValue);
     
-    // Create forecast date
     const forecastDate = new Date();
     forecastDate.setDate(forecastDate.getDate() + i + 1);
     
-    // Add to forecast
     forecast.push({
       date: forecastDate,
       value: forecastValue
     });
     
-    // Update window for next prediction (sliding window)
     currentWindow.shift();
     currentWindow.push(predictionValue[0]);
     
-    // Clean up tensors
     inputTensor.dispose();
     predictionTensor.dispose();
   }
@@ -667,62 +848,32 @@ const generateModelForecast = async (modelData, days) => {
   return forecast;
 };
 
-// Get seasonal adjustment factor
-const getSeasonalFactor = (dayOffset) => {
-  if (!useSeasonalAdjustment.value) return 1.0;
-  
-  let season;
-  
-  if (selectedSeason.value === 'auto') {
-    season = getCurrentSeason();
-  } else {
-    season = selectedSeason.value;
-  }
-  
-  // Base seasonal factors
-  const seasonalFactors = {
-    dry: 1.15,    // 15% increase in dry season
-    rainy: 0.9,   // 10% decrease in rainy season
-    cool: 1.05    // 5% increase in cool season
-  };
-  
-  // Get base factor for selected season
-  const baseFactor = seasonalFactors[season] || 1;
-  
-  // Add slight variation based on day within forecast period
-  const variation = (Math.sin(dayOffset / 7 * Math.PI) * 0.05);
-  
-  return baseFactor + variation;
-};
-
 const generateProductForecasts = (salesData, products, forecastTotal) => {
   loadingMessage.value = 'Generating product-specific forecasts...';
   
   const productForecasts = [];
   
-  // Calculate total historical sales
   let totalHistoricalSales = 0;
   salesData.forEach(day => {
     totalHistoricalSales += day.totalSales;
   });
   
-  // Calculate total forecasted sales
   const totalForecastSales = forecastTotal.reduce((sum, day) => sum + day.value, 0);
   
-  // Process each product
   for (const product of products) {
-    // Calculate historical sales for this product
     let productHistoricalSales = 0;
     const productHistoricalQuantities = {};
     
     // Initialize quantities for all available units
-    if (product.availableUnits) {
+    if (product.availableUnits && Array.isArray(product.availableUnits)) {
       product.availableUnits.forEach(unit => {
         productHistoricalQuantities[unit] = 0;
       });
+    } else {
+      // Fallback to default unit
+      productHistoricalQuantities[product.unit || 'units'] = 0;
     }
     
-    // Count occurrences of this product in sales data
     let occurrences = 0;
     
     salesData.forEach(day => {
@@ -730,23 +881,19 @@ const generateProductForecasts = (salesData, products, forecastTotal) => {
       if (productData) {
         productHistoricalSales += productData.revenue;
         
-        // Track quantities by unit
-        if (productData.unit && productData.quantity) {
-          if (!productHistoricalQuantities[productData.unit]) {
-            productHistoricalQuantities[productData.unit] = 0;
-          }
-          productHistoricalQuantities[productData.unit] += productData.quantity;
+        const unit = productData.unit || product.unit || 'units';
+        if (!productHistoricalQuantities[unit]) {
+          productHistoricalQuantities[unit] = 0;
         }
+        productHistoricalQuantities[unit] += productData.quantity || 0;
         occurrences++;
       }
     });
     
-    // Calculate product's share of total sales
     const salesShare = totalHistoricalSales > 0 
       ? productHistoricalSales / totalHistoricalSales 
       : 0;
     
-    // Calculate growth (similar to existing logic)
     let growth = 0;
     if (salesData.length > 2) {
       const halfPoint = Math.floor(salesData.length / 2);
@@ -776,68 +923,42 @@ const generateProductForecasts = (salesData, products, forecastTotal) => {
       }
     }
     
-    // Apply seasonal adjustment (existing logic)
-    let seasonalFactor = 1;
-    if (useSeasonalAdjustment.value) {
-      const season = selectedSeason.value === 'auto' ? getCurrentSeason() : selectedSeason.value;
-      
-      if (season === 'dry') {
-        if (product.category === 'Fruits') {
-          seasonalFactor = 1.3;
-        } else if (product.category === 'Vegetables') {
-          seasonalFactor = 0.9;
-        }
-      } else if (season === 'rainy') {
-        if (product.category === 'Vegetables') {
-          seasonalFactor = 1.2;
-        } else if (product.category === 'Fruits') {
-          seasonalFactor = 0.8;
-        }
-      } else if (season === 'cool') {
-        if (product.category === 'Vegetables') {
-          seasonalFactor = 1.15;
-        } else if (product.category === 'Fruits') {
-          seasonalFactor = 0.95;
-        }
-      }
-    }
+    const projectedSalesValue = totalForecastSales * salesShare;
     
-    // Calculate projected sales for each unit
-    const projectedSalesShare = salesShare * seasonalFactor;
-    const projectedSalesValue = totalForecastSales * projectedSalesShare;
-    
-    // Calculate projected quantities per unit
     const projectedSalesByUnit = {};
     let totalHistoricalQuantity = 0;
     
-    // Calculate total historical quantity across all units
     Object.values(productHistoricalQuantities).forEach(qty => {
       totalHistoricalQuantity += qty;
     });
     
-    // Distribute forecasted quantities by unit
-    if (totalHistoricalQuantity > 0) {
+    if (totalHistoricalQuantity > 0 && product.price > 0) {
       for (const [unit, qty] of Object.entries(productHistoricalQuantities)) {
-        const unitShare = qty / totalHistoricalQuantity;
-        projectedSalesByUnit[unit] = Math.round(unitShare * (projectedSalesValue / (product.price || 1)) * 10) / 10;
+        if (qty > 0) {
+          const unitShare = qty / totalHistoricalQuantity;
+          const projectedQuantity = (projectedSalesValue / product.price) * unitShare;
+          projectedSalesByUnit[unit] = Math.round(projectedQuantity * 10) / 10;
+        }
       }
+    } else {
+      // Fallback: use estimated quantities based on price
+      const estimatedQuantity = product.price > 0 ? projectedSalesValue / product.price : 0;
+      const mainUnit = product.unit || 'units';
+      projectedSalesByUnit[mainUnit] = Math.round(estimatedQuantity * 10) / 10;
     }
     
-    // Add to product forecasts
     productForecasts.push({
       id: product.id,
       name: product.productName || product.name,
       category: product.category,
-image: product.image || defaultProductImage,
+      image: product.image || defaultProductImage,
       price: product.price,
       projectedSales: projectedSalesByUnit,
       projectedRevenue: Math.round(projectedSalesValue),
-      growth: Math.round(growth),
-      seasonalFactor
+      growth: Math.round(growth)
     });
   }
   
-  // Sort by projected revenue (highest first)
   return productForecasts.sort((a, b) => b.projectedRevenue - a.projectedRevenue);
 };
 
@@ -847,108 +968,81 @@ const generateInsights = (productForecasts, products) => {
   
   const newInsights = [];
   
-  // Check for high-growth products
   const highGrowthProducts = productForecasts.filter(p => p.growth > 15);
   if (highGrowthProducts.length > 0) {
     newInsights.push({
       type: 'positive',
       title: 'High Growth Products',
-      description: `${highGrowthProducts[0].name}${highGrowthProducts.length > 1 ? ` and ${highGrowthProducts.length - 1} other products` : ''} show strong growth potential. Consider increasing inventory.`
+      description: `${highGrowthProducts[0].name}${highGrowthProducts.length > 1 ? ` and ${highGrowthProducts.length - 1} other products` : ''} show strong growth potential based on historical trends. Consider increasing inventory.`
     });
   }
   
-  // Check for declining products
   const decliningProducts = productForecasts.filter(p => p.growth < -10);
   if (decliningProducts.length > 0) {
     newInsights.push({
       type: 'negative',
       title: 'Declining Products',
-      description: `${decliningProducts[0].name}${decliningProducts.length > 1 ? ` and ${decliningProducts.length - 1} other products` : ''} are showing declining sales. Consider promotions or price adjustments.`
+      description: `${decliningProducts[0].name}${decliningProducts.length > 1 ? ` and ${decliningProducts.length - 1} other products` : ''} are showing declining sales based on historical data. Consider promotions or price adjustments.`
     });
   }
   
-  // Seasonal recommendations
-  if (useSeasonalAdjustment.value) {
-    const season = selectedSeason.value === 'auto' ? getCurrentSeason() : selectedSeason.value;
-    const seasonObj = seasons.value.find(s => s.id === season);
-    
-    if (seasonObj) {
-      newInsights.push({
-        type: 'info',
-        title: `${seasonObj.name} Recommendations`,
-        description: `${seasonObj.name} is optimal for ${seasonObj.topProducts.join(', ')}. Consider featuring these products prominently.`
-      });
-    }
-  }
-  
-  // Top revenue generators
   if (productForecasts.length > 0) {
     const topRevenue = productForecasts[0];
     newInsights.push({
       type: 'positive',
       title: 'Top Revenue Generator',
-      description: `${topRevenue.name} is projected to generate ₱${topRevenue.projectedRevenue.toLocaleString()} in the next ${forecastPeriod.value} days.`
+      description: `${topRevenue.name} is projected to generate ₱${topRevenue.projectedRevenue.toLocaleString()} in the next ${forecastPeriod.value} days based on historical performance.`
     });
   }
   
-  // Inventory recommendations
   const lowStockHighDemand = productForecasts.filter(p => {
     const product = products.find(dp => dp.id === p.id);
-    return product && product.stock < p.projectedSales && p.growth > 0;
+    const totalProjectedSales = Object.values(p.projectedSales).reduce((sum, qty) => sum + qty, 0);
+    return product && product.stock < totalProjectedSales && p.growth > 0;
   });
   
   if (lowStockHighDemand.length > 0) {
     newInsights.push({
       type: 'info',
       title: 'Inventory Alert',
-      description: `${lowStockHighDemand.length} products may need restocking soon based on projected demand.`
+      description: `${lowStockHighDemand.length} products may need restocking soon based on projected demand from historical sales patterns.`
     });
   }
   
   return newInsights;
 };
 
-// Update the renderChart function to show a line graph of product growth trends over time
+// Render chart
 const renderChart = (forecastData, productForecasts) => {
   loadingMessage.value = 'Rendering chart...';
   
-  // Make sure we have the canvas element and forecast data
   if (!forecastChart.value || !forecastData || forecastData.length === 0 || !productForecasts || productForecasts.length === 0) {
     console.error('Missing chart element, forecast data, or product forecasts');
     return;
   }
   
-  // Wait for the next tick to ensure the DOM is updated
   nextTick(() => {
     const ctx = forecastChart.value.getContext('2d');
     
-    // Destroy previous chart instance if exists
     if (chartInstance.value) {
       chartInstance.value.destroy();
     }
     
-    // Get top 5 products by revenue
     const topProducts = productForecasts.slice(0, 5);
     
-    // Prepare chart data
     const labels = forecastData.map(day => {
       const date = new Date(day.date);
       return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     });
     
-    // Create a dataset for each product
     const datasets = topProducts.map((product, index) => {
-      // Set color based on growth (positive, negative, or neutral)
       const colorHue = product.growth > 0 ? '160' : (product.growth < 0 ? '0' : '220');
-      const colorSaturation = Math.abs(product.growth) / 100 * 100; // Scale saturation by growth percentage
+      const colorSaturation = Math.abs(product.growth) / 100 * 100;
       
-      // Generate data points for this product over time
-      // We'll create a trend line that starts at 0 and ends at the product's growth rate
       const dataPoints = [];
       const growthStep = product.growth / (forecastData.length - 1);
       
       for (let i = 0; i < forecastData.length; i++) {
-        // Create a trend line that shows the projected growth over time
         dataPoints.push(growthStep * i);
       }
       
@@ -962,9 +1056,6 @@ const renderChart = (forecastData, productForecasts) => {
       };
     });
     
-    console.log('Chart data:', { labels, datasets });
-    
-    // Create new line chart showing product growth trends over time
     chartInstance.value = new Chart(ctx, {
       type: 'line',
       data: {
@@ -1015,14 +1106,422 @@ const renderChart = (forecastData, productForecasts) => {
   });
 };
 
-// Main function to generate forecast
+// Export functions
+const exportForecastToCSV = async () => {
+  exporting.value = true;
+  showForecastTableExportDropdown.value = false;
+  
+  try {
+    const headers = ['Date', 'Projected Sales (₱)', 'Growth Rate (%)', 'Confidence Level (%)'];
+    const rows = forecastData.value.map((day, index) => [
+      formatDate(day.date),
+      Math.round(day.value).toLocaleString(),
+      calculateDayGrowth(index),
+      calculateConfidence(index)
+    ]);
+    
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.join(','))
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `forecast-data-${forecastPeriod.value}-days.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    showStatus('success', 'Forecast data exported to CSV successfully!');
+  } catch (error) {
+    console.error('Error exporting forecast to CSV:', error);
+    showStatus('error', 'Failed to export forecast data to CSV.');
+  } finally {
+    exporting.value = false;
+  }
+};
+
+const exportProductsToCSV = async () => {
+  exporting.value = true;
+  showProductTableExportDropdown.value = false;
+  
+  try {
+    const headers = ['Product Name', 'Category', 'Projected Sales', 'Projected Revenue (₱)', 'Growth (%)'];
+    const rows = displayedProducts.value.map(product => [
+      product.name,
+      product.category,
+      Object.entries(product.projectedSales).map(([unit, value]) => `${value} ${unit}`).join('; '),
+      product.projectedRevenue.toLocaleString(),
+      product.growth
+    ]);
+    
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `product-forecasts-${forecastPeriod.value}-days.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    showStatus('success', 'Product forecasts exported to CSV successfully!');
+  } catch (error) {
+    console.error('Error exporting products to CSV:', error);
+    showStatus('error', 'Failed to export product forecasts to CSV.');
+  } finally {
+    exporting.value = false;
+  }
+};
+
+const exportForecastToPDF = async () => {
+  exporting.value = true;
+  showForecastTableExportDropdown.value = false;
+  
+  try {
+    const printWindow = window.open('', '_blank');
+    
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Sales Forecast Report</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; }
+          h1 { color: #2e5c31; }
+          h2 { color: #374151; margin-top: 30px; }
+          table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+          th { background-color: #f9fafb; font-weight: 600; }
+          .positive { color: #10b981; }
+          .negative { color: #ef4444; }
+          .neutral { color: #6b7280; }
+          .meta-info { background-color: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0; }
+        </style>
+      </head>
+      <body>
+        <h1>Sales Forecast Report</h1>
+        
+        <div class="meta-info">
+          <p><strong>Forecast Period:</strong> Next ${forecastPeriod.value} Days</p>
+          <p><strong>Category:</strong> ${selectedCategory.value === 'all' ? 'All Categories' : selectedCategory.value}</p>
+          <p><strong>Generated:</strong> ${new Date().toLocaleDateString()}</p>
+          <p><strong>Model Accuracy:</strong> ${trainingStats.value.accuracy}%</p>
+          <p><strong>Training Data:</strong> ${trainingStats.value.dataPoints} data points (${trainingStats.value.startDate} to ${trainingStats.value.endDate})</p>
+        </div>
+        
+        <h2>Forecast Data</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Projected Sales (₱)</th>
+              <th>Growth Rate (%)</th>
+              <th>Confidence Level (%)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${forecastData.value.map((day, index) => `
+              <tr>
+                <td>${formatDate(day.date)}</td>
+                <td>₱${Math.round(day.value).toLocaleString()}</td>
+                <td class="${calculateDayGrowth(index) > 0 ? 'positive' : calculateDayGrowth(index) < 0 ? 'negative' : 'neutral'}">
+                  ${calculateDayGrowth(index) > 0 ? '+' : ''}${calculateDayGrowth(index)}%
+                </td>
+                <td>${calculateConfidence(index)}%</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </body>
+      </html>
+    `;
+    
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 500);
+    
+    showStatus('success', 'Forecast PDF opened for printing/saving!');
+  } catch (error) {
+    console.error('Error exporting forecast to PDF:', error);
+    showStatus('error', 'Failed to export forecast data to PDF.');
+  } finally {
+    exporting.value = false;
+  }
+};
+
+const exportProductsToPDF = async () => {
+  exporting.value = true;
+  showProductTableExportDropdown.value = false;
+  
+  try {
+    const printWindow = window.open('', '_blank');
+    
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Product Forecasts Report</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; }
+          h1 { color: #2e5c31; }
+          h2 { color: #374151; margin-top: 30px; }
+          table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+          th { background-color: #f9fafb; font-weight: 600; }
+          .positive { color: #10b981; }
+          .negative { color: #ef4444; }
+          .neutral { color: #6b7280; }
+          .meta-info { background-color: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0; }
+        </style>
+      </head>
+      <body>
+        <h1>Product Forecasts Report</h1>
+        
+        <div class="meta-info">
+          <p><strong>Forecast Period:</strong> Next ${forecastPeriod.value} Days</p>
+          <p><strong>Category:</strong> ${selectedCategory.value === 'all' ? 'All Categories' : selectedCategory.value}</p>
+          <p><strong>Generated:</strong> ${new Date().toLocaleDateString()}</p>
+          <p><strong>Total Products:</strong> ${displayedProducts.value.length}</p>
+        </div>
+        
+        <h2>Product Forecasts</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>Category</th>
+              <th>Projected Sales</th>
+              <th>Projected Revenue (₱)</th>
+              <th>Growth (%)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${displayedProducts.value.map(product => `
+              <tr>
+                <td>${product.name}</td>
+                <td>${product.category}</td>
+                <td>${Object.entries(product.projectedSales).map(([unit, value]) => `${value} ${unit}`).join(', ')}</td>
+                <td>₱${product.projectedRevenue.toLocaleString()}</td>
+                <td class="${product.growth > 0 ? 'positive' : product.growth < 0 ? 'negative' : 'neutral'}">
+                  ${product.growth > 0 ? '+' : ''}${product.growth}%
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        
+        <h2>Insights & Recommendations</h2>
+        <ul>
+          ${insights.value.map(insight => `
+            <li><strong>${insight.title}:</strong> ${insight.description}</li>
+          `).join('')}
+        </ul>
+      </body>
+      </html>
+    `;
+    
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 500);
+    
+    showStatus('success', 'Product forecasts PDF opened for printing/saving!');
+  } catch (error) {
+    console.error('Error exporting products to PDF:', error);
+    showStatus('error', 'Failed to export product forecasts to PDF.');
+  } finally {
+    exporting.value = false;
+  }
+};
+
+const exportCompleteReport = async () => {
+  exporting.value = true;
+  showChartExportDropdown.value = false;
+  
+  try {
+    const printWindow = window.open('', '_blank');
+    
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Complete Sales Forecast Report</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+          h1 { color: #2e5c31; border-bottom: 3px solid #2e5c31; padding-bottom: 10px; }
+          h2 { color: #374151; margin-top: 30px; border-bottom: 1px solid #e5e7eb; padding-bottom: 5px; }
+          h3 { color: #4b5563; }
+          table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+          th { background-color: #f9fafb; font-weight: 600; }
+          .positive { color: #10b981; font-weight: 600; }
+          .negative { color: #ef4444; font-weight: 600; }
+          .neutral { color: #6b7280; }
+          .meta-info { background-color: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0; }
+          .insight-card { background-color: #f8fafc; padding: 15px; margin: 10px 0; border-left: 4px solid #2e5c31; }
+          .summary-stats { display: flex; justify-content: space-between; margin: 20px 0; }
+          .stat-box { background-color: #f9fafb; padding: 15px; border-radius: 8px; text-align: center; flex: 1; margin: 0 10px; }
+        </style>
+      </head>
+      <body>
+        <h1>Complete Sales Forecast Report</h1>
+        
+        <div class="meta-info">
+          <h3>Report Information</h3>
+          <p><strong>Forecast Period:</strong> Next ${forecastPeriod.value} Days</p>
+          <p><strong>Category Filter:</strong> ${selectedCategory.value === 'all' ? 'All Categories' : selectedCategory.value}</p>
+          <p><strong>Generated:</strong> ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}</p>
+          <p><strong>Report Type:</strong> Historical Sales Analysis & ML-Based Forecasting</p>
+        </div>
+        
+        <h2>Executive Summary</h2>
+        <div class="summary-stats">
+          <div class="stat-box">
+            <h4>Total Forecast Revenue</h4>
+            <p><strong>₱${forecastData.value.reduce((sum, day) => sum + day.value, 0).toLocaleString()}</strong></p>
+          </div>
+          <div class="stat-box">
+            <h4>Products Analyzed</h4>
+            <p><strong>${displayedProducts.value.length}</strong></p>
+          </div>
+          <div class="stat-box">
+            <h4>Model Accuracy</h4>
+            <p><strong>${trainingStats.value.accuracy}%</strong></p>
+          </div>
+        </div>
+        
+        <h2>Model Information</h2>
+        <div class="meta-info">
+          <p><strong>AI Model:</strong> TensorFlow.js LSTM Neural Network</p>
+          <p><strong>Training Data Points:</strong> ${trainingStats.value.dataPoints}</p>
+          <p><strong>Data Range:</strong> ${trainingStats.value.startDate} to ${trainingStats.value.endDate}</p>
+          <p><strong>Accuracy:</strong> ${trainingStats.value.accuracy}% (based on validation data)</p>
+          <p><strong>Factors Considered:</strong> Historical sales patterns, product categories, and price points</p>
+        </div>
+        
+        <h2>Daily Forecast Data</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Projected Sales (₱)</th>
+              <th>Growth Rate (%)</th>
+              <th>Confidence Level (%)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${forecastData.value.map((day, index) => `
+              <tr>
+                <td>${formatDate(day.date)}</td>
+                <td>₱${Math.round(day.value).toLocaleString()}</td>
+                <td class="${calculateDayGrowth(index) > 0 ? 'positive' : calculateDayGrowth(index) < 0 ? 'negative' : 'neutral'}">
+                  ${calculateDayGrowth(index) > 0 ? '+' : ''}${calculateDayGrowth(index)}%
+                </td>
+                <td>${calculateConfidence(index)}%</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        
+        <h2>Product Analysis</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>Category</th>
+              <th>Projected Sales</th>
+              <th>Projected Revenue (₱)</th>
+              <th>Growth (%)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${displayedProducts.value.map(product => `
+              <tr>
+                <td>${product.name}</td>
+                <td>${product.category}</td>
+                <td>${Object.entries(product.projectedSales).map(([unit, value]) => `${value} ${unit}`).join(', ')}</td>
+                <td>₱${product.projectedRevenue.toLocaleString()}</td>
+                <td class="${product.growth > 0 ? 'positive' : product.growth < 0 ? 'negative' : 'neutral'}">
+                  ${product.growth > 0 ? '+' : ''}${product.growth}%
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        
+        <h2>AI-Generated Insights & Recommendations</h2>
+        ${insights.value.map(insight => `
+          <div class="insight-card">
+            <h4>${insight.title}</h4>
+            <p>${insight.description}</p>
+          </div>
+        `).join('')}
+        
+        <div style="margin-top: 50px; text-align: center; color: #6b7280; font-size: 0.9em;">
+          <p>Generated by AI-Powered Sales Forecasting System</p>
+          <p>Report Date: ${new Date().toLocaleDateString()} | Time: ${new Date().toLocaleTimeString()}</p>
+        </div>
+      </body>
+      </html>
+    `;
+    
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 500);
+    
+    showStatus('success', 'Complete report PDF opened for printing/saving!');
+  } catch (error) {
+    console.error('Error exporting complete report:', error);
+    showStatus('error', 'Failed to export complete report.');
+  } finally {
+    exporting.value = false;
+  }
+};
+
+// Modified generateForecast function with caching
 const generateForecast = async () => {
   loading.value = true;
   error.value = null;
   debugInfo.value = '';
   
+  const cacheKey = getCacheKey();
+  const cachedData = getFromCache(cacheKey);
+  
+  if (cachedData) {
+    forecastData.value = cachedData.forecast;
+    displayedProducts.value = cachedData.products;
+    insights.value = cachedData.insights;
+    trainingStats.value = cachedData.trainingStats;
+    
+    nextTick(() => {
+      renderChart(forecastData.value, displayedProducts.value);
+    });
+    
+    loading.value = false;
+    return;
+  }
+  
   try {
-    // 1. Fetch sales data
     const sales = await fetchSalesData();
     
     if (sales.length === 0) {
@@ -1031,7 +1530,6 @@ const generateForecast = async () => {
       return;
     }
     
-    // 2. Fetch products data
     const productsData = await fetchProductsData();
     
     if (productsData.length === 0) {
@@ -1040,7 +1538,6 @@ const generateForecast = async () => {
       return;
     }
     
-    // 3. Process sales data
     const processedSales = processSalesData(sales);
     
     if (processedSales.length < 7) {
@@ -1049,21 +1546,15 @@ const generateForecast = async () => {
       return;
     }
     
-    // 4. Create and train model
     const modelData = await createAndTrainModel(processedSales);
     
-    // 5. Generate forecast
     const days = parseInt(forecastPeriod.value);
     const forecast = await generateModelForecast(modelData, days);
     
-    // 6. Generate product-specific forecasts
     const productForecasts = generateProductForecasts(processedSales, productsData, forecast);
     
-    // 7. Generate insights
     const newInsights = generateInsights(productForecasts, productsData);
     
-    // 8. Update training stats
-    console.log('Setting accuracy to:', modelData.accuracy);
     trainingStats.value = {
       dataPoints: processedSales.length,
       startDate: processedSales[0].date.toLocaleDateString(),
@@ -1071,14 +1562,19 @@ const generateForecast = async () => {
       accuracy: Math.round(modelData.accuracy)
     };
     
-    // 9. Update state
     forecastData.value = forecast;
     displayedProducts.value = productForecasts;
     insights.value = newInsights;
+    
+    // Add to cache
+    addToCache(cacheKey, {
+      forecast: forecast,
+      products: productForecasts,
+      insights: newInsights,
+      trainingStats: trainingStats.value
+    });
 
-    // Ensure the DOM is updated before rendering the chart
     nextTick(() => {
-      // Render product growth trends as a line chart over time
       renderChart(forecast, productForecasts);
     });
     
@@ -1092,40 +1588,38 @@ const generateForecast = async () => {
 };
 
 // Initialize component
-onMounted(async () => {
-  try {
-    // Wait for auth to initialize
-    auth.onAuthStateChanged(async (user) => {
-      if (user) {
-        // Fetch categories for dropdown
-        const productsQuery = query(
-          collection(db, 'products'),
-          where('sellerId', '==', user.uid),
-          limit(100)
-        );
-        
-        const querySnapshot = await getDocs(productsQuery);
-        const categories = new Set();
-        
-        querySnapshot.forEach((doc) => {
-          const productData = doc.data();
-          if (productData.category) {
-            categories.add(productData.category);
-          }
-        });
-        
-        availableCategories.value = Array.from(categories).sort();
-      }
-    });
-  } catch (err) {
-    console.error("Error initializing:", err);
-  }
+const initializeComponent = async () => {
+  const productsQuery = query(
+    collection(db, 'products'),
+    where('sellerId', '==', auth.currentUser.uid),
+    limit(100)
+  );
+  
+  const querySnapshot = await getDocs(productsQuery);
+  const categories = new Set();
+  
+  querySnapshot.forEach((doc) => {
+    const productData = doc.data();
+    if (productData.category) {
+      categories.add(productData.category);
+    }
+  });
+  
+  availableCategories.value = Array.from(categories).sort();
+};
+
+onMounted(() => {
+  initializeComponent();
+  document.addEventListener('click', handleClickOutside);
+});
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside);
 });
 
 // Watch for changes in filters
-watch([selectedCategory, selectedSeason, useSeasonalAdjustment], () => {
+watch([selectedCategory], () => {
   if (forecastData.value.length > 0) {
-    // Re-generate forecast when filters change
     generateForecast();
   }
 });
@@ -1181,72 +1675,6 @@ watch([selectedCategory, selectedSeason, useSeasonalAdjustment], () => {
   flex-direction: column;
   gap: 4px;
 }
-.unit-sales {
-  margin-top: 4px;
-}
-
-.unit-sales:first-child {
-  margin-top: 0;
-}
-.toggle-group {
-  flex-direction: column;
-}
-
-.toggle-wrapper {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.toggle {
-  position: relative;
-  display: inline-block;
-  width: 40px;
-  height: 20px;
-}
-
-.toggle input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.toggle-slider {
-  position: absolute;
-  cursor: pointer;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: #ccc;
-  transition: .4s;
-  border-radius: 34px;
-}
-
-.toggle-slider:before {
-  position: absolute;
-  content: "";
-  height: 16px;
-  width: 16px;
-  left: 2px;
-  bottom: 2px;
-  background-color: white;
-  transition: .4s;
-  border-radius: 50%;
-}
-
-input:checked + .toggle-slider {
-  background-color: #2e5c31;
-}
-
-input:checked + .toggle-slider:before {
-  transform: translateX(20px);
-}
-
-.toggle-label {
-  font-size: 0.85rem;
-  color: #4b5563;
-}
 
 .control-group label {
   font-size: 0.85rem;
@@ -1255,8 +1683,7 @@ input:checked + .toggle-slider:before {
 }
 
 .period-select,
-.category-select,
-.season-select {
+.category-select {
   padding: 8px 12px;
   border: 1px solid #d1d5db;
   border-radius: 6px;
@@ -1400,9 +1827,20 @@ input:checked + .toggle-slider:before {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.forecast-chart-container h2 {
-  margin-top: 0;
-  margin-bottom: 8px;
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+  gap: 16px;
+}
+
+.chart-title-section {
+  flex: 1;
+}
+
+.chart-title-section h2 {
+  margin: 0 0 8px 0;
   font-size: 1.25rem;
   color: #111827;
 }
@@ -1410,8 +1848,138 @@ input:checked + .toggle-slider:before {
 .chart-explanation {
   font-size: 0.9rem;
   color: #6b7280;
-  margin-bottom: 16px;
+  margin: 0;
   line-height: 1.5;
+}
+
+.chart-controls {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  flex-shrink: 0;
+}
+
+.toggle-table-btn,
+.toggle-cards-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background-color: #f3f4f6;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.toggle-table-btn:hover,
+.toggle-cards-btn:hover {
+  background-color: #e5e7eb;
+}
+
+.export-dropdown {
+  position: relative;
+}
+
+.export-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background-color: #2e5c31;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.export-toggle-btn.small {
+  padding: 6px 10px;
+  font-size: 0.8rem;
+}
+
+.export-toggle-btn:hover:not(:disabled) {
+  background-color: #235127;
+}
+
+.export-toggle-btn:disabled {
+  background-color: #88b88a;
+  cursor: not-allowed;
+}
+
+.export-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  background-color: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  z-index: 50;
+  min-width: 180px;
+  padding: 8px;
+}
+
+.export-section {
+  margin-bottom: 12px;
+}
+
+.export-section:last-child {
+  margin-bottom: 0;
+}
+
+.export-section h4 {
+  margin: 0 0 6px 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.export-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  background-color: transparent;
+  color: #374151;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  text-align: left;
+}
+
+.export-option:hover:not(:disabled) {
+  background-color: #f3f4f6;
+}
+
+.export-option:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.export-option.complete-report {
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  margin-top: 8px;
+  font-weight: 500;
+}
+
+.export-option.complete-report:hover:not(:disabled) {
+  background-color: #f1f5f9;
+}
+
+.rotate-180 {
+  transform: rotate(180deg);
 }
 
 .chart-wrapper {
@@ -1458,6 +2026,147 @@ input:checked + .toggle-slider:before {
   background-color: rgba(107, 114, 128, 0.7);
 }
 
+.forecast-table-container {
+  background-color: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.table-header,
+.products-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.table-header h2,
+.products-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: #111827;
+}
+
+.product-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.table-wrapper {
+  overflow-x: auto;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+}
+
+.forecast-table,
+.products-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.forecast-table th,
+.forecast-table td,
+.products-table th,
+.products-table td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.forecast-table th,
+.products-table th {
+  background-color: #f9fafb;
+  font-weight: 600;
+  color: #374151;
+}
+
+.forecast-table tbody tr:hover,
+.products-table tbody tr:hover {
+  background-color: #f9fafb;
+}
+
+.confidence-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.confidence-text {
+  font-weight: 600;
+  color: #10b981;
+  min-width: 40px;
+}
+
+.confidence-bar {
+  flex: 1;
+  height: 6px;
+  background-color: #e5e7eb;
+  border-radius: 3px;
+  overflow: hidden;
+  max-width: 100px;
+}
+
+.confidence-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981, #34d399);
+  transition: width 0.4s ease;
+}
+
+.product-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.product-thumb {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.sales-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.unit-sales {
+  font-size: 0.85rem;
+  color: #6b7280;
+}
+
+.status-badge {
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.status-excellent {
+  background-color: #d1fae5;
+  color: #065f46;
+}
+
+.status-good {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+.status-stable {
+  background-color: #f3f4f6;
+  color: #374151;
+}
+
+.status-declining {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
 .forecast-details {
   display: flex;
   flex-direction: column;
@@ -1471,17 +2180,11 @@ input:checked + .toggle-slider:before {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.forecast-products h2 {
-  margin-top: 0;
-  margin-bottom: 16px;
-  font-size: 1.25rem;
-  color: #111827;
-}
-
 .product-cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 16px;
+  margin-top: 16px;
 }
 
 .product-card {
@@ -1622,80 +2325,6 @@ input:checked + .toggle-slider:before {
   color: #6b7280;
 }
 
-.seasonal-trends {
-  background-color: white;
-  border-radius: 8px;
-  padding: 20px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-.seasonal-trends h2 {
-  margin-top: 0;
-  margin-bottom: 16px;
-  font-size: 1.25rem;
-  color: #111827;
-}
-
-.seasons-container {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 16px;
-}
-
-.season-card {
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 16px;
-  transition: all 0.2s ease;
-}
-
-.season-card.active-season {
-  border-color: #2e5c31;
-  background-color: rgba(46, 92, 49, 0.05);
-}
-
-.season-header {
-  margin-bottom: 12px;
-}
-
-.season-header h3 {
-  margin: 0 0 4px 0;
-  font-size: 1.1rem;
-  color: #111827;
-}
-
-.season-months {
-  font-size: 0.85rem;
-  color: #6b7280;
-}
-
-.season-content h4 {
-  margin: 0 0 8px 0;
-  font-size: 0.95rem;
-  color: #4b5563;
-}
-
-.season-products {
-  margin: 0;
-  padding-left: 20px;
-}
-
-.season-products li {
-  margin-bottom: 4px;
-  font-size: 0.9rem;
-  color: #6b7280;
-}
-
-.season-impact {
-  margin-top: 12px;
-}
-
-.season-impact p {
-  font-size: 0.9rem;
-  color: #6b7280;
-  margin: 4px 0 0 0;
-}
-
 .model-info {
   background-color: white;
   border-radius: 8px;
@@ -1728,6 +2357,29 @@ input:checked + .toggle-slider:before {
   color: #6b7280;
 }
 
+.export-status {
+  margin-top: 16px;
+  padding: 12px 16px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.export-status.success {
+  background-color: #d1fae5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.export-status.error {
+  background-color: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fca5a5;
+}
+
 @media (max-width: 768px) {
   .main-content {
     margin-left: 0;
@@ -1739,97 +2391,31 @@ input:checked + .toggle-slider:before {
     align-items: stretch;
   }
   
+  .chart-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  
+  .chart-controls {
+    justify-content: flex-end;
+  }
+  
+  .table-header,
+  .products-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  
+  .product-controls {
+    justify-content: flex-end;
+  }
+  
   .product-cards,
   .insights-container,
-  .seasons-container,
   .model-details {
     grid-template-columns: 1fr;
   }
-}
-
-/* Dark mode styles */
-:global(body.dark) .main-content {
-  background-color: #111827;
-}
-
-:global(body.dark) .page-title h1,
-:global(body.dark) .forecast-chart-container h2,
-:global(body.dark) .forecast-products h2,
-:global(body.dark) .forecast-insights h2,
-:global(body.dark) .seasonal-trends h2,
-:global(body.dark) .model-info h2,
-:global(body.dark) .product-info h3,
-:global(body.dark) .insight-content h4,
-:global(body.dark) .season-header h3,
-:global(body.dark) .model-detail h4,
-:global(body.dark) .stat-value {
-  color: #f9fafb;
-}
-
-:global(body.dark) .page-title p,
-:global(body.dark) .chart-explanation,
-:global(body.dark) .product-info .category,
-:global(body.dark) .insight-content p,
-:global(body.dark) .season-months,
-:global(body.dark) .season-products li,
-:global(body.dark) .season-impact p,
-:global(body.dark) .model-detail p,
-:global(body.dark) .stat-label,
-:global(body.dark) .loading-detail,
-:global(body.dark) .toggle-label,
-:global(body.dark) .legend-item {
-  color: #9ca3af;
-}
-
-:global(body.dark) .forecast-controls,
-:global(body.dark) .forecast-chart-container,
-:global(body.dark) .forecast-products,
-:global(body.dark) .forecast-insights,
-:global(body.dark) .seasonal-trends,
-:global(body.dark) .model-info,
-:global(body.dark) .debug-info {
-  background-color: #1f2937;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-}
-
-:global(body.dark) .period-select,
-:global(body.dark) .category-select,
-:global(body.dark) .season-select {
-  background-color: #374151;
-  border-color: #4b5563;
-  color: #e5e7eb;
-}
-
-:global(body.dark) .product-card,
-:global(body.dark) .insight-card,
-:global(body.dark) .season-card {
-  border-color: #374151;
-}
-
-:global(body.dark) .season-card.active-season {
-  border-color: #4caf50;
-  background-color: rgba(76, 175, 80, 0.1);
-}
-
-:global(body.dark) .stat-value.positive {
-  color: #34d399;
-}
-
-:global(body.dark) .stat-value.negative {
-  color: #f87171;
-}
-
-:global(body.dark) .stat-value.neutral {
-  color: #9ca3af;
-}
-
-:global(body.dark) .debug-info {
-  background-color: #111827;
-  color: #9ca3af;
-}
-
-:global(body.dark) .chart-wrapper {
-  background-color: #1f2937;
-  border-color: #374151;
 }
 </style>

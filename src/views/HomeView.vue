@@ -99,6 +99,14 @@
                 <input type="checkbox" v-model="typeFilter" value="trending">
                 <span>Trending</span>
               </label>
+              <label class="type-option">
+                <input type="checkbox" v-model="typeFilter" value="wholesale">
+                <span>Wholesale</span>
+              </label>
+              <label class="type-option">
+                <input type="checkbox" v-model="typeFilter" value="pre-order">
+                <span>Pre-Order</span>
+              </label>
             </div>
           </div>
           
@@ -143,9 +151,32 @@
             </div>
             
             <div class="profile-actions">
-              <button class="become-supplier-btn" @click="navigateToPath('/register-seller')">
+              <!-- Show different buttons based on seller status -->
+              <button 
+                v-if="!userIsSeller && !userHasPendingApplication" 
+                class="become-supplier-btn" 
+                @click="navigateToPath('/register-seller')"
+              >
                 <Briefcase size="16" />
                 Become a Farmer/Supplier
+              </button>
+              
+              <button 
+                v-else-if="userHasPendingApplication && !userIsSeller" 
+                class="become-supplier-btn pending" 
+                disabled
+              >
+                <Briefcase size="16" />
+                Application Pending
+              </button>
+              
+              <button 
+                v-else-if="userIsSeller && userIsVerified" 
+                class="become-supplier-btn approved" 
+                @click="navigateToPath('/seller-dashboard')"
+              >
+                <Briefcase size="16" />
+                Seller Dashboard
               </button>
             </div>
             
@@ -215,18 +246,18 @@
     <div class="content">
       
       <div class="delivery-options">
-        <div class="delivery-card farm-fresh" @click="navigateToPath('/farm-fresh')">
+        <div class="delivery-card pre-order" @click="filterByPreOrder">
           <div class="delivery-content">
-            <h3>Farm Fresh</h3>
-            <p>Direct from local farms</p>
-            <p class="free">Free delivery by 12:15pm</p>
+            <h3>Pre-Order</h3>
+            <p>Reserve products in advance</p>
+            <p class="free">Special pricing for pre-orders</p>
             <button class="shop-now-btn">Shop Now</button>
           </div>
           <img 
             src="https://cdn-icons-png.flaticon.com/512/2331/2331966.png" 
-            alt="Farm Fresh" 
+            alt="Pre-Order" 
             class="delivery-image"
-            @error="$event.target.src = getCategoryFallbackImage('Farm Fresh')"
+            @error="$event.target.src = getCategoryFallbackImage('Pre-Order')"
           >
         </div>
         <div class="delivery-card wholesale" @click="filterByWholesale">
@@ -350,6 +381,11 @@
               <span v-else-if="product.ribbon === 'limited'">LIMITED</span>
             </div>
             <div class="product-badge" v-if="product.isOrganic && !product.ribbon">Organic</div>
+            
+            <div class="pre-order-badge" v-if="product.preOrders">
+              <Calendar size="12" />
+              Pre-Order
+            </div>
             
             <div class="trending-badge" v-if="product.isTrending">
               <TrendingUp size="12" />
@@ -489,7 +525,7 @@
               </div>
               <div class="product-badge" v-if="product.isOrganic && !product.ribbon">Organic</div>
               
-              <div class="wholesale-badge" v-if="product.wholesale">
+              <div class="wholesale-badge" v-if="product.wholesaleAvailable">
                 <Package size="12" />
                 Wholesale
               </div>
@@ -518,10 +554,114 @@
                 </div>
               </div>
               <div class="price">
-                <span v-if="product.wholesalePrice">₱{{ formatPrice(product.wholesalePrice) }}</span>
+                <span v-if="product.wholesalePrice && product.wholesaleAvailable">₱{{ formatPrice(product.wholesalePrice) }}</span>
                 <span v-else>₱{{ formatPrice(product.price) }}</span>
-                <span v-if="product.minOrderQuantity" class="min-order">
-                  Min: {{ product.minOrderQuantity }} units
+                <span v-if="product.whominWholesaleQty && product.wholesaleAvailable" class="min-order">
+                  Min: {{ product.whominWholesaleQty }} units
+                </span>
+                <span class="unit">/kg</span>
+              </div>
+            </div>
+            <button class="add-to-cart-button" @click.stop="addToCart(product)" :disabled="product.stock <= 0">
+              <ShoppingCart size="14" />
+              <span class="add-text">Add</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Pre-Order Products Section -->
+    <div class="pre-order-section" v-if="showPreOrderSection">
+      <div class="section-header">
+        <h2>Pre-Order Products</h2>
+        <div class="section-actions">
+          <span class="product-count">{{ preOrderProducts.length }} products</span>
+        </div>
+      </div>
+      
+      <div class="pre-order-info">
+        <div class="info-card">
+          <Calendar size="24" />
+          <h3>Reserve Now</h3>
+          <p>Reserve products before they're available</p>
+        </div>
+        <div class="info-card">
+          <Percent size="24" />
+          <h3>Special Price</h3>
+          <p>Get exclusive pricing for pre-orders</p>
+        </div>
+        <div class="info-card">
+          <Package size="24" />
+          <h3>Guaranteed Stock</h3>
+          <p>Secure your items before others</p>
+        </div>
+      </div>
+
+      <div class="products-grid">
+        <div v-if="isLoading" class="loading-state">
+          <div class="spinner"></div>
+          <p>Loading pre-order products...</p>
+        </div>
+        <div v-else-if="preOrderProducts.length === 0" class="no-products">
+          <img src="https://cdn-icons-png.flaticon.com/512/5445/5445197.png" alt="No products" class="no-products-icon">
+          <p>No pre-order products available.</p>
+        </div>
+        <div v-else class="products-container">
+          <div class="product-card" v-for="(product, index) in preOrderProducts" :key="index" @click="viewProduct(product)">
+            <div class="product-image">
+              <img 
+                :src="product.image" 
+                :alt="product.productName || product.name"
+                @error="handleProductImageError($event, product)"
+              >
+              <div v-if="product.ribbon" :class="['product-ribbon', `ribbon-${product.ribbon}`]">
+                <span v-if="product.ribbon === 'new'">NEW</span>
+                <span v-else-if="product.ribbon === 'sale'">{{ product.discount }}% OFF</span>
+                <span v-else-if="product.ribbon === 'pre-order'">PRE-ORDER</span>
+                <span v-else-if="product.ribbon === 'organic'">ORGANIC</span>
+                <span v-else-if="product.ribbon === 'limited'">LIMITED</span>
+              </div>
+              <div class="product-badge" v-if="product.isOrganic && !product.ribbon">Organic</div>
+              
+              <div class="pre-order-badge" v-if="product.preOrders">
+                <Calendar size="12" />
+                Pre-Order
+              </div>
+              
+              <div class="trending-badge" v-if="product.isTrending">
+                <TrendingUp size="12" />
+                Trending
+              </div>
+              
+              <div class="hot-seller-badge" v-if="product.isHotSeller && !product.isTrending">
+                <Flame size="12" />
+                Hot Seller
+              </div>
+            </div>
+            <div class="product-info">
+              <h3>{{ product.productName || product.name }}</h3>
+              <div class="product-meta">
+                <ProductRating :productId="product.id" />
+                <div class="product-stats">
+                  <Eye size="12" />
+                  <span>{{ product.views || 0 }}</span>
+                </div>
+                <div class="product-stats">
+                  <ShoppingBag size="12" />
+                  <span>{{ product.sold || 0 }}</span>
+                </div>
+              </div>
+              <div class="price">
+                <span>₱{{ formatPrice(product.price) }}</span>
+                <span v-if="product.preOrderMessage && product.preOrders" class="pre-order-message">
+                  {{ product.preOrderMessage }}
+                </span>
+                <span v-if="product.preorderDays && product.preOrders" class="pre-order-days">
+                  Available in {{ product.preorderDays }} days
+                </span>
+                <span v-if="product.preOrderLimit && product.preOrders" class="pre-order-limit">
+                  Limit: {{ product.preOrderLimit }} units
                 </span>
                 <span class="unit">/kg</span>
               </div>
@@ -574,14 +714,6 @@ import { auth, db } from '@/firebase/firebaseConfig';
 import { collection, getDocs, doc, getDoc, query, orderBy, limit, where } from 'firebase/firestore';
 
 export default {
-  computed: {
-    filteredProducts() {
-      return this.products.filter(p =>
-        p.category && this.selectedCategory &&
-        p.category.toLowerCase().trim() === this.selectedCategory.toLowerCase().trim()
-      );
-    }
-  },
   components: {
     BottomNavigation,
     ProductRating,
@@ -628,6 +760,7 @@ export default {
     const sortOption = ref('default');
     const categories = ref([]);
     const showWholesaleSection = ref(false);
+    const showPreOrderSection = ref(false);
 
     // Fallback images for categories
     const categoryFallbackImages = {
@@ -703,7 +836,9 @@ const filteredProducts = computed(() => {
             (typeFilter.value.includes('organic') && product.isOrganic) ||
             (typeFilter.value.includes('new') && product.ribbon === 'new') ||
             (typeFilter.value.includes('sale') && product.ribbon === 'sale') ||
-            (typeFilter.value.includes('trending') && product.isTrending)
+            (typeFilter.value.includes('trending') && product.isTrending) ||
+            (typeFilter.value.includes('wholesale') && product.wholesaleAvailable) ||
+            (typeFilter.value.includes('pre-order') && product.preOrders)
           );
         });
       }
@@ -967,7 +1102,16 @@ const fetchProducts = async () => {
             stockPerTray: productData.stockPerTray || 0,
             stockPerPiece: productData.stockPerPiece || 0,
             discountPercentage: productData.discountPercentage || 0,
-            isOnSale: productData.isOnSale || false
+            isOnSale: productData.isOnSale || false,
+            // Wholesale fields
+            wholesaleAvailable: productData.wholesaleAvailable || false,
+            wholesalePrice: productData.wholesalePrice || 0,
+            whominWholesaleQty: productData.whominWholesaleQty || 0,
+            // Pre-order fields
+            preOrders: productData.preOrders || false,
+            preorderDays: productData.preorderDays || 0,
+            preOrderMessage: productData.preOrderMessage || '',
+            preOrderLimit: productData.preOrderLimit || 0
           };
         });
         
@@ -981,12 +1125,18 @@ const fetchProducts = async () => {
 
     // Add computed property for wholesale products
     const wholesaleProducts = computed(() => {
-      return products.value.filter(product => product.wholesale === true);
+      return products.value.filter(product => product.wholesaleAvailable === true);
+    });
+
+    // Add computed property for pre-order products
+    const preOrderProducts = computed(() => {
+      return products.value.filter(product => product.preOrders === true);
     });
 
     // Add method to filter by wholesale
     const filterByWholesale = () => {
       showWholesaleSection.value = true;
+      showPreOrderSection.value = false;
       typeFilter.value = ['wholesale'];
       selectedCategory.value = '';
       searchQuery.value = '';
@@ -994,10 +1144,24 @@ const fetchProducts = async () => {
       sortOption.value = 'default';
     };
 
-    // Reset showWholesaleSection when filters change
+    // Add method to filter by pre-order
+    const filterByPreOrder = () => {
+      showPreOrderSection.value = true;
+      showWholesaleSection.value = false;
+      typeFilter.value = ['pre-order'];
+      selectedCategory.value = '';
+      searchQuery.value = '';
+      isPriceFiltered.value = false;
+      sortOption.value = 'default';
+    };
+
+    // Reset sections when filters change
     watch([selectedCategory, searchQuery, typeFilter], ([cat, search, type]) => {
       if (!(type && type.includes('wholesale'))) {
         showWholesaleSection.value = false;
+      }
+      if (!(type && type.includes('pre-order'))) {
+        showPreOrderSection.value = false;
       }
     });
 
@@ -1043,7 +1207,10 @@ const fetchProducts = async () => {
       calculatePopularityScore,
       showWholesaleSection,
       wholesaleProducts,
-      filterByWholesale
+      filterByWholesale,
+      showPreOrderSection,
+      preOrderProducts,
+      filterByPreOrder
     };
   },
   data() {
@@ -1052,11 +1219,24 @@ const fetchProducts = async () => {
       username: '',
       userEmail: '',
       userLocation: 'Oriental Mindoro', // Default location
+      userIsSeller: false, // Track if user is already a seller
+      userIsVerified: false, // Track if user is verified
+      userHasPendingApplication: false, // Track if user has pending seller application
     };
   },
   methods: {
     formatPrice(price) {
       return parseFloat(price).toFixed(2);
+    },
+
+    formatDate(dateString) {
+      if (!dateString) return '';
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'short', 
+        day: 'numeric' 
+      });
     },
 
         calculateSalePrice(originalPrice, discountPercentage) {
@@ -1094,6 +1274,24 @@ const fetchProducts = async () => {
             if (userData.address) {
               this.userLocation = userData.address;
             }
+
+            // Check seller status with better logic
+            this.userIsSeller = userData.isSeller || false;
+            this.userIsVerified = userData.isVerified || false;
+            
+            console.log('🔍 Raw user data from Firestore:', {
+              isSeller: userData.isSeller,
+              isVerified: userData.isVerified,
+              role: userData.role
+            });
+              // Check if user has pending application by looking at sellers collection
+            await this.checkPendingSellerApplication(user.uid);
+            
+            console.log('📊 Final seller status:', {
+              isSeller: this.userIsSeller,
+              isVerified: this.userIsVerified,
+              hasPendingApplication: this.userHasPendingApplication
+            });
           } else {
             console.log('No user document found');
           }
@@ -1128,8 +1326,16 @@ const fetchProducts = async () => {
       this.cartItems.push({...product, quantity: 1});
     },
     navigateToPath(path, query = null) {
+      console.log('🔄 Navigating to:', path);
+      console.log('👤 Current user status:', {
+        userIsSeller: this.userIsSeller,
+        userIsVerified: this.userIsVerified,
+        userHasPendingApplication: this.userHasPendingApplication
+      });
+      
       this.showProfileMenu = false;
       this.showFilterMenu = false;
+      
       if (query) {
         this.router.push({ path, query });
       } else {
@@ -1138,22 +1344,108 @@ const fetchProducts = async () => {
     },
     handleBottomNavigation(path) {
       this.router.push(path);
-    }
+    },
+    
+    // Method to refresh user data (can be called when returning from other pages)
+    async refreshUserData() {
+      if (auth.currentUser) {
+        console.log('🔄 Refreshing user data...');
+        await this.fetchUserInfo();
+      }
+    },
+    
+    // Test method to check seller dashboard access
+    async testSellerAccess() {
+      console.log('🧪 Testing seller dashboard access...');
+      const user = auth.currentUser;
+      if (user) {
+        try {
+          const userRef = doc(db, "users", user.uid);
+          const userDoc = await getDoc(userRef);
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            console.log('👤 Current user data:', userData);
+            console.log('🔐 Seller access check:', {
+              isSeller: userData.isSeller,
+              isSellerPending: userData.isSellerPending,
+              sellerStatus: userData.sellerStatus,
+              canAccess: userData.isSeller && !userData.isSellerPending
+            });
+          }
+        } catch (error) {
+          console.error('Error checking user data:', error);
+        }
+      }
+    },
+    
+    // Check if user has pending seller application
+    async checkPendingSellerApplication(userId) {
+      try {
+        const sellersQuery = query(
+          collection(db, "sellers"),
+          where("userId", "==", userId)
+        );
+        const sellersSnapshot = await getDocs(sellersQuery);
+        
+        if (!sellersSnapshot.empty) {
+          const sellerDoc = sellersSnapshot.docs[0];
+          const sellerData = sellerDoc.data();
+          
+          // Check if application is pending
+          this.userHasPendingApplication = (
+            sellerData.registrationStatus === 'Pending' || 
+            sellerData.status === 'Pending' ||
+            (!sellerData.isVerified && !this.userIsSeller)
+          );
+          
+          console.log('🔍 Seller application status:', {
+            registrationStatus: sellerData.registrationStatus,
+            status: sellerData.status,
+            isVerified: sellerData.isVerified,
+            hasPendingApplication: this.userHasPendingApplication
+          });
+        } else {
+          this.userHasPendingApplication = false;
+          console.log('📝 No seller application found');
+        }
+      } catch (error) {
+        console.error('Error checking pending seller application:', error);
+        this.userHasPendingApplication = false;
+      }
+    },
   },
   mounted() {
-    onAuthStateChanged(auth, (user) => {
-      if (user) {
-        this.fetchUserInfo();
-        this.fetchProducts();
-        this.fetchTrendingProducts();
-      } else {
-        this.userPhotoURL = '';
-        this.username = '';
-        this.userEmail = '';
-        this.userLocation = 'Oriental Mindoro'; // Reset to default
-      }
-    });
+  // Always fetch products regardless of auth state
+  this.fetchProducts();
+  this.fetchTrendingProducts();
+  
+  // Only fetch user info if logged in
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      this.fetchUserInfo();
+    } else {
+      // Reset all user data when logged out
+      this.userPhotoURL = '';
+      this.username = '';
+      this.userEmail = '';
+      this.userLocation = 'Oriental Mindoro'; // Reset to default
+      this.userIsSeller = false;
+      this.userIsVerified = false;
+      this.userHasPendingApplication = false;
+    }
+  });
+},
+
+// Watch for route changes to refresh user data if needed
+watch: {
+  '$route'(to, from) {
+    // If user comes from seller registration page, refresh user data
+    if (from.path === '/register-seller' && to.path === '/' && auth.currentUser) {
+      console.log('User returned from seller registration, refreshing data...');
+      this.refreshUserData();
+    }
   }
+}
 };
 </script>
 
@@ -1577,8 +1869,35 @@ const fetchProducts = async () => {
   cursor: pointer;
 }
 
-.become-supplier-btn:hover {
+.become-supplier-btn:hover:not(:disabled) {
   background-color: #26492a;
+}
+
+/* Pending application state */
+.become-supplier-btn.pending {
+  background-color: #f39c12;
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+
+.become-supplier-btn.pending:hover {
+  background-color: #f39c12;
+  transform: none;
+}
+
+/* Approved seller state */
+.become-supplier-btn.approved {
+  background-color: #27ae60;
+}
+
+.become-supplier-btn.approved:hover {
+  background-color: #219a52;
+}
+
+/* Disabled state */
+.become-supplier-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .profile-menu {
@@ -1745,6 +2064,10 @@ const fetchProducts = async () => {
 
 .delivery-card.wholesale {
   background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+}
+
+.delivery-card.pre-order {
+  background: linear-gradient(135deg, #f3e5f5, #e1bee7);
 }
 
 .delivery-content {
@@ -2523,6 +2846,71 @@ html {
   
   .info-card {
     padding: 1rem;
+  }
+}
+
+/* Pre-Order Section Styles */
+.pre-order-section {
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 12px;
+  margin: 1rem 0;
+}
+
+.pre-order-info {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.pre-order-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: #9C27B0;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pre-order-message {
+  font-size: 0.8rem;
+  color: #9C27B0;
+  margin-left: 0.5rem;
+  display: block;
+  font-style: italic;
+}
+
+.pre-order-days {
+  font-size: 0.8rem;
+  color: #666;
+  margin-left: 0.5rem;
+  display: block;
+}
+
+.pre-order-limit {
+  font-size: 0.8rem;
+  color: #e74c3c;
+  margin-left: 0.5rem;
+  display: block;
+  font-weight: 600;
+}
+
+.available-date {
+  font-size: 0.8rem;
+  color: #666;
+  margin-left: 0.5rem;
+  display: block;
+}
+
+@media (max-width: 768px) {
+  .pre-order-info {
+    grid-template-columns: 1fr;
   }
 }
 </style>

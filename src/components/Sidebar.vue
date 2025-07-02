@@ -40,7 +40,9 @@
           <router-link :to="item.path" class="nav-link">
             <component :is="item.icon" class="nav-icon" />
             <span class="nav-text">{{ item.name }}</span>
-            <span v-if="item.badge && (!isCollapsed || isMobile)" class="badge">{{ item.badge }}</span>
+            <span v-if="item.badge && (!isCollapsed || isMobile)" class="badge" :class="item.badgeClass">
+              {{ item.badge }}
+            </span>
           </router-link>
         </li>
       </ul>
@@ -60,7 +62,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { 
   LayoutDashboard, 
   Sprout, 
@@ -75,8 +77,12 @@ import {
   Moon,
   TrendingUp,
   Calendar,
-  FileText
+  FileText,
+  Bell
 } from 'lucide-vue-next';
+import { db } from '@/firebase/firebaseConfig';
+import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 
 const props = defineProps({
   initialActiveItem: {
@@ -91,6 +97,49 @@ const isCollapsed = ref(false);
 const isMobile = ref(false);
 const isMobileSidebarOpen = ref(false);
 const mobileBreakpoint = 768;
+const unreadNotifications = ref(0);
+const chatMessages = ref(8); // Keep existing chat badge
+
+// Real-time notification listener
+const setupNotificationListener = () => {
+  const auth = getAuth();
+  const currentUser = auth.currentUser;
+  
+  if (!currentUser) return;
+
+  // Listen for new orders
+  const ordersQuery = query(
+    collection(db, 'orders'),
+    where('sellerId', '==', currentUser.uid),
+    where('status', '==', 'Pending'),
+    orderBy('createdAt', 'desc'),
+    limit(50)
+  );
+
+  onSnapshot(ordersQuery, (snapshot) => {
+    let newOrdersCount = 0;
+    const now = new Date();
+    const oneHourAgo = new Date(now.getTime() - (60 * 60 * 1000));
+
+    snapshot.forEach((doc) => {
+      const data = doc.data();
+      let createdAt = data.createdAt;
+      
+      if (createdAt && typeof createdAt.toDate === 'function') {
+        createdAt = createdAt.toDate();
+      } else if (typeof createdAt === 'string') {
+        createdAt = new Date(createdAt);
+      }
+      
+      // Count orders from the last hour as "new"
+      if (createdAt && createdAt > oneHourAgo) {
+        newOrdersCount++;
+      }
+    });
+
+    unreadNotifications.value = newOrdersCount;
+  });
+};
 
 const checkScreenSize = () => {
   isMobile.value = window.innerWidth < mobileBreakpoint;
@@ -99,7 +148,7 @@ const checkScreenSize = () => {
   }
 };
 
-const menuItems = [
+const menuItems = computed(() => [
   { name: 'Dashboard', path: '/seller-dashboard', icon: LayoutDashboard },
   { name: 'Farm Products', path: '/products', icon: Sprout },
   { name: 'Forecasting', path: '/seller/forecasting', icon: TrendingUp },
@@ -107,12 +156,25 @@ const menuItems = [
   { name: 'Customers', path: '/seller/customer', icon: Users },
   { name: 'Analytics', path: '/seller/analytics', icon: BarChart },
   { name: 'Orders', path: '/orders', icon: Receipt },
-  { name: 'Chat', path: '/seller/chat', icon: MessageSquare, badge: 8 },
-  { name: 'Feedback', path: '/feedback', icon: ThumbsUp },
-  { name: 'Reports', path: '/reports', icon: FileText },
+  { 
+    name: 'Notifications', 
+    path: '/notifications', 
+    icon: Bell, 
+    badge: unreadNotifications.value > 0 ? unreadNotifications.value : null,
+    badgeClass: 'notification-badge'
+  },
+  { 
+    name: 'Chat', 
+    path: '/seller/chat', 
+    icon: MessageSquare, 
+    badge: chatMessages.value,
+    badgeClass: 'chat-badge'
+  },
+  { name: 'Feedback', path: '/seller/feedbacks', icon: ThumbsUp },
+  { name: 'Reports', path: '/seller/reports', icon: FileText },
   { name: 'Help', path: '/sellerhelp', icon: HelpCircle },
-  { name: 'Settings', path: '/settings', icon: Settings }
-];
+  { name: 'Settings', path: '/seller/settings', icon: Settings }
+]);
 
 const setActiveItem = (itemName) => {
   activeItem.value = itemName;
@@ -152,6 +214,9 @@ onMounted(() => {
   
   checkScreenSize();
   window.addEventListener('resize', checkScreenSize);
+  
+  // Setup notification listener
+  setupNotificationListener();
 });
 
 onBeforeUnmount(() => {
@@ -324,8 +389,6 @@ onBeforeUnmount(() => {
 }
 
 .badge {
-  background-color: #ffffff;
-  color: #2e5c31;
   border-radius: 50%;
   width: 20px;
   height: 20px;
@@ -335,6 +398,26 @@ onBeforeUnmount(() => {
   font-size: 0.75rem;
   margin-left: auto;
   font-weight: bold;
+}
+
+.chat-badge {
+  background-color: #ffffff;
+  color: #2e5c31;
+}
+
+.notification-badge {
+  background-color: #ef4444;
+  color: #ffffff;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
 }
 
 .sidebar.collapsed .badge {

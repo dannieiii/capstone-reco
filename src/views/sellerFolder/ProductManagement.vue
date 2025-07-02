@@ -106,20 +106,10 @@
                   </span>
                 </div>
               </div>
-              
-              <!-- Stock Display with Dropdown -->
+                <!-- Stock Display -->
               <div class="product-stock">
                 <div class="stock-header">
                   <div class="stock-label">Stock:</div>
-                  <div class="stock-dropdown" v-if="getStockByUnit(product).length > 1">
-                    <button 
-                      class="stock-dropdown-btn" 
-                      @click="toggleStockDropdown(product.id)"
-                      :class="{ active: openStockDropdown === product.id }"
-                    >
-                      <ChevronDown size="14" />
-                    </button>
-                  </div>
                 </div>
                 
                 <!-- Main Stock Display -->
@@ -132,30 +122,6 @@
                     ></div>
                   </div>
                   <div class="stock-value">{{ getMainStockDisplay(product) }}</div>
-                </div>
-                
-                <!-- Dropdown Stock Details -->
-                <div 
-                  v-if="openStockDropdown === product.id && getStockByUnit(product).length > 1" 
-                  class="stock-dropdown-content"
-                >
-                  <div 
-                    v-for="stockInfo in getStockByUnit(product)" 
-                    :key="stockInfo.unit" 
-                    class="stock-item"
-                  >
-                    <div class="stock-item-header">
-                      <span class="stock-unit">{{ stockInfo.unit }}:</span>
-                      <span class="stock-quantity">{{ stockInfo.quantity }} {{ stockInfo.unitLabel }}</span>
-                    </div>
-                    <div class="stock-item-bar">
-                      <div 
-                        class="stock-progress" 
-                        :style="{ width: `${stockInfo.percentage}%` }"
-                        :class="getStockClass(stockInfo.percentage)"
-                      ></div>
-                    </div>
-                  </div>
                 </div>
               </div>
               
@@ -225,7 +191,6 @@ const activeFilter = ref('All');
 const isLoading = ref(true);
 const showModal = ref(false);
 const productToDelete = ref(null);
-const openStockDropdown = ref(null);
 
 // Filter options
 const filterOptions = ['All', 'Active', 'Inactive', 'On Sale', 'Pre-Order', 'Wholesale', 'Limited'];
@@ -259,11 +224,6 @@ const handleDeleteCancel = () => {
   productToDelete.value = null;
 };
 
-// Stock dropdown toggle
-const toggleStockDropdown = (productId) => {
-  openStockDropdown.value = openStockDropdown.value === productId ? null : productId;
-};
-
 // Get display price based on available pricing options
 const getDisplayPrice = (product) => {
   if (product.pricePerKilo > 0) return product.pricePerKilo.toFixed(2) + '/kg';
@@ -276,100 +236,42 @@ const getDisplayPrice = (product) => {
   return '0.00';
 };
 
-// Get stock information by unit type
+// Get stock information - using specific unit stocks
 const getStockByUnit = (product) => {
   const stockInfo = [];
+  
+  // Define the mapping between units and their stock fields
+  const unitStockMap = {
+    'kg': { stockField: 'stockPerKilo', label: 'kg' },
+    'sack': { stockField: 'stockPerSack', label: 'sacks' },
+    'tali': { stockField: 'stockPerTali', label: 'tali' },
+    'kaing': { stockField: 'stockPerKaing', label: 'kaing' },
+    'bundle': { stockField: 'stockPerBundle', label: 'bundles' },
+    'tray': { stockField: 'stockPerTray', label: 'trays' },
+    'piece': { stockField: 'stockPerPiece', label: 'pieces' }
+  };
 
-  if (product.pricePerKilo > 0) {
-    const currentStock = product.stockPerKilo || 0;
-    // Dynamic percentage: 100% when stock >= 50kg, scales down proportionally
-    const optimalStock = Math.max(currentStock, 50);
-    const percentage = Math.min(100, (currentStock / optimalStock) * 100);
-    stockInfo.push({
-      unit: 'Kilo',
-      unitLabel: 'kg',
-      quantity: currentStock,
-      percentage: percentage
-    });
-  }
-
-  if (product.pricePerSack > 0) {
-    const currentStock = product.stockPerSack || 0;
-    // Dynamic percentage: 100% when stock >= 20 sacks, scales down proportionally
-    const optimalStock = Math.max(currentStock, 20);
-    const percentage = Math.min(100, (currentStock / optimalStock) * 100);
-    stockInfo.push({
-      unit: 'Sack',
-      unitLabel: 'sacks',
-      quantity: currentStock,
-      percentage: percentage
-    });
-  }
-
-  if (product.pricePerBundle > 0) {
-    const currentStock = product.stockPerBundle || 0;
-    // Dynamic percentage: 100% when stock >= 15 bundles, scales down proportionally
-    const optimalStock = Math.max(currentStock, 15);
-    const percentage = Math.min(100, (currentStock / optimalStock) * 100);
-    stockInfo.push({
-      unit: 'Bundle',
-      unitLabel: 'bundles',
-      quantity: currentStock,
-      percentage: percentage
-    });
-  }
-
-  if (product.pricePerTali > 0) {
-    const currentStock = product.stockPerTali || 0;
-    // Dynamic percentage: 100% when stock >= 30 tali, scales down proportionally
-    const optimalStock = Math.max(currentStock, 30);
-    const percentage = Math.min(100, (currentStock / optimalStock) * 100);
-    stockInfo.push({
-      unit: 'Tali',
-      unitLabel: 'tali',
-      quantity: currentStock,
-      percentage: percentage
-    });
-  }
-
-  if (product.pricePerKaing > 0) {
-    const currentStock = product.stockPerKaing || 0;
-    // Dynamic percentage: 100% when stock >= 25 kaing, scales down proportionally
-    const optimalStock = Math.max(currentStock, 25);
-    const percentage = Math.min(100, (currentStock / optimalStock) * 100);
-    stockInfo.push({
-      unit: 'Kaing',
-      unitLabel: 'kaing',
-      quantity: currentStock,
-      percentage: percentage
-    });
-  }
-
-  if (product.pricePerTray > 0) {
-    const currentStock = product.stockPerTray || 0;
-    // Dynamic percentage: 100% when stock >= 40 trays, scales down proportionally
-    const optimalStock = Math.max(currentStock, 40);
-    const percentage = Math.min(100, (currentStock / optimalStock) * 100);
-    stockInfo.push({
-      unit: 'Tray',
-      unitLabel: 'trays',
-      quantity: currentStock,
-      percentage: percentage
-    });
-  }
-
-  if (product.pricePerPiece > 0) {
-    const currentStock = product.stockPerPiece || 0;
-    // Dynamic percentage: 100% when stock >= 100 pieces, scales down proportionally
-    const optimalStock = Math.max(currentStock, 100);
-    const percentage = Math.min(100, (currentStock / optimalStock) * 100);
-    stockInfo.push({
-      unit: 'Piece',
-      unitLabel: 'pieces',
-      quantity: currentStock,
-      percentage: percentage
-    });
-  }
+  // Get available units for this product
+  const availableUnits = getAvailableUnits(product);
+  
+  // Add stock info for each available unit
+  availableUnits.forEach(unit => {
+    const unitInfo = unitStockMap[unit];
+    if (unitInfo) {
+      const stockQuantity = product[unitInfo.stockField] || 0;
+      
+      // Calculate percentage (assume 100 is optimal stock level)
+      const optimalStock = Math.max(stockQuantity, 100);
+      const percentage = Math.min(100, (stockQuantity / optimalStock) * 100);
+      
+      stockInfo.push({
+        unit: unit,
+        unitLabel: unitInfo.label,
+        quantity: stockQuantity,
+        percentage: percentage
+      });
+    }
+  });
 
   return stockInfo;
 };
@@ -443,19 +345,6 @@ const clickOutside = (event) => {
   if (filterDropdown && !filterDropdown.contains(event.target)) {
     showFilterDropdown.value = false;
   }
-  
-  // Close stock dropdown if clicked outside
-  const stockDropdowns = document.querySelectorAll('.product-stock');
-  let clickedInsideStock = false;
-  stockDropdowns.forEach(dropdown => {
-    if (dropdown.contains(event.target)) {
-      clickedInsideStock = true;
-    }
-  });
-  
-  if (!clickedInsideStock) {
-    openStockDropdown.value = null;
-  }
 };
 
 const getAvailableUnits = (product) => {
@@ -499,13 +388,13 @@ const fetchProducts = async () => {
         pricePerTali: Number(data.pricePerTali) || 0,
         pricePerKaing: Number(data.pricePerKaing) || 0,
         pricePerTray: Number(data.pricePerTray) || 0,
-        pricePerPiece: Number(data.pricePerPiece) || 0,
-        stockPerKilo: Number(data.stockPerKilo) || 0,
+        pricePerPiece: Number(data.pricePerPiece) || 0,        stockPerKilo: Number(data.stockPerKilo) || 0,
         stockPerSack: Number(data.stockPerSack) || 0,
         stockPerTali: Number(data.stockPerTali) || 0,
         stockPerKaing: Number(data.stockPerKaing) || 0,
         stockPerTray: Number(data.stockPerTray) || 0,
         stockPerPiece: Number(data.stockPerPiece) || 0,
+        stock: Number(data.stock) || 0, // Main stock field
         sackWeight: Number(data.sackWeight) || 50,
         kaingWeight: Number(data.kaingWeight) || 12,
         itemsPerTali: Number(data.itemsPerTali) || 10,

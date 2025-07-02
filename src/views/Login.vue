@@ -33,7 +33,15 @@
         <a @click="forgotPassword" href="#" class="forgot-password">Forgot Password?</a>
       </div>
 
-      <button class="login-button" @click="login">Login</button>
+      <button 
+        class="login-button" 
+        @click="login"
+        :disabled="isLocked"
+        :class="{ 'locked': isLocked }"
+      >
+        <span v-if="!isLocked">Login</span>
+        <span v-else>Locked - {{ formatTime(remainingTime) }}</span>
+      </button>
       
       <!-- Social Login Divider -->
       <div class="social-divider">
@@ -41,9 +49,15 @@
       </div>
       
       <!-- Google Login Button -->
-      <button class="google-button" @click="loginWithGoogle">
+      <button 
+        class="google-button" 
+        @click="loginWithGoogle"
+        :disabled="isLocked"
+        :class="{ 'locked': isLocked }"
+      >
         <img src="@/assets/google.png" alt="Google" class="google-icon" />
-        Continue with Google
+        <span v-if="!isLocked">Continue with Google</span>
+        <span v-else>Account Temporarily Locked</span>
       </button>
 
       <p class="signup-text">Don't have an account? <a href="/registration" class="signup-link">Create an account</a></p>
@@ -67,12 +81,31 @@ export default {
       alertType: '',
       pendingVerificationEmail: '',
       showPassword: false,
+      loginAttempts: 0,
+      maxAttempts: 5,
+      isLocked: false,
+      lockoutTime: 300000, // 5 minutes in milliseconds
+      remainingTime: 0,
+      countdownInterval: null,
     };
   },
     methods: {
       async login() {
+        // Check if user is currently locked out
+        if (this.isLocked) {
+          this.showAlert(`Too many failed attempts. Please wait ${this.formatTime(this.remainingTime)} before trying again.`, 'error');
+          return;
+        }
+
         if (!this.email || !this.password) {
           this.showAlert('Please enter both email and password.', 'warning');
+          return;
+        }
+
+        // Basic email format validation
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(this.email)) {
+          this.showAlert('Please enter a valid email address.', 'warning');
           return;
         }
         
@@ -87,22 +120,54 @@ export default {
             return;
           }
 
+          // Reset login attempts on successful login
+          this.resetLoginAttempts();
           await this.processUserLogin(user);
         } catch (error) {
           console.error('Login Error:', error);
+          
+          // Increment failed login attempts
+          this.incrementLoginAttempts();
+          
           let errorMessage = 'Login failed! Check your credentials.';
           
-          if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
-            errorMessage = 'Invalid email or password.';
+          // Check specific error types and provide detailed feedback
+          if (error.code === 'auth/user-not-found') {
+            errorMessage = 'Email not found. Please check your email address or create an account.';
+          } else if (error.code === 'auth/wrong-password') {
+            errorMessage = 'Incorrect password. Please double-check your password or use the eye icon to view it.';
+          } else if (error.code === 'auth/invalid-credential') {
+            // For invalid-credential, we need to check if email exists to give specific feedback
+            const emailExists = await this.checkEmailExists(this.email);
+            if (!emailExists) {
+              errorMessage = 'Email not found. Please check your email address or create an account.';
+            } else {
+              errorMessage = 'Incorrect password. Please double-check your password or use the eye icon to view it.';
+            }
           } else if (error.code === 'auth/too-many-requests') {
             errorMessage = 'Too many failed login attempts. Please try again later.';
+          } else if (error.code === 'auth/invalid-email') {
+            errorMessage = 'Invalid email format. Please enter a valid email address.';
           }
           
-          this.showAlert(errorMessage, 'error');
+          // Check if max attempts reached
+          if (this.loginAttempts >= this.maxAttempts) {
+            this.startLockout();
+            this.showAlert(`Maximum login attempts reached. Please wait ${this.formatTime(this.lockoutTime)} before trying again.`, 'error');
+          } else {
+            // Show error message for failed attempts (but not remaining attempts count)
+            this.showAlert(errorMessage, 'error');
+          }
         }
       },
 
     async loginWithGoogle() {
+      // Check if user is currently locked out
+      if (this.isLocked) {
+        this.showAlert(`Too many failed attempts. Please wait ${this.formatTime(this.remainingTime)} before trying again.`, 'error');
+        return;
+      }
+
       try {
         const result = await signInWithPopup(auth, googleProvider);
         const user = result.user;
@@ -132,6 +197,8 @@ export default {
             authProvider: 'google'
           });
           
+          // Reset login attempts on successful registration/login
+          this.resetLoginAttempts();
           this.showAlert('Account created successfully!', 'success');
           setTimeout(() => {
             this.$router.push('/');
@@ -140,6 +207,8 @@ export default {
         }
         
         // User exists, proceed with login
+        // Reset login attempts on successful login
+        this.resetLoginAttempts();
         await this.processUserLogin(user);
       } catch (error) {
         console.error('Google Login Error:', error);
@@ -195,6 +264,9 @@ export default {
       } else {
         sessionStorage.setItem("authPersist", "true");
       }
+
+      // Reset login attempts on successful login
+      this.resetLoginAttempts();
 
       // Redirect based on role
       if (userData.role === 'admin') {
@@ -292,16 +364,127 @@ export default {
       this.alertType = type;
       setTimeout(() => {
         this.alertMessage = '';
-      }, 5000); // Increased timeout for verification messages
+      }, 7000); // Increased timeout to 7 seconds for better readability
+    },
+
+    // Login attempt management methods
+    incrementLoginAttempts() {
+      this.loginAttempts++;
+      // Store in sessionStorage to persist during session
+      sessionStorage.setItem('loginAttempts', this.loginAttempts.toString());
+      sessionStorage.setItem('lastAttemptTime', Date.now().toString());
+    },
+
+    async checkEmailExists(email) {
+      try {
+        // Check in both admins and users collections
+        const adminQuery = query(collection(db, 'admins'), where('email', '==', email));
+        const adminSnapshot = await getDocs(adminQuery);
+        
+        if (!adminSnapshot.empty) {
+          return true;
+        }
+        
+        const userQuery = query(collection(db, 'users'), where('email', '==', email));
+        const userSnapshot = await getDocs(userQuery);
+        
+        return !userSnapshot.empty;
+      } catch (error) {
+        console.error('Error checking email existence:', error);
+        return false; // If there's an error, assume email doesn't exist
+      }
+    },
+
+    resetLoginAttempts() {
+      this.loginAttempts = 0;
+      sessionStorage.removeItem('loginAttempts');
+      sessionStorage.removeItem('lastAttemptTime');
+      sessionStorage.removeItem('lockoutEndTime');
+    },
+
+    startLockout() {
+      this.isLocked = true;
+      this.remainingTime = this.lockoutTime;
+      const lockoutEndTime = Date.now() + this.lockoutTime;
+      
+      // Store lockout end time in sessionStorage
+      sessionStorage.setItem('lockoutEndTime', lockoutEndTime.toString());
+      
+      this.startCountdown();
+    },
+
+    startCountdown() {
+      this.countdownInterval = setInterval(() => {
+        this.remainingTime -= 1000;
+        
+        if (this.remainingTime <= 0) {
+          this.endLockout();
+        }
+      }, 1000);
+    },
+
+    endLockout() {
+      this.isLocked = false;
+      this.remainingTime = 0;
+      
+      if (this.countdownInterval) {
+        clearInterval(this.countdownInterval);
+        this.countdownInterval = null;
+      }
+      
+      // Reset attempts after lockout
+      this.resetLoginAttempts();
+      this.showAlert('You can now try logging in again.', 'info');
+    },
+
+    formatTime(milliseconds) {
+      const totalSeconds = Math.ceil(milliseconds / 1000);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    },
+
+    checkExistingLockout() {
+      const lockoutEndTime = sessionStorage.getItem('lockoutEndTime');
+      const storedAttempts = sessionStorage.getItem('loginAttempts');
+      
+      if (lockoutEndTime) {
+        const endTime = parseInt(lockoutEndTime);
+        const currentTime = Date.now();
+        
+        if (currentTime < endTime) {
+          // Still locked out
+          this.isLocked = true;
+          this.remainingTime = endTime - currentTime;
+          this.startCountdown();
+          this.showAlert(`Account temporarily locked. Please wait ${this.formatTime(this.remainingTime)} before trying again.`, 'error');
+        } else {
+          // Lockout expired
+          this.resetLoginAttempts();
+        }
+      } else if (storedAttempts) {
+        // Restore attempt count if no lockout
+        this.loginAttempts = parseInt(storedAttempts);
+      }
     },
   },
   mounted() {
+    // Check for existing lockout first
+    this.checkExistingLockout();
+    
     this.checkStoredSession();
     
     // Check if we were redirected from registration
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('registered') === 'true') {
       this.showAlert('Registration successful! Please check your email to verify your account before logging in.', 'success');
+    }
+  },
+
+  beforeUnmount() {
+    // Clean up countdown interval
+    if (this.countdownInterval) {
+      clearInterval(this.countdownInterval);
     }
   }
 };
@@ -436,6 +619,37 @@ export default {
   border-left: 5px solid #17a2b8;
 }
 
+/* Login Attempts Warning */
+.attempts-warning {
+  padding: 10px 15px;
+  margin-bottom: 15px;
+  border-radius: 8px;
+  text-align: center;
+  font-size: 13px;
+  width: 90%;
+  max-width: 450px;
+  background: #fff3cd;
+  color: #856404;
+  border: 1px solid #ffeaa7;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  animation: pulse 2s infinite;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.attempts-warning i {
+  color: #f39c12;
+  font-size: 14px;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+  100% { transform: scale(1); }
+}
+
 /* Login Box */
 .login-box {
   background: white;
@@ -475,6 +689,7 @@ export default {
   -webkit-box-shadow: none !important;
   -moz-box-shadow: none !important;
   -webkit-appearance: none !important;
+  appearance: none !important;
 }
 
 .icon {
@@ -607,6 +822,24 @@ input::placeholder {
   box-shadow: 0 2px 5px rgba(46, 92, 49, 0.4);
 }
 
+/* Locked button state */
+.login-button.locked {
+  background: linear-gradient(to right, #dc3545, #c82333);
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+
+.login-button.locked:hover {
+  background: linear-gradient(to right, #dc3545, #c82333);
+  transform: none;
+  box-shadow: 0 4px 10px rgba(220, 53, 69, 0.3);
+}
+
+.login-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
 /* Social Login Divider */
 .social-divider {
   display: flex;
@@ -650,6 +883,23 @@ input::placeholder {
 .google-button:hover {
   background: #f8f8f8;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+.google-button.locked {
+  background: #f5f5f5;
+  color: #999;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.google-button.locked:hover {
+  background: #f5f5f5;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+}
+
+.google-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .google-icon {
@@ -785,6 +1035,11 @@ input::placeholder {
   .logo {
     width: 220px;
   }
+  
+  .attempts-warning {
+    font-size: 12px;
+    padding: 8px 12px;
+  }
 }
 
 /* For very small screens */
@@ -804,6 +1059,11 @@ input::placeholder {
   .checkmark {
     height: 14px;
     width: 14px;
+  }
+  
+  .attempts-warning {
+    font-size: 11px;
+    padding: 6px 10px;
   }
 }
 </style>

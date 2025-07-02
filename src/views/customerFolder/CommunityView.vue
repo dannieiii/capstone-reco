@@ -3,27 +3,27 @@
     <div class="header">
       <div class="search-container">
         <div class="search-bar">
-          <Search size="18" />
+          <Search :size="18" />
           <input 
             type="text" 
-            placeholder='Search community posts...' 
+            placeholder="Search community posts..." 
             v-model="searchQuery"
           >
         </div>
         <div class="header-buttons">
           <button class="icon-button" @click="navigateToPath('/cart')">
-            <ShoppingCart size="18" />
+            <ShoppingCart :size="18" />
             <span v-if="cartItems.length > 0" class="cart-badge">{{ cartItems.length }}</span>
           </button>
           <button class="icon-button profile-icon" @click="toggleProfileMenu" ref="profileRef">
-            <User size="18" />
+            <User :size="18" />
           </button>
           
           <div class="profile-dropdown" v-if="showProfileMenu">
             <div class="dropdown-header">
               <div class="user-avatar">
                 <img v-if="currentUser?.photoURL" :src="currentUser.photoURL" alt="User avatar">
-                <User v-else size="24" />
+                <User v-else :size="24" />
               </div>
               <div class="user-info">
                 <h4>{{ currentUser?.displayName || 'Anonymous' }}</h4>
@@ -32,15 +32,15 @@
             </div>
             <div class="dropdown-menu">
               <button @click="navigateToPath('/profile')">
-                <User size="16" />
+                <User :size="16" />
                 <span>My Profile</span>
               </button>
               <button @click="navigateToPath('/my-posts')" v-if="currentUser">
-                <FileText size="16" />
+                <FileText :size="16" />
                 <span>My Posts</span>
               </button>
               <button @click="signOut">
-                <LogOut size="16" />
+                <LogOut :size="16" />
                 <span>Sign Out</span>
               </button>
             </div>
@@ -50,31 +50,25 @@
       
       <div class="community-header">
         <h2>Community Forum</h2>
-        <p>Connect with other farmers - ask questions, share updates, and discuss</p>
+        <p>Share updates, ask about products, and connect with other farmers</p>
       </div>
     </div>
     
     <div class="content">
-      <!-- Create New Post Button -->
-      <button class="create-post-button" @click="openNewPostModal">
-        <Plus size="18" />
-        <span>Create Post</span>
-      </button>
-      
-      <!-- Post Type Toggle -->
-      <div class="post-type-toggle">
-        <button 
-          :class="{ active: showQuestions }"
-          @click="showQuestions = true"
-        >
-          Questions
-        </button>
-        <button 
-          :class="{ active: !showQuestions }"
-          @click="showQuestions = false"
-        >
-          Community Posts
-        </button>
+      <!-- Create New Post Section -->
+      <div class="create-post-section">
+        <div class="post-composer" @click="openNewPostModal">
+          <div class="composer-avatar">
+            <img v-if="currentUser?.photoURL" :src="currentUser.photoURL" alt="Your avatar">
+            <User v-else :size="20" />
+          </div>
+          <div class="composer-input">
+            <span>What's on your mind? Ask about products or share updates...</span>
+          </div>
+          <div class="composer-actions">
+            <Image :size="20" class="action-icon" />
+          </div>
+        </div>
       </div>
       
       <!-- Active Filters -->
@@ -82,7 +76,7 @@
         <div class="filter-tag" v-if="searchQuery">
           Search: "{{ searchQuery }}"
           <button class="clear-filter" @click="clearSearch">
-            <X size="12" />
+            <X :size="12" />
           </button>
         </div>
         <button class="clear-all-filters" @click="clearAllFilters">
@@ -98,15 +92,12 @@
       
       <!-- Empty State -->
       <div v-else-if="filteredPosts.length === 0" class="no-posts">
-        <img src="https://cdn-icons-png.flaticon.com/512/4076/4076478.png" alt="No posts" class="no-posts-icon">
-        <h3>No posts found</h3>
-        <p v-if="hasActiveFilters">Try adjusting your filters</p>
-        <p v-else>Be the first to create a post!</p>
-        <button class="browse-all-btn" @click="clearAllFilters" v-if="hasActiveFilters">
-          Reset Filters
-        </button>
-        <button class="create-post-btn" @click="openNewPostModal" v-else>
-          Create Post
+        <div class="no-posts-icon">📝</div>
+        <h3>No posts yet</h3>
+        <p v-if="hasActiveFilters">Try adjusting your search</p>
+        <p v-else>Be the first to share something with the community!</p>
+        <button class="create-post-btn" @click="openNewPostModal">
+          Create First Post
         </button>
       </div>
       
@@ -120,159 +111,271 @@
           <div class="post-header">
             <div class="user-info">
               <div class="avatar">
-                <img v-if="post.userPhoto" :src="post.userPhoto" alt="User avatar">
-                <User v-else size="24" class="default-avatar" />
+                <img v-if="post.userPhoto && !post.isAnonymous" :src="post.userPhoto" alt="User avatar">
+                <User v-else :size="24" class="default-avatar" />
               </div>
               <div class="user-details">
-                <h4>{{ post.userName }}</h4>
+                <h4>{{ post.isAnonymous ? 'Anonymous Farmer' : post.userName }}</h4>
                 <p class="post-time">{{ formatTime(post.createdAt) }}</p>
+                <div v-if="post.productId" class="product-tag">
+                  <Package :size="12" />
+                  <span>Asked about: {{ post.productName }}</span>
+                </div>
               </div>
             </div>
-            <div class="post-category" v-if="post.category">
-              {{ getCategoryLabel(post.category) }}
-              <span v-if="post.isQuestion" class="question-badge">Question</span>
+            <div class="post-menu">
+              <button class="menu-button" @click="togglePostMenu(post.id)">
+                <MoreHorizontal :size="16" />
+              </button>
+              <div class="post-dropdown" v-if="activePostMenu === post.id">
+                <button @click="reportPost(post.id)">Report Post</button>
+                <button v-if="post.userId === currentUser?.uid" @click="deletePost(post.id)">Delete Post</button>
+              </div>
             </div>
           </div>
           
-          <div class="post-content" @click="viewPost(post)">
-            <h3 v-if="post.title">{{ post.title }}</h3>
-            <p class="post-text">{{ truncateText(post.content, 150) }}</p>
+          <div class="post-content">
+            <p class="post-text">{{ post.content }}</p>
+            
+            <!-- Product Reference Card -->
+            <div v-if="post.productId && post.productData" class="product-reference-card" @click="viewProduct(post.productData)">
+              <div class="product-ref-image">
+                <img :src="post.productData.image || '/placeholder.svg?height=60&width=60'" alt="Product">
+              </div>
+              <div class="product-ref-info">
+                <h4>{{ post.productData.productName }}</h4>
+                <p class="product-ref-price">₱{{ getProductPrice(post.productData) }}</p>
+                <span class="view-product-btn">View Product →</span>
+              </div>
+            </div>
             
             <div v-if="post.image" class="post-image">
               <img :src="post.image" alt="Post image" @error="handleImageError">
             </div>
           </div>
           
-  <div class="post-stats">
-    <div class="stat" @click.stop="toggleReactionMenu(post.id)">
-      <ThumbsUp v-if="!getUserReaction(post.id)" size="14" />
-      <ThumbsUp v-else size="14" fill="#4a90e2" color="#4a90e2" />
-      <span>{{ post.likeCount || 0 }}</span>
-    
-    <!-- Reaction menu -->
-  <div class="reaction-menu" v-if="activeReactionMenu === post.id">
-        <button @click.stop="addReaction(post.id, 'like')">👍 Like</button>
-        <button @click.stop="addReaction(post.id, 'love')">❤️ Love</button>
-        <button @click.stop="addReaction(post.id, 'laugh')">😂 Haha</button>
-      </div>
-    </div>
-  
-    <div class="stat" @click.stop="openCommentModal(post)">
-      <MessageSquare size="14" />
-      <span>{{ post.replyCount || 0 }} {{ post.replyCount === 1 ? 'reply' : 'replies' }}</span>
-    </div>
-  </div>
+          <div class="post-engagement">
+            <!-- Reaction Summary -->
+            <div class="reaction-summary" v-if="getTotalReactions(post) > 0">
+              <div class="reaction-icons">
+                <span v-if="post.likeCount > 0" class="reaction-emoji">👍</span>
+                <span v-if="post.loveCount > 0" class="reaction-emoji">❤️</span>
+                <span v-if="post.laughCount > 0" class="reaction-emoji">😂</span>
+                <span v-if="post.wowCount > 0" class="reaction-emoji">😮</span>
+                <span v-if="post.sadCount > 0" class="reaction-emoji">😢</span>
+                <span v-if="post.angryCount > 0" class="reaction-emoji">😠</span>
+              </div>
+              <span class="reaction-count">{{ getTotalReactions(post) }}</span>
+              <span class="comment-count" v-if="post.replyCount > 0">
+                {{ post.replyCount }} {{ post.replyCount === 1 ? 'comment' : 'comments' }}
+              </span>
+            </div>
+            
+            <!-- Action Buttons -->
+            <div class="post-actions">
+              <div class="action-button reaction-button" @click.stop="toggleReactionMenu(post.id)">
+                <ThumbsUp 
+                  :size="16" 
+                  :class="{ 'reacted': getUserReaction(post.id) }"
+                  :fill="getUserReaction(post.id) ? getReactionColor(getUserReaction(post.id)) : 'none'"
+                  :color="getUserReaction(post.id) ? getReactionColor(getUserReaction(post.id)) : 'currentColor'"
+                />
+                <span 
+                  :class="{ 'reacted': getUserReaction(post.id) }" 
+                  :style="{ color: getUserReaction(post.id) ? getReactionColor(getUserReaction(post.id)) : '' }"
+                >
+                  {{ getUserReaction(post.id) ? getReactionLabel(getUserReaction(post.id)) : 'Like' }}
+                </span>
+                
+                <!-- Reaction Menu - Fixed for Mobile -->
+                <div class="reaction-menu" v-if="activeReactionMenu === post.id" @click.stop>
+                  <button @click="addReaction(post.id, 'like')" class="reaction-option">
+                    <span class="reaction-emoji">👍</span>
+                    <span class="reaction-label">Like</span>
+                  </button>
+                  <button @click="addReaction(post.id, 'love')" class="reaction-option">
+                    <span class="reaction-emoji">❤️</span>
+                    <span class="reaction-label">Love</span>
+                  </button>
+                  <button @click="addReaction(post.id, 'laugh')" class="reaction-option">
+                    <span class="reaction-emoji">😂</span>
+                    <span class="reaction-label">Haha</span>
+                  </button>
+                  <button @click="addReaction(post.id, 'wow')" class="reaction-option">
+                    <span class="reaction-emoji">😮</span>
+                    <span class="reaction-label">Wow</span>
+                  </button>
+                  <button @click="addReaction(post.id, 'sad')" class="reaction-option">
+                    <span class="reaction-emoji">😢</span>
+                    <span class="reaction-label">Sad</span>
+                  </button>
+                  <button @click="addReaction(post.id, 'angry')" class="reaction-option">
+                    <span class="reaction-emoji">😠</span>
+                    <span class="reaction-label">Angry</span>
+                  </button>
+                </div>
+              </div>
+              
+              <div class="action-button" @click.stop="toggleComments(post.id)">
+                <MessageSquare :size="16" />
+                <span>Comment</span>
+              </div>
+              
+              <div class="action-button" @click.stop="sharePost(post.id)">
+                <Share2 :size="16" />
+                <span>Share</span>
+              </div>
+            </div>
+            
+            <!-- Comments Section -->
+            <div class="comments-section" v-if="expandedComments.includes(post.id)">
+              <div class="comment-composer">
+                <div class="comment-avatar">
+                  <img v-if="currentUser?.photoURL" :src="currentUser.photoURL" alt="Your avatar">
+                  <User v-else :size="16" />
+                </div>
+                <div class="comment-input-container">
+                  <input 
+                    type="text" 
+                    v-model="commentTexts[post.id]"
+                    :placeholder="`Comment as ${currentUser?.displayName || 'Anonymous'}...`"
+                    @keyup.enter="submitComment(post.id)"
+                    class="comment-input"
+                  >
+                  <button 
+                    v-if="commentTexts[post.id]?.trim()"
+                    @click="submitComment(post.id)"
+                    class="send-comment-btn"
+                  >
+                    <Send :size="14" />
+                  </button>
+                </div>
+              </div>
+              
+              <div class="comments-list" v-if="post.replies && post.replies.length > 0">
+                <div 
+                  class="comment-item" 
+                  v-for="(comment, index) in post.replies.slice().reverse()" 
+                  :key="index"
+                >
+                  <div class="comment-avatar">
+                    <img v-if="comment.userPhoto" :src="comment.userPhoto" alt="Commenter avatar">
+                    <User v-else :size="16" />
+                  </div>
+                  <div class="comment-content">
+                    <div class="comment-bubble">
+                      <div class="comment-author">{{ comment.userName }}</div>
+                      <div class="comment-text">{{ comment.content }}</div>
+                    </div>
+                    <div class="comment-actions">
+                      <span class="comment-time">{{ formatTime(comment.createdAt) }}</span>
+                      <button class="comment-action">Like</button>
+                      <button class="comment-action">Reply</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
     
     <!-- New Post Modal -->
-    <div class="modal-overlay" v-if="showNewPostModal">
-      <div class="modal-content">
+    <div class="modal-overlay" v-if="showNewPostModal" @click="closeNewPostModal">
+      <div class="modal-content" @click.stop>
         <div class="modal-header">
-          <h3>{{ newPost.isQuestion ? 'Ask a Question' : 'Create Post' }}</h3>
+          <h3>Create Post</h3>
           <button class="close-modal" @click="closeNewPostModal">
-            <X size="20" />
+            <X :size="20" />
           </button>
         </div>
-        <!-- Comment Modal -->
-<div class="modal-overlay" v-if="showCommentModal">
-  <div class="modal-content">
-    <div class="modal-header">
-      <h3>Add Comment</h3>
-      <button class="close-modal" @click="closeCommentModal">
-        <X size="20" />
-      </button>
-    </div>
-    
-    <div class="modal-body">
-      <div class="form-group">
-        <textarea v-model="commentText" placeholder="Write your comment..." rows="4"></textarea>
-      </div>
-    </div>
-    
-    <div class="modal-footer">
-      <button class="cancel-btn" @click="closeCommentModal">
-        Cancel
-      </button>
-      <button class="submit-btn" @click="submitComment" :disabled="!commentText.trim()">
-        Post Comment
-      </button>
-    </div>
-  </div>
-</div>
         
         <div class="modal-body">
-    <div class="post-type-switch">
-      <button 
-        :class="{ active: newPost.isQuestion }"
-        @click="newPost.isQuestion = true"
-      >
-        Question
-      </button>
-      <button 
-        :class="{ active: !newPost.isQuestion }"
-        @click="newPost.isQuestion = false"
-      >
-        General Post
-      </button>
-    </div>
-
-    <!-- Add anonymous toggle -->
-    <div class="form-group anonymous-toggle">
-      <label>Post as:</label>
-      <div class="toggle-options">
-        <button 
-          :class="{ active: !newPost.isAnonymous }"
-          @click="newPost.isAnonymous = false"
-        >
-          <User size="14" />
-          <span>My Username</span>
-        </button>
-        <button 
-          :class="{ active: newPost.isAnonymous }"
-          @click="newPost.isAnonymous = true"
-        >
-          <EyeOff size="14" />
-          <span>Anonymous</span>
-        </button>
-      </div>
-    </div>
-
-
-          <div class="form-group" v-if="newPost.isQuestion">
-            <label>Question Title*</label>
-            <input 
-              type="text" 
-              v-model="newPost.title" 
-              placeholder="What's your question?"
-              maxlength="100"
-            >
+          <div class="post-author">
+            <div class="author-avatar">
+              <img v-if="currentUser?.photoURL && !newPost.isAnonymous" :src="currentUser.photoURL" alt="Your avatar">
+              <User v-else :size="24" />
+            </div>
+            <div class="author-info">
+              <div class="author-name">
+                {{ newPost.isAnonymous ? 'Anonymous Farmer' : (currentUser?.displayName || 'Anonymous') }}
+              </div>
+              <div class="privacy-selector">
+                <Globe :size="12" />
+                <span>Public</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Anonymous Toggle -->
+          <div class="anonymous-toggle">
+            <label>Post as:</label>
+            <div class="toggle-options">
+              <button 
+                :class="{ active: !newPost.isAnonymous }"
+                @click="newPost.isAnonymous = false"
+              >
+                <User :size="14" />
+                <span>{{ currentUser?.displayName || 'My Name' }}</span>
+              </button>
+              <button 
+                :class="{ active: newPost.isAnonymous }"
+                @click="newPost.isAnonymous = true"
+              >
+                <EyeOff :size="14" />
+                <span>Anonymous</span>
+              </button>
+            </div>
+          </div>
+          
+          <!-- Product Reference Section -->
+          <div class="product-reference-section" v-if="selectedProduct">
+            <div class="product-ref-header">
+              <Package :size="16" />
+              <span>Asking about this product:</span>
+              <button @click="removeProductReference" class="remove-product-btn">
+                <X :size="14" />
+              </button>
+            </div>
+            <div class="selected-product-card">
+              <img :src="selectedProduct.image || '/placeholder.svg?height=50&width=50'" alt="Product">
+              <div class="selected-product-info">
+                <h4>{{ selectedProduct.productName }}</h4>
+                <p>₱{{ getProductPrice(selectedProduct) }}</p>
+              </div>
+            </div>
           </div>
           
           <div class="form-group">
-            <label>{{ newPost.isQuestion ? 'Question Details*' : 'Post Content*' }}</label>
             <textarea 
               v-model="newPost.content" 
-              :placeholder="newPost.isQuestion ? 'Provide more details about your question...' : 'Share your thoughts with the community...'"
-              rows="5"
+              :placeholder="selectedProduct ? 'Ask your question about this product...' : 'What\'s on your mind? Share updates, ask about products, or start a discussion...'"
+              rows="4"
+              class="post-textarea"
             ></textarea>
           </div>
           
-          <div class="form-group">
-            <label>Add Image (Optional)</label>
-            <div class="image-upload-container">
-              <div 
-                class="image-preview" 
-                :class="{ 'has-image': newPost.image }"
-                @click="triggerFileInput"
-              >
-                <img v-if="newPost.image" :src="newPost.image" alt="Post preview" />
-                <div v-else class="upload-placeholder">
-                  <Image :size="24" />
-                  <p>Click to upload image</p>
-                </div>
-              </div>
+          <div class="form-group" v-if="newPost.image">
+            <div class="image-preview-container">
+              <img :src="newPost.image" alt="Post preview" class="image-preview" />
+              <button class="remove-image" @click="removeImage">
+                <X :size="16" />
+              </button>
+            </div>
+          </div>
+          
+          <div class="post-options">
+            <div class="option-label">Add to your post</div>
+            <div class="post-actions-row">
+              <button class="post-option" @click="triggerFileInput">
+                <Image :size="20" color="#45bd62" />
+                <span>Photo</span>
+              </button>
+              <button class="post-option" @click="openProductSelector">
+                <Package :size="20" color="#e74c3c" />
+                <span>Product</span>
+              </button>
               <input 
                 type="file" 
                 ref="fileInput" 
@@ -285,531 +388,645 @@
         </div>
         
         <div class="modal-footer">
-          <button class="cancel-btn" @click="closeNewPostModal">
-            Cancel
-          </button>
           <button 
             class="submit-btn" 
             @click="submitPost"
             :disabled="!isValidPost"
+            :class="{ 'disabled': !isValidPost }"
           >
-            {{ newPost.isQuestion ? 'Post Question' : 'Share Post' }}
+            Post
           </button>
         </div>
       </div>
     </div>
     
-    <bottom-navigation active-tab="/community" @navigate="handleBottomNavigation" />
+    <!-- Product Selector Modal -->
+    <div class="modal-overlay" v-if="showProductSelector" @click="closeProductSelector">
+      <div class="modal-content product-selector-modal" @click.stop>
+        <div class="modal-header">
+          <h3>Select a Product</h3>
+          <button class="close-modal" @click="closeProductSelector">
+            <X :size="20" />
+          </button>
+        </div>
+        
+        <div class="modal-body">
+          <div class="product-search">
+            <Search :size="16" />
+            <input 
+              type="text" 
+              v-model="productSearchQuery"
+              placeholder="Search products..."
+              class="product-search-input"
+            >
+          </div>
+          
+          <div class="products-grid" v-if="filteredProducts.length > 0">
+            <div 
+              class="product-item" 
+              v-for="product in filteredProducts" 
+              :key="product.id"
+              @click="selectProduct(product)"
+            >
+              <img :src="product.image || '/placeholder.svg?height=60&width=60'" alt="Product">
+              <div class="product-item-info">
+                <h4>{{ product.productName }}</h4>
+                <p>₱{{ getProductPrice(product) }}</p>
+              </div>
+            </div>
+          </div>
+          
+          <div v-else class="no-products">
+            <Package :size="48" />
+            <p>No products found</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <BottomNavigation active-tab="/community" @navigate="handleBottomNavigation" />
   </div>
 </template>
-<script>
+
+<script setup>
 import BottomNavigation from '@/components/BottomNavigation.vue';
 import { 
   Search, 
   ShoppingCart, 
   User, 
-  Plus, 
   X, 
   MessageSquare, 
   ThumbsUp, 
-  Star,
   Image,
   LogOut,
   FileText,
-  EyeOff
+  MoreHorizontal,
+  Share2,
+  Send,
+  Globe,
+  EyeOff,
+  Package
 } from 'lucide-vue-next';
-import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { useRouter } from 'vue-router';
-import { auth, db, storage } from '@/firebase/firebaseConfig';
+import { ref, computed, onMounted, onUnmounted, reactive } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
+import { auth, db } from '@/firebase/firebaseConfig';
 import { 
   collection, 
   getDocs, 
   addDoc, 
   serverTimestamp, 
   query, 
-  where, 
   onSnapshot,
   doc,
   updateDoc,
   deleteDoc,
-  getDoc,
   increment,
   arrayUnion,
-  arrayRemove
+  arrayRemove,
+  getDoc
 } from 'firebase/firestore';
 import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
-import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 
-export default {
-  components: {
-    BottomNavigation,
-    Search,
-    ShoppingCart,
-    User,
-    Plus,
-    X,
-    MessageSquare,
-    ThumbsUp,
-    Star,
-    Image,
-    LogOut,
-    FileText,
-    EyeOff
-  },
-  setup() {
-    const router = useRouter();
-    const showProfileMenu = ref(false);
-    const profileRef = ref(null);
-    const cartItems = ref([]);
-    const isLoading = ref(true);
-    const posts = ref([]);
-    const searchQuery = ref('');
-    const showNewPostModal = ref(false);
-    const fileInput = ref(null);
-    const currentUser = ref(null);
-    const showQuestions = ref(true);
-    const activeReactionMenu = ref(null);
-    const showCommentModal = ref(false);
-    const selectedPost = ref(null);
-    const commentText = ref('');
+const router = useRouter();
+const route = useRoute();
+const showProfileMenu = ref(false);
+const profileRef = ref(null);
+const cartItems = ref([]);
+const isLoading = ref(true);
+const posts = ref([]);
+const searchQuery = ref('');
+const showNewPostModal = ref(false);
+const fileInput = ref(null);
+const currentUser = ref(null);
+const activeReactionMenu = ref(null);
+const activePostMenu = ref(null);
+const expandedComments = ref([]);
+const commentTexts = reactive({});
+const showProductSelector = ref(false);
+const productSearchQuery = ref('');
+const availableProducts = ref([]);
+const selectedProduct = ref(null);
 
-    const triggerFileInput = () => {
-      fileInput.value.click();
-    };
-    
-    const postCategories = [
-      { value: 'general', label: 'General Farming' }
-    ];
-    
-    const newPost = ref({
-      title: '',
-      content: '',
-      category: 'general',
-      image: null,
-      imageFile: null,
-      isQuestion: true,
-      isAnonymous: false
-    });
-    
-    const isValidPost = computed(() => {
-      if (newPost.value.isQuestion) {
-        return newPost.value.title.trim() && newPost.value.content.trim();
-      }
-      return newPost.value.content.trim();
-    });
-    
-    const filteredPosts = computed(() => {
-      let result = [...posts.value];
-      
-      result = result.filter(post => post.isQuestion === showQuestions.value);
-      
-      if (searchQuery.value) {
-        const query = searchQuery.value.toLowerCase();
-        result = result.filter(post => 
-          (post.title && post.title.toLowerCase().includes(query)) || 
-          post.content.toLowerCase().includes(query)
-        );
-      }
-      
-      return result.sort((a, b) => {
-        if (a.isFeatured !== b.isFeatured) {
-          return a.isFeatured ? -1 : 1;
-        }
-        return b.createdAt - a.createdAt;
-      });
-    });
-    
-    const hasActiveFilters = computed(() => {
-      return searchQuery.value;
-    });
-    
-    const getCategoryLabel = (value) => {
-      const category = postCategories.find(cat => cat.value === value);
-      return category ? category.label : 'General';
-    };
-    
-    const formatTime = (timestamp) => {
-      if (!timestamp) return '';
-      
-      try {
-        let date;
-        
-        if (typeof timestamp === 'object' && timestamp.toDate) {
-          // Firestore timestamp
-          date = timestamp.toDate();
-        } else if (timestamp instanceof Date) {
-          // Date object
-          date = timestamp;
-        } else if (typeof timestamp === 'number') {
-          // Unix timestamp (ms)
-          date = new Date(timestamp);
-        } else {
-          return '';
-        }
-        
-        return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      } catch (error) {
-        console.error('Error formatting timestamp:', error);
-        return '';
-      }
-    };
-    
-    const truncateText = (text, maxLength) => {
-      if (!text) return '';
-      return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
-    };
-    
-    const handleImageUpload = (event) => {
-      const file = event.target.files[0];
-      if (!file) return;
-      
-      if (!file.type.match('image.*')) {
-        alert('Please select an image file');
-        return;
-      }
-      
-      if (file.size > 2 * 1024 * 1024) {
-        alert('Image size should not exceed 2MB');
-        return;
-      }
-      
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        newPost.value.image = e.target.result;
-      };
-      reader.readAsDataURL(file);
-    };
-    
-    const handleImageError = (event) => {
-      event.target.style.display = 'none';
-    };
-    
-    const clearSearch = () => {
-      searchQuery.value = '';
-    };
-    
-    const clearAllFilters = () => {
-      searchQuery.value = '';
-    };
-    
-    const openNewPostModal = () => {
-      if (!currentUser.value) {
-        router.push('/login');
-        return;
-      }
-      showNewPostModal.value = true;
-    };
-    
-    const closeNewPostModal = () => {
-      showNewPostModal.value = false;
-      newPost.value = {
-        title: '',
-        content: '',
-        category: 'general',
-        image: null,
-        imageFile: null,
-        isQuestion: true,
-        isAnonymous: false
-      };
-      if (fileInput.value) {
-        fileInput.value.value = '';
-      }
-    };
-    
-    const submitPost = async () => {
-      if (!isValidPost.value) return;
-      
-      const user = auth.currentUser;
-      if (!user) {
-        alert('Please sign in to post');
-        return;
-      }
-      
-      try {
-        let imageUrl = newPost.value.image;
-        
-        const postData = {
-          title: newPost.value.isQuestion ? newPost.value.title : null,
-          content: newPost.value.content,
-          category: newPost.value.category,
-          userId: user.uid,
-          userName: newPost.value.isAnonymous ? 'Anonymous Farmer' : (user.displayName || 'Anonymous Farmer'),
-          userPhoto: newPost.value.isAnonymous ? null : (user.photoURL || null),
-          userRole: 'customer',
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-          isQuestion: newPost.value.isQuestion,
-          isFeatured: false,
-          image: imageUrl,
-          replyCount: 0,
-          reactionCount: 0,
-          viewCount: 0,
-          isAnonymous: newPost.value.isAnonymous,
-          reactions: []
-        };
-        
-        const docRef = await addDoc(collection(db, 'communityPosts'), postData);
-        console.log('Post created with ID: ', docRef.id);
-        
-        closeNewPostModal();
-      } catch (error) {
-        console.error('Error creating post:', error);
-        alert('Error creating post. Please try again.');
-      }
-    };
-    
-    const toggleReactionMenu = (postId) => {
-      if (!currentUser.value) {
-        router.push('/login');
-        return;
-      }
-      activeReactionMenu.value = activeReactionMenu.value === postId ? null : postId;
-    };
-    
-const addReaction = async (postId, reactionType) => {
-      if (!currentUser.value) {
-        router.push('/login');
-        return;
-      }
-      
-      try {
-        const postRef = doc(db, 'communityPosts', postId);
-        const post = posts.value.find(p => p.id === postId);
-        
-        // Check if user already reacted
-        const existingReactionIndex = post.reactions?.findIndex(
-          r => r.userId === currentUser.value.uid
-        ) ?? -1;
-        
-        if (existingReactionIndex >= 0) {
-          const existingReaction = post.reactions[existingReactionIndex];
-          // Remove existing reaction by decrementing its counter
-          const updateData = {
-            reactions: arrayRemove(existingReaction),
-            [`${existingReaction.reactionType}Count`]: increment(-1)
-          };
-          
-          await updateDoc(postRef, updateData);
-          
-          // If same reaction type, just remove it and return
-          if (existingReaction.reactionType === reactionType) {
-            activeReactionMenu.value = null;
-            return;
-          }
-        }
-        
-        // Add new reaction
-        const newReaction = {
-          userId: currentUser.value.uid,
-          reactionType,
-          timestamp: Date.now()
-        };
-        
-        await updateDoc(postRef, {
-          reactions: arrayUnion(newReaction),
-          [`${reactionType}Count`]: increment(1)
-        });
-        
-        activeReactionMenu.value = null;
-      } catch (error) {
-        console.error('Error adding reaction:', error);
-      }
-    };
-    
-    const openCommentModal = (post) => {
-      if (!currentUser.value) {
-        router.push('/login');
-        return;
-      }
-      selectedPost.value = post;
-      showCommentModal.value = true;
-    };
-    
-    const closeCommentModal = () => {
-      showCommentModal.value = false;
-      commentText.value = '';
-      selectedPost.value = null;
-    };
-    
-    const submitComment = async () => {
-      if (!commentText.value.trim() || !selectedPost.value) return;
-      
-      try {
-        const user = auth.currentUser;
-        const commentData = {
-          content: commentText.value,
-          userId: user.uid,
-          userName: user.displayName || 'Anonymous Farmer',
-          userPhoto: user.photoURL || null,
-          createdAt: Date.now() // Using client-side timestamp
-        };
-        
-        const postRef = doc(db, 'communityPosts', selectedPost.value.id);
-        await updateDoc(postRef, {
-          replies: arrayUnion(commentData),
-          replyCount: increment(1)
-        });
-        
-        closeCommentModal();
-      } catch (error) {
-        console.error('Error submitting comment:', error);
-        alert('Failed to submit comment. Please try again.');
-      }
-    };
-    
-    const viewPost = (post) => {
-      router.push(`/community/${post.id}`);
-    };
-    
-    const getUserReaction = (postId) => {
-      if (!currentUser.value) return null;
-      const post = posts.value.find(p => p.id === postId);
-      if (!post || !post.reactions) return null;
-      return post.reactions.find(r => r.userId === currentUser.value.uid)?.reactionType || null;
-    };
-    
-    const navigateToPath = (path, query = null) => {
-      showProfileMenu.value = false;
-      if (query) {
-        router.push({ path, query });
-      } else {
-        router.push(path);
-      }
-    };
-    
-    const toggleProfileMenu = () => {
-      showProfileMenu.value = !showProfileMenu.value;
-    };
-    
-    const handleBottomNavigation = (path) => {
-      router.push(path);
-    };
-    
-    const handleClickOutside = (event) => {
-      if (profileRef.value && !profileRef.value.contains(event.target)) {
-        showProfileMenu.value = false;
-      }
-    };
-    
-    const signOut = async () => {
-      try {
-        await firebaseSignOut(auth);
-        router.push('/login');
-      } catch (error) {
-        console.error('Error signing out:', error);
-      }
-    };
-    
-    let unsubscribePosts = null;
-    
-const fetchPosts = async () => {
-      try {
-        isLoading.value = true;
-        
-        const q = query(collection(db, 'communityPosts'));
-        unsubscribePosts = onSnapshot(q, (querySnapshot) => {
-          const allPosts = querySnapshot.docs.map(doc => {
-            const data = doc.data();
-            return {
-              id: doc.id,
-              ...data,
-              createdAt: data.createdAt || serverTimestamp(),
-              replies: data.replies || [],
-              likeCount: data.likeCount || 0,
-              loveCount: data.loveCount || 0,
-              laughCount: data.laughCount || 0,
-              replyCount: data.replyCount || 0,
-              viewCount: data.viewCount || 0,
-              isFeatured: data.isFeatured || false,
-              isQuestion: data.isQuestion || false,
-              isAnonymous: data.isAnonymous || false,
-              reactions: data.reactions || []
-            };
-          });
-          
-          posts.value = allPosts;
-          isLoading.value = false;
-        });
-        
-        onAuthStateChanged(auth, (user) => {
-          currentUser.value = user;
-        });
-      } catch (error) {
-        console.error('Error fetching posts:', error);
-        isLoading.value = false;
-      }
-    };
+const newPost = ref({
+  content: '',
+  image: null,
+  imageFile: null,
+  isAnonymous: false,
+  productId: null,
+  productName: null
+});
 
+const isValidPost = computed(() => {
+  return newPost.value.content.trim().length > 0;
+});
+
+const filteredPosts = computed(() => {
+  let result = [...posts.value];
+  
+  if (searchQuery.value) {
+    const query = searchQuery.value.toLowerCase();
+    result = result.filter(post => 
+      post.content.toLowerCase().includes(query) ||
+      (post.userName && post.userName.toLowerCase().includes(query)) ||
+      (post.productName && post.productName.toLowerCase().includes(query))
+    );
+  }
+  
+  return result.sort((a, b) => {
+    const aTime = a.createdAt?.toDate?.() || new Date(a.createdAt);
+    const bTime = b.createdAt?.toDate?.() || new Date(b.createdAt);
+    return bTime - aTime;
+  });
+});
+
+const filteredProducts = computed(() => {
+  if (!productSearchQuery.value) return availableProducts.value.slice(0, 20);
+  
+  const query = productSearchQuery.value.toLowerCase();
+  return availableProducts.value.filter(product =>
+    product.productName.toLowerCase().includes(query) ||
+    (product.category && product.category.toLowerCase().includes(query))
+  ).slice(0, 20);
+});
+
+const hasActiveFilters = computed(() => {
+  return searchQuery.value;
+});
+
+const formatTime = (timestamp) => {
+  if (!timestamp) return '';
+  
+  try {
+    let date;
     
-    onMounted(() => {
-      document.addEventListener('click', handleClickOutside);
-      fetchPosts();
-    });
+    if (typeof timestamp === 'object' && timestamp.toDate) {
+      date = timestamp.toDate();
+    } else if (timestamp instanceof Date) {
+      date = timestamp;
+    } else if (typeof timestamp === 'number') {
+      date = new Date(timestamp);
+    } else {
+      return '';
+    }
     
-    onUnmounted(() => {
-      document.removeEventListener('click', handleClickOutside);
-      if (unsubscribePosts) unsubscribePosts();
-    });
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
     
-    return {
-      showProfileMenu,
-      profileRef,
-      cartItems,
-      isLoading,
-      posts,
-      searchQuery,
-      postCategories,
-      filteredPosts,
-      hasActiveFilters,
-      showNewPostModal,
-      newPost,
-      fileInput,
-      currentUser,
-      showQuestions,
-      isValidPost,
-      getCategoryLabel,
-      formatTime,
-      truncateText,
-      handleImageUpload,
-      handleImageError,
-      clearSearch,
-      clearAllFilters,
-      openNewPostModal,
-      closeNewPostModal,
-      submitPost,
-      viewPost,
-      navigateToPath,
-      toggleProfileMenu,
-      handleBottomNavigation,
-      signOut,
-      getUserReaction,
-      triggerFileInput,
-      toggleReactionMenu,
-      activeReactionMenu,
-      addReaction,
-      showCommentModal,
-      selectedPost,
-      commentText,
-      openCommentModal,
-      closeCommentModal,
-      submitComment
-    };
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m`;
+    if (diffHours < 24) return `${diffHours}h`;
+    if (diffDays < 7) return `${diffDays}d`;
+    
+    return date.toLocaleDateString();
+  } catch (error) {
+    console.error('Error formatting timestamp:', error);
+    return '';
   }
 };
+
+const getTotalReactions = (post) => {
+  return (post.likeCount || 0) + (post.loveCount || 0) + (post.laughCount || 0) + 
+         (post.wowCount || 0) + (post.sadCount || 0) + (post.angryCount || 0);
+};
+
+const getReactionLabel = (reactionType) => {
+  const labels = {
+    like: 'Like',
+    love: 'Love',
+    laugh: 'Haha',
+    wow: 'Wow',
+    sad: 'Sad',
+    angry: 'Angry'
+  };
+  return labels[reactionType] || 'Like';
+};
+
+const getReactionColor = (reactionType) => {
+  const colors = {
+    like: '#4a90e2',
+    love: '#e74c3c',
+    laugh: '#f39c12',
+    wow: '#f39c12',
+    sad: '#3498db',
+    angry: '#e74c3c'
+  };
+  return colors[reactionType] || '#4a90e2';
+};
+
+const getProductPrice = (product) => {
+  if (product.pricePerKilo > 0) return product.pricePerKilo.toFixed(2) + '/kg';
+  if (product.pricePerSack > 0) return product.pricePerSack.toFixed(2) + '/sack';
+  if (product.pricePerTali > 0) return product.pricePerTali.toFixed(2) + '/tali';
+  if (product.pricePerKaing > 0) return product.pricePerKaing.toFixed(2) + '/kaing';
+  if (product.pricePerBundle > 0) return product.pricePerBundle.toFixed(2) + '/bundle';
+  if (product.pricePerTray > 0) return product.pricePerTray.toFixed(2) + '/tray';
+  if (product.pricePerPiece > 0) return product.pricePerPiece.toFixed(2) + '/piece';
+  return '0.00';
+};
+
+const fetchAvailableProducts = async () => {
+  try {
+    const productsSnapshot = await getDocs(collection(db, 'products'));
+    availableProducts.value = productsSnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+  } catch (error) {
+    console.error('Error fetching products:', error);
+  }
+};
+
+const openProductSelector = () => {
+  showProductSelector.value = true;
+  if (availableProducts.value.length === 0) {
+    fetchAvailableProducts();
+  }
+};
+
+const closeProductSelector = () => {
+  showProductSelector.value = false;
+  productSearchQuery.value = '';
+};
+
+const selectProduct = (product) => {
+  selectedProduct.value = product;
+  closeProductSelector();
+};
+
+const removeProductReference = () => {
+  selectedProduct.value = null;
+};
+
+const viewProduct = (product) => {
+  router.push(`/product/${product.id}`);
+};
+
+const triggerFileInput = () => {
+  fileInput.value.click();
+};
+
+const handleImageUpload = (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  if (!file.type.match('image.*')) {
+    alert('Please select an image file');
+    return;
+  }
+  
+  if (file.size > 5 * 1024 * 1024) {
+    alert('Image size should not exceed 5MB');
+    return;
+  }
+  
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    newPost.value.image = e.target.result;
+  };
+  reader.readAsDataURL(file);
+};
+
+const removeImage = () => {
+  newPost.value.image = null;
+  if (fileInput.value) {
+    fileInput.value.value = '';
+  }
+};
+
+const handleImageError = (event) => {
+  event.target.style.display = 'none';
+};
+
+const clearSearch = () => {
+  searchQuery.value = '';
+};
+
+const clearAllFilters = () => {
+  searchQuery.value = '';
+};
+
+const openNewPostModal = () => {
+  if (!currentUser.value) {
+    router.push('/login');
+    return;
+  }
+  showNewPostModal.value = true;
+};
+
+const closeNewPostModal = () => {
+  showNewPostModal.value = false;
+  newPost.value = {
+    content: '',
+    image: null,
+    imageFile: null,
+    isAnonymous: false,
+    productId: null,
+    productName: null
+  };
+  selectedProduct.value = null;
+  if (fileInput.value) {
+    fileInput.value.value = '';
+  }
+};
+
+const submitPost = async () => {
+  if (!isValidPost.value) return;
+  
+  const user = auth.currentUser;
+  if (!user) {
+    alert('Please sign in to post');
+    return;
+  }
+  
+  try {
+    const postData = {
+      content: newPost.value.content,
+      userId: user.uid,
+      userName: newPost.value.isAnonymous ? 'Anonymous Farmer' : (user.displayName || 'Anonymous Farmer'),
+      userPhoto: newPost.value.isAnonymous ? null : (user.photoURL || null),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      image: newPost.value.image,
+      isAnonymous: newPost.value.isAnonymous,
+      replyCount: 0,
+      likeCount: 0,
+      loveCount: 0,
+      laughCount: 0,
+      wowCount: 0,
+      sadCount: 0,
+      angryCount: 0,
+      viewCount: 0,
+      reactions: [],
+      replies: []
+    };
+    
+    // Add product reference if selected
+    if (selectedProduct.value) {
+      postData.productId = selectedProduct.value.id;
+      postData.productName = selectedProduct.value.productName;
+      postData.productData = selectedProduct.value;
+    }
+    
+    await addDoc(collection(db, 'communityPosts'), postData);
+    closeNewPostModal();
+  } catch (error) {
+    console.error('Error creating post:', error);
+    alert('Error creating post. Please try again.');
+  }
+};
+
+const toggleReactionMenu = (postId) => {
+  if (!currentUser.value) {
+    router.push('/login');
+    return;
+  }
+  activeReactionMenu.value = activeReactionMenu.value === postId ? null : postId;
+};
+
+const togglePostMenu = (postId) => {
+  activePostMenu.value = activePostMenu.value === postId ? null : postId;
+};
+
+const addReaction = async (postId, reactionType) => {
+  if (!currentUser.value) {
+    router.push('/login');
+    return;
+  }
+  
+  try {
+    const postRef = doc(db, 'communityPosts', postId);
+    const post = posts.value.find(p => p.id === postId);
+    
+    if (!post) return;
+    
+    const existingReactionIndex = post.reactions?.findIndex(
+      r => r.userId === currentUser.value.uid
+    ) ?? -1;
+    
+    if (existingReactionIndex >= 0) {
+      const existingReaction = post.reactions[existingReactionIndex];
+      await updateDoc(postRef, {
+        reactions: arrayRemove(existingReaction),
+        [`${existingReaction.reactionType}Count`]: increment(-1)
+      });
+      
+      if (existingReaction.reactionType === reactionType) {
+        activeReactionMenu.value = null;
+        return;
+      }
+    }
+    
+    const newReaction = {
+      userId: currentUser.value.uid,
+      reactionType,
+      timestamp: Date.now()
+    };
+    
+    await updateDoc(postRef, {
+      reactions: arrayUnion(newReaction),
+      [`${reactionType}Count`]: increment(1)
+    });
+    
+    activeReactionMenu.value = null;
+  } catch (error) {
+    console.error('Error adding reaction:', error);
+  }
+};
+
+const toggleComments = (postId) => {
+  if (!currentUser.value) {
+    router.push('/login');
+    return;
+  }
+  
+  const index = expandedComments.value.indexOf(postId);
+  if (index > -1) {
+    expandedComments.value.splice(index, 1);
+  } else {
+    expandedComments.value.push(postId);
+  }
+};
+
+const submitComment = async (postId) => {
+  const commentText = commentTexts[postId];
+  if (!commentText?.trim()) return;
+  
+  try {
+    const user = auth.currentUser;
+    const commentData = {
+      content: commentText,
+      userId: user.uid,
+      userName: user.displayName || 'Anonymous Farmer',
+      userPhoto: user.photoURL || null,
+      createdAt: Date.now()
+    };
+    
+    const postRef = doc(db, 'communityPosts', postId);
+    await updateDoc(postRef, {
+      replies: arrayUnion(commentData),
+      replyCount: increment(1)
+    });
+    
+    commentTexts[postId] = '';
+  } catch (error) {
+    console.error('Error submitting comment:', error);
+    alert('Failed to submit comment. Please try again.');
+  }
+};
+
+const sharePost = (postId) => {
+  if (navigator.share) {
+    navigator.share({
+      title: 'Community Post',
+      text: 'Check out this post from our farming community!',
+      url: window.location.href
+    });
+  } else {
+    navigator.clipboard.writeText(window.location.href);
+    alert('Link copied to clipboard!');
+  }
+};
+
+const reportPost = (postId) => {
+  alert('Post reported. Thank you for helping keep our community safe.');
+};
+
+const deletePost = async (postId) => {
+  if (confirm('Are you sure you want to delete this post?')) {
+    try {
+      await deleteDoc(doc(db, 'communityPosts', postId));
+    } catch (error) {
+      console.error('Error deleting post:', error);
+      alert('Failed to delete post.');
+    }
+  }
+};
+
+const getUserReaction = (postId) => {
+  if (!currentUser.value) return null;
+  const post = posts.value.find(p => p.id === postId);
+  if (!post || !post.reactions) return null;
+  return post.reactions.find(r => r.userId === currentUser.value.uid)?.reactionType || null;
+};
+
+const navigateToPath = (path) => {
+  showProfileMenu.value = false;
+  router.push(path);
+};
+
+const toggleProfileMenu = () => {
+  showProfileMenu.value = !showProfileMenu.value;
+};
+
+const handleBottomNavigation = (path) => {
+  router.push(path);
+};
+
+const handleClickOutside = (event) => {
+  if (profileRef.value && !profileRef.value.contains(event.target)) {
+    showProfileMenu.value = false;
+  }
+  if (!event.target.closest('.reaction-button')) {
+    activeReactionMenu.value = null;
+  }
+  if (!event.target.closest('.post-menu')) {
+    activePostMenu.value = null;
+  }
+};
+
+const signOut = async () => {
+  try {
+    await firebaseSignOut(auth);
+    router.push('/login');
+  } catch (error) {
+    console.error('Error signing out:', error);
+  }
+};
+
+const fetchPosts = async () => {
+  try {
+    isLoading.value = true;
+    
+    const q = query(collection(db, 'communityPosts'));
+    const unsubscribePosts = onSnapshot(q, (querySnapshot) => {
+      const allPosts = querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          createdAt: data.createdAt || serverTimestamp(),
+          replies: data.replies || [],
+          likeCount: data.likeCount || 0,
+          loveCount: data.loveCount || 0,
+          laughCount: data.laughCount || 0,
+          wowCount: data.wowCount || 0,
+          sadCount: data.sadCount || 0,
+          angryCount: data.angryCount || 0,
+          replyCount: data.replyCount || 0,
+          viewCount: data.viewCount || 0,
+          reactions: data.reactions || [],
+          isAnonymous: data.isAnonymous || false,
+          productId: data.productId || null,
+          productName: data.productName || null,
+          productData: data.productData || null
+        };
+      });
+      
+      posts.value = allPosts;
+      isLoading.value = false;
+    });
+    
+    onAuthStateChanged(auth, (user) => {
+      currentUser.value = user;
+    });
+    
+    return unsubscribePosts;
+  } catch (error) {
+    console.error('Error fetching posts:', error);
+    isLoading.value = false;
+  }
+};
+
+const fetchProductForReference = async (productId) => {
+  try {
+    const productDoc = await getDoc(doc(db, 'products', productId));
+    if (productDoc.exists()) {
+      selectedProduct.value = { id: productDoc.id, ...productDoc.data() };
+      showNewPostModal.value = true;
+    }
+  } catch (error) {
+    console.error('Error fetching product for reference:', error);
+  }
+};
+
+let unsubscribePosts = null;
+
+onMounted(async () => {
+  document.addEventListener('click', handleClickOutside);
+  unsubscribePosts = await fetchPosts();
+  
+  // Check for product reference from route params
+  if (route.query.productId) {
+    fetchProductForReference(route.query.productId);
+  }
+});
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside);
+  if (unsubscribePosts) unsubscribePosts();
+});
 </script>
 
-
 <style scoped>
-/* Previous styles remain the same, add these new styles */
 .community-page {
-  height: 100%;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   padding-bottom: 80px;
-  background-color: #f8f9fa;
-  width: 100%;
-  margin: 0;
-  box-sizing: border-box;
+  background-color: #f0f2f5;
   overflow-x: hidden;
 }
 
@@ -820,8 +1037,6 @@ const fetchPosts = async () => {
   border-bottom-left-radius: 20px;
   border-bottom-right-radius: 20px;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-  width: 100%;
-  box-sizing: border-box;
 }
 
 .search-container {
@@ -829,12 +1044,10 @@ const fetchPosts = async () => {
   align-items: center;
   gap: 10px;
   margin-bottom: 15px;
-  width: 100%;
 }
 
 .search-bar {
   flex: 1;
-  min-width: 0;
   background-color: white;
   border-radius: 20px;
   display: flex;
@@ -847,7 +1060,6 @@ const fetchPosts = async () => {
 .search-bar svg {
   color: #9e9e9e;
   margin-right: 10px;
-  flex-shrink: 0;
 }
 
 .search-bar input {
@@ -855,15 +1067,12 @@ const fetchPosts = async () => {
   outline: none;
   flex: 1;
   font-size: 14px;
-  min-width: 0;
-  width: 100%;
 }
 
 .header-buttons {
   display: flex;
   gap: 8px;
   position: relative;
-  flex-shrink: 0;
 }
 
 .icon-button {
@@ -876,10 +1085,9 @@ const fetchPosts = async () => {
   justify-content: center;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
   transition: all 0.2s ease;
-  overflow: hidden;
-  position: relative;
   border: none;
   cursor: pointer;
+  position: relative;
 }
 
 .icon-button:hover {
@@ -903,13 +1111,6 @@ const fetchPosts = async () => {
   font-weight: bold;
 }
 
-.profile-icon img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-/* Profile Dropdown Menu (same as HomeView) */
 .profile-dropdown {
   position: absolute;
   top: 45px;
@@ -920,6 +1121,65 @@ const fetchPosts = async () => {
   box-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
   z-index: 100;
   overflow: hidden;
+}
+
+.dropdown-header {
+  padding: 15px;
+  border-bottom: 1px solid #eee;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.user-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background-color: #f0f0f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.user-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.user-info h4 {
+  margin: 0 0 2px 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.user-info p {
+  margin: 0;
+  font-size: 12px;
+  color: #666;
+}
+
+.dropdown-menu {
+  padding: 10px 0;
+}
+
+.dropdown-menu button {
+  width: 100%;
+  padding: 10px 15px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  transition: background-color 0.2s ease;
+}
+
+.dropdown-menu button:hover {
+  background-color: #f5f5f5;
 }
 
 .community-header {
@@ -938,71 +1198,83 @@ const fetchPosts = async () => {
   margin: 0;
 }
 
-/* Content Styles */
+/* Content Styles - Responsive Container */
 .content {
   flex: 1;
   padding: 15px;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   width: 100%;
-  box-sizing: border-box;
+  max-width: 100%;
+  margin: 0 auto;
 }
 
-.create-post-button {
+/* Create Post Section */
+.create-post-section {
+  margin-bottom: 20px;
   width: 100%;
-  padding: 12px;
-  background-color: #2e5c31;
-  color: white;
-  border: none;
+}
+
+.post-composer {
+  background-color: white;
   border-radius: 12px;
-  font-size: 16px;
-  font-weight: 600;
+  padding: 15px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  width: 100%;
+}
+
+.post-composer:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.composer-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background-color: #f0f0f0;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  margin-bottom: 15px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  box-shadow: 0 3px 10px rgba(46, 92, 49, 0.3);
+  overflow: hidden;
+  flex-shrink: 0;
 }
 
-.create-post-button:hover {
-  background-color: #26492a;
-  transform: translateY(-2px);
+.composer-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
-.categories-filter {
-  display: flex;
-  overflow-x: auto;
-  gap: 8px;
-  padding: 10px 0;
-  margin-bottom: 15px;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none; /* Firefox */
-}
-
-.categories-filter::-webkit-scrollbar {
-  display: none; /* Chrome, Safari, Opera */
-}
-
-.categories-filter button {
-  padding: 8px 12px;
+.composer-input {
+  flex: 1;
+  padding: 12px 16px;
+  background-color: #f0f2f5;
   border-radius: 20px;
-  border: 1px solid #ddd;
-  background-color: white;
-  color: #555;
-  font-size: 13px;
-  font-weight: 500;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: all 0.2s ease;
+  color: #65676b;
+  font-size: 15px;
 }
 
-.categories-filter button.active {
-  background-color: #2e5c31;
-  color: white;
-  border-color: #2e5c31;
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.action-icon {
+  color: #42b883;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 50%;
+  transition: background-color 0.2s ease;
+}
+
+.action-icon:hover {
+  background-color: #f0f2f5;
 }
 
 /* Active Filters */
@@ -1072,9 +1344,8 @@ const fetchPosts = async () => {
 /* No Posts State */
 .no-posts {
   text-align: center;
-  padding: 30px 0;
+  padding: 40px 20px;
   color: #666;
-  font-size: 16px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1082,8 +1353,7 @@ const fetchPosts = async () => {
 }
 
 .no-posts-icon {
-  width: 80px;
-  height: 80px;
+  font-size: 48px;
   opacity: 0.7;
 }
 
@@ -1093,55 +1363,51 @@ const fetchPosts = async () => {
   color: #333;
 }
 
-.browse-all-btn, .create-post-btn {
+.create-post-btn {
   background-color: #2e5c31;
   color: white;
   border: none;
   border-radius: 20px;
-  padding: 10px 20px;
+  padding: 12px 24px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   transition: background-color 0.2s ease;
-  margin-top: 10px;
 }
 
-.browse-all-btn:hover, .create-post-btn:hover {
+.create-post-btn:hover {
   background-color: #26492a;
 }
 
-/* Posts List */
+/* Posts List - Responsive */
 .posts-list {
   display: flex;
   flex-direction: column;
-  gap: 15px;
+  gap: 20px;
+  width: 100%;
 }
 
 .post-card {
   background-color: white;
-  border-radius: 16px;
-  padding: 15px;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.05);
-  transition: transform 0.2s ease, box-shadow 0.3s ease;
-  cursor: pointer;
-}
-
-.post-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
+  width: 100%;
 }
 
 .post-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
+  align-items: flex-start;
+  padding: 15px 15px 0;
 }
 
 .user-info {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex: 1;
+  min-width: 0;
 }
 
 .avatar {
@@ -1153,6 +1419,7 @@ const fetchPosts = async () => {
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .avatar img {
@@ -1165,111 +1432,432 @@ const fetchPosts = async () => {
   color: #2e5c31;
 }
 
+.user-details {
+  flex: 1;
+  min-width: 0;
+}
+
 .user-details h4 {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   margin: 0 0 2px 0;
-  color: #333;
+  color: #050505;
+  word-wrap: break-word;
 }
 
 .post-time {
+  font-size: 13px;
+  color: #65676b;
+  margin: 0 0 4px 0;
+}
+
+.product-tag {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 12px;
-  color: #888;
-  margin: 0;
+  color: #e74c3c;
+  background-color: #ffeaea;
+  padding: 2px 6px;
+  border-radius: 10px;
+  width: fit-content;
+  margin-top: 4px;
 }
 
-.post-category {
-  font-size: 12px;
-  font-weight: 600;
-  padding: 4px 10px;
-  border-radius: 12px;
-  background-color: #e9f7e9;
-  color: #2e5c31;
+.post-menu {
+  position: relative;
+  flex-shrink: 0;
 }
 
-.post-category.crops {
-  background-color: #e8f5e9;
-  color: #2e7d32;
+.menu-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 50%;
+  color: #65676b;
+  transition: background-color 0.2s ease;
 }
 
-.post-category.livestock {
-  background-color: #e3f2fd;
-  color: #1565c0;
+.menu-button:hover {
+  background-color: #f0f2f5;
 }
 
-.post-category.pests {
-  background-color: #fce4ec;
-  color: #c2185b;
+.post-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 10;
+  min-width: 120px;
 }
 
-.post-category.weather {
-  background-color: #e1f5fe;
-  color: #0277bd;
+.post-dropdown button {
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s ease;
 }
 
-.post-category.equipment {
-  background-color: #ede7f6;
-  color: #4527a0;
-}
-
-.post-category.market {
-  background-color: #fff3e0;
-  color: #e65100;
+.post-dropdown button:hover {
+  background-color: #f0f2f5;
 }
 
 .post-content {
-  margin-bottom: 15px;
-}
-
-.post-content h3 {
-  font-size: 16px;
-  font-weight: 700;
-  margin: 0 0 8px 0;
-  color: #333;
+  padding: 15px;
 }
 
 .post-text {
-  font-size: 14px;
-  color: #555;
-  margin: 0 0 10px 0;
-  line-height: 1.5;
+  font-size: 15px;
+  color: #050505;
+  margin: 0 0 15px 0;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-wrap: break-word;
 }
 
-.post-image {
-  margin-top: 10px;
-  border-radius: 12px;
+/* Product Reference Card - Responsive */
+.product-reference-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background-color: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  margin: 15px 0;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  width: 100%;
+}
+
+.product-reference-card:hover {
+  background-color: #e9ecef;
+  transform: translateY(-1px);
+}
+
+.product-ref-image {
+  width: 60px;
+  height: 60px;
+  border-radius: 8px;
   overflow: hidden;
-  max-height: 200px;
+  flex-shrink: 0;
 }
 
-.post-image img {
+.product-ref-image img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.post-stats {
-  display: flex;
-  align-items: center;
-  gap: 15px;
+.product-ref-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.product-ref-info h4 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 4px 0;
+  color: #333;
+  word-wrap: break-word;
+}
+
+.product-ref-price {
   font-size: 13px;
-  color: #666;
+  color: #2e5c31;
+  font-weight: 600;
+  margin: 0 0 4px 0;
 }
 
-.stat {
+.view-product-btn {
+  font-size: 12px;
+  color: #4a90e2;
+  font-weight: 500;
+}
+
+.post-image {
+  margin-top: 15px;
+  border-radius: 8px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.post-image img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Post Engagement */
+.post-engagement {
+  border-top: 1px solid #e4e6ea;
+}
+
+.reaction-summary {
   display: flex;
   align-items: center;
-  gap: 5px;
+  justify-content: space-between;
+  padding: 8px 15px;
+  font-size: 13px;
+  color: #65676b;
 }
 
-/* Modal Styles */
+.reaction-icons {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.reaction-emoji {
+  font-size: 16px;
+}
+
+.reaction-count {
+  margin-left: 6px;
+}
+
+.comment-count {
+  margin-left: auto;
+}
+
+.post-actions {
+  display: flex;
+  border-top: 1px solid #e4e6ea;
+  position: relative;
+}
+
+.action-button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: #65676b;
+  transition: background-color 0.2s ease;
+  position: relative;
+}
+
+.action-button:hover {
+  background-color: #f0f2f5;
+}
+
+.action-button.reacted,
+.action-button .reacted {
+  color: #4a90e2;
+}
+
+.reaction-button {
+  position: relative;
+}
+
+/* Reaction Menu - Responsive */
+.reaction-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: white;
+  border-radius: 25px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: row;
+  padding: 8px;
+  gap: 4px;
+  z-index: 20;
+  margin-bottom: 8px;
+  min-width: 300px;
+}
+
+.reaction-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 6px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+  font-size: 11px;
+  color: #65676b;
+  min-width: 45px;
+  flex: 1;
+}
+
+.reaction-option:hover {
+  background-color: #f0f2f5;
+  transform: scale(1.1);
+}
+
+.reaction-option .reaction-emoji {
+  font-size: 24px;
+  transition: transform 0.2s ease;
+}
+
+.reaction-option:hover .reaction-emoji {
+  transform: scale(1.2);
+}
+
+.reaction-label {
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+/* Comments Section */
+.comments-section {
+  border-top: 1px solid #e4e6ea;
+  padding: 12px 15px;
+}
+
+.comment-composer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.comment-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: #f0f0f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.comment-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.comment-input-container {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  background-color: #f0f2f5;
+  border-radius: 20px;
+  padding: 8px 12px;
+}
+
+.comment-input {
+  flex: 1;
+  border: none;
+  background: none;
+  outline: none;
+  font-size: 14px;
+  color: #050505;
+}
+
+.send-comment-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #4a90e2;
+  padding: 4px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s ease;
+}
+
+.send-comment-btn:hover {
+  background-color: rgba(74, 144, 226, 0.1);
+}
+
+.comments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.comment-item {
+  display: flex;
+  gap: 8px;
+}
+
+.comment-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.comment-bubble {
+  background-color: #f0f2f5;
+  border-radius: 16px;
+  padding: 8px 12px;
+  display: inline-block;
+  max-width: 100%;
+  word-wrap: break-word;
+}
+
+.comment-author {
+  font-size: 13px;
+  font-weight: 600;
+  color: #050505;
+  margin-bottom: 2px;
+}
+
+.comment-text {
+  font-size: 14px;
+  color: #050505;
+  line-height: 1.3;
+  word-wrap: break-word;
+}
+
+.comment-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+  padding-left: 12px;
+}
+
+.comment-time {
+  font-size: 12px;
+  color: #65676b;
+}
+
+.comment-action {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: #65676b;
+  padding: 0;
+  transition: color 0.2s ease;
+}
+
+.comment-action:hover {
+  color: #4a90e2;
+}
+
+/* Modal Styles - Responsive */
 .modal-overlay {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1279,29 +1867,33 @@ const fetchPosts = async () => {
 
 .modal-content {
   background-color: white;
-  border-radius: 16px;
+  border-radius: 12px;
   width: 100%;
   max-width: 500px;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 5px 30px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
   animation: modalFadeIn 0.3s ease;
+}
+
+.product-selector-modal {
+  max-width: 600px;
 }
 
 @keyframes modalFadeIn {
   from {
     opacity: 0;
-    transform: translateY(20px);
+    transform: scale(0.9);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: scale(1);
   }
 }
 
 .modal-header {
-  padding: 15px 20px;
-  border-bottom: 1px solid #eee;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e4e6ea;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1309,337 +1901,517 @@ const fetchPosts = async () => {
 
 .modal-header h3 {
   font-size: 18px;
+  font-weight: 700;
   margin: 0;
-  color: #333;
+  color: #050505;
 }
 
 .close-modal {
-  background: none;
+  background-color: #f0f2f5;
   border: none;
   cursor: pointer;
-  color: #666;
-  padding: 5px;
+  color: #65676b;
+  padding: 8px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: background-color 0.2s ease;
+}
+
+.close-modal:hover {
+  background-color: #e4e6ea;
 }
 
 .modal-body {
   padding: 20px;
 }
 
-.form-group {
-  margin-bottom: 15px;
+.post-author {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
-.form-group label {
-  display: block;
-  font-size: 14px;
-  font-weight: 600;
-  margin-bottom: 8px;
-  color: #333;
-}
-
-.form-group input,
-.form-group select,
-.form-group textarea {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  font-size: 14px;
-  color: #333;
-  background-color: white;
-}
-
-.form-group textarea {
-  resize: vertical;
-}
-
-.image-upload-container {
-  position: relative;
-  margin-top: 8px;
-}
-
-.image-preview {
-  width: 100%;
-  height: 200px;
-  border: 2px dashed #e9ecef;
-  border-radius: 6px;
+.author-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background-color: #f0f0f0;
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
   overflow: hidden;
-  transition: border-color 0.2s ease;
 }
 
-.image-preview:hover {
-  border-color: #3498db;
-}
-
-.image-preview.has-image {
-  border-style: solid;
-}
-
-.image-preview img {
+.author-avatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.upload-placeholder {
+.author-info {
+  flex: 1;
+}
+
+.author-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #050505;
+  margin-bottom: 2px;
+}
+
+.privacy-selector {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  color: #6c757d;
+  gap: 4px;
+  font-size: 13px;
+  color: #65676b;
+}
+
+/* Anonymous Toggle - Responsive */
+.anonymous-toggle {
+  margin-bottom: 16px;
+  padding: 12px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+}
+
+.anonymous-toggle label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: #050505;
+  margin-bottom: 8px;
+}
+
+.toggle-options {
+  display: flex;
   gap: 8px;
 }
 
-.upload-placeholder p {
-  margin: 0;
+.toggle-options button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #e4e6ea;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s;
   font-size: 14px;
+  flex: 1;
+  justify-content: center;
+}
+
+.toggle-options button.active {
+  background: #e3f2fd;
+  border-color: #4a90e2;
+  color: #4a90e2;
+}
+
+.toggle-options button:hover:not(.active) {
+  background-color: #f0f2f5;
+}
+
+/* Product Reference Section */
+.product-reference-section {
+  margin-bottom: 16px;
+  padding: 12px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+}
+
+.product-ref-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #e74c3c;
+}
+
+.remove-product-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #65676b;
+  padding: 4px;
+  border-radius: 50%;
+  margin-left: auto;
+  transition: background-color 0.2s ease;
+}
+
+.remove-product-btn:hover {
+  background-color: #e4e6ea;
+}
+
+.selected-product-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  background-color: white;
+  border-radius: 8px;
+}
+
+.selected-product-card img {
+  width: 50px;
+  height: 50px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.selected-product-info h4 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 4px 0;
+  color: #333;
+}
+
+.selected-product-info p {
+  font-size: 13px;
+  color: #2e5c31;
+  font-weight: 600;
+  margin: 0;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.post-textarea {
+  width: 100%;
+  border: none;
+  outline: none;
+  font-size: 16px;
+  color: #050505;
+  resize: none;
+  font-family: inherit;
+  line-height: 1.4;
+}
+
+.post-textarea::placeholder {
+  color: #65676b;
+}
+
+.image-preview-container {
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.image-preview {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.remove-image {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background-color: rgba(0, 0, 0, 0.6);
+  border: none;
+  cursor: pointer;
+  color: white;
+  padding: 6px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s ease;
+}
+
+.remove-image:hover {
+  background-color: rgba(0, 0, 0, 0.8);
+}
+
+.post-options {
+  border: 1px solid #e4e6ea;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.option-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #050505;
+  margin-bottom: 8px;
+}
+
+.post-actions-row {
+  display: flex;
+  gap: 8px;
+}
+
+.post-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #65676b;
+  transition: background-color 0.2s ease;
+  flex: 1;
+  justify-content: center;
+}
+
+.post-option:hover {
+  background-color: #f0f2f5;
 }
 
 .file-input {
   display: none;
 }
 
-.modal-footer {
-  padding: 15px 20px;
-  border-top: 1px solid #eee;
+/* Product Selector Modal */
+.product-search {
   display: flex;
-  justify-content: flex-end;
-  gap: 10px;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background-color: #f0f2f5;
+  border-radius: 8px;
+  margin-bottom: 16px;
 }
 
-.cancel-btn {
-  padding: 10px 20px;
-  background-color: #f5f5f5;
-  color: #666;
+.product-search-input {
+  flex: 1;
   border: none;
-  border-radius: 8px;
+  background: none;
+  outline: none;
   font-size: 14px;
-  font-weight: 600;
+  color: #050505;
+}
+
+.products-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.product-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #e4e6ea;
+  border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
-.cancel-btn:hover {
-  background-color: #eee;
+.product-item:hover {
+  background-color: #f0f2f5;
+  border-color: #4a90e2;
+}
+
+.product-item img {
+  width: 60px;
+  height: 60px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.product-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.product-item-info h4 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 4px 0;
+  color: #333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.product-item-info p {
+  font-size: 13px;
+  color: #2e5c31;
+  font-weight: 600;
+  margin: 0;
+}
+
+.no-products {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: #65676b;
+  text-align: center;
+}
+
+.no-products svg {
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+.modal-footer {
+  padding: 16px 20px;
+  border-top: 1px solid #e4e6ea;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .submit-btn {
-  padding: 10px 20px;
-  background-color: #2e5c31;
+  padding: 8px 24px;
+  background-color: #4a90e2;
   color: white;
   border: none;
-  border-radius: 8px;
-  font-size: 14px;
+  border-radius: 6px;
+  font-size: 15px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
-.submit-btn:hover:not(:disabled) {
-  background-color: #26492a;
+.submit-btn:hover:not(.disabled) {
+  background-color: #357abd;
 }
 
-.submit-btn:disabled {
-  background-color: #cccccc;
+.submit-btn.disabled {
+  background-color: #e4e6ea;
+  color: #bcc0c4;
   cursor: not-allowed;
 }
 
-/* Responsive Design */
-@media (max-width: 320px) {
-  .post-card {
-    padding: 12px;
-  }
-  
-  .post-content h3 {
-    font-size: 15px;
-  }
-  
-  .post-text {
-    font-size: 13px;
-  }
-}
+/* ===== RESPONSIVE DESIGN ===== */
 
-@media (min-width: 375px) {
-  .community-header h2 {
-    font-size: 22px;
-  }
-  
-  .create-post-button {
-    padding: 14px;
-  }
-}
-
-@media (min-width: 414px) {
-  .categories-filter button {
-    padding: 8px 15px;
-    font-size: 14px;
-  }
-}
-
-@media (min-width: 640px) {
-  .posts-list {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 15px;
-  }
-}
-
-@media (min-width: 768px) {
-  .content {
-    padding: 20px;
-  }
-  
-  .community-header {
-    padding: 0 10px 15px;
-  }
-  
-  .community-header h2 {
-    font-size: 24px;
-  }
-}
-
-@media (min-width: 1024px) {
-  .posts-list {
-    grid-template-columns: repeat(3, 1fr);
-  }
-  
-  .content {
-    padding: 25px;
+/* Mobile First - Small screens (320px - 480px) */
+@media (max-width: 480px) {
+  .community-page {
+    padding-bottom: 70px;
   }
   
   .header {
-    border-bottom-left-radius: 25px;
-    border-bottom-right-radius: 25px;
+    padding: 12px;
+    border-radius: 0 0 15px 15px;
+  }
+  
+  .search-container {
+    margin-bottom: 12px;
+  }
+  
+  .search-bar {
+    height: 36px;
+    padding: 0 12px;
+  }
+  
+  .community-header h2 {
+    font-size: 18px;
+  }
+  
+  .community-header p {
+    font-size: 13px;
+  }
+  
+  .content {
+    padding: 10px;
+  }
+  
+  .post-card {
+    margin: 0 -5px;
+    border-radius: 8px;
+  }
+  
+  .post-composer {
+    padding: 12px;
+    gap: 10px;
+  }
+  
+  .composer-avatar {
+    width: 36px;
+    height: 36px;
+  }
+  
+  .composer-input {
+    padding: 10px 14px;
+    font-size: 14px;
+  }
+  
+  .avatar {
+    width: 36px;
+    height: 36px;
+  }
+  
+  .user-details h4 {
+    font-size: 14px;
+  }
+  
+  .post-time {
+    font-size: 12px;
+  }
+  
+  .product-tag {
+    font-size: 11px;
+    padding: 1px 4px;
+  }
+  
+  .post-text {
+    font-size: 14px;
+  }
+  
+  .product-reference-card {
+    gap: 10px;
+    padding: 10px;
+  }
+  
+  .product-ref-image {
+    width: 50px;
+    height: 50px;
+  }
+  
+  .product-ref-info h4 {
+    font-size: 13px;
+  }
+  
+  .product-ref-price {
+    font-size: 12px;
+  }
+  
+  .view-product-btn {
+    font-size: 11px;
+  }
+  
+  .reaction-menu {
+    min-width: 280px;
+    max-width: 90vw;
+    padding: 6px;
+    gap: 2px;
+  }
+  
+  .reaction-option {
+    min-width: 40px;
+    padding: 6px 4px;
+  }
+  
+  .reaction-option .reaction-emoji {
+    font-size: 20px;
+  }
+  
+  .reaction-label {
+    font-size: 9px;
+  }
+  
+  .comment-avatar {
+    width: 28px;
   }
 }
-
-.post-type-toggle {
-  display: flex;
-  margin-bottom: 15px;
-  border-radius: 12px;
-  overflow: hidden;
-  background-color: #f0f0f0;
-}
-
-.post-type-toggle button {
-  flex: 1;
-  padding: 10px;
-  border: none;
-  background: none;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.post-type-toggle button.active {
-  background-color: #2e5c31;
-  color: white;
-}
-
-.post-type-switch {
-  display: flex;
-  margin-bottom: 15px;
-  border-radius: 8px;
-  overflow: hidden;
-  background-color: #f0f0f0;
-}
-
-.post-type-switch button {
-  flex: 1;
-  padding: 8px;
-  border: none;
-  background: none;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.post-type-switch button.active {
-  background-color: #2e5c31;
-  color: white;
-}
-
-.question-badge {
-  display: inline-block;
-  margin-left: 8px;
-  padding: 2px 6px;
-  background-color: #e3f2fd;
-  color: #1565c0;
-  border-radius: 4px;
-  font-size: 10px;
-  font-weight: bold;
-}
-
-.reaction-menu {
-  display: flex;
-  gap: 5px;
-  padding: 5px;
-  background-color: white;
-  border-radius: 20px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  position: absolute;
-  bottom: 40px;
-  z-index: 10;
-}
-
-.reaction-menu button {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 5px;
-  border-radius: 50%;
-  transition: transform 0.2s ease;
-}
-
-.reaction-menu button:hover {
-  transform: scale(1.2) translateY(-5px);
-}
-
-.stat {
-  cursor: pointer;
-  position: relative;
-}
-
-.stat:hover {
-  color: #2e5c31;
-}
-
-.anonymous-toggle {
-  margin-bottom: 1rem;
-}
-
-.toggle-options {
-  display: flex;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-}
-
-.toggle-options button {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  border-radius: 8px;
-  border: 1px solid #ddd;
-  background: white;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.toggle-options button.active {
-  background: #f0f7ff;
-  border-color: #4a90e2;
-  color: #4a90e2;
-}
-
-/* Add any additional styles you need */
 </style>

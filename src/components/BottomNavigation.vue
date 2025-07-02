@@ -2,49 +2,49 @@
   <div class="bottom-navigation">
     <button 
       class="nav-item" 
-      :class="{ active: activeTab === '/' }"
+      :class="{ active: isActive('/') }"
       @click="navigate('/')"
     >
-      <Home :size="iconSize" :fill="activeTab === '/' ? '#2e5c31' : 'none'" :stroke="activeTab === '/' ? '#2e5c31' : '#2e5c31'" stroke-width="2" />
+      <Home :size="iconSize" :fill="isActive('/') ? '#2e5c31' : 'none'" :stroke="isActive('/') ? '#2e5c31' : '#2e5c31'" stroke-width="2" />
       <span>Home</span>
     </button>
     <button 
       class="nav-item" 
-      :class="{ active: activeTab === '/community' }"
+      :class="{ active: isActive('/community') }"
       @click="navigate('/community')"
     >
-      <MessagesSquare :size="iconSize" :fill="activeTab === '/community' ? '#2e5c31' : 'none'" :stroke="activeTab === '/community' ? '#2e5c31' : '#2e5c31'" stroke-width="2" />
+      <MessagesSquare :size="iconSize" :fill="isActive('/community') ? '#2e5c31' : 'none'" :stroke="isActive('/community') ? '#2e5c31' : '#2e5c31'" stroke-width="2" />
       <span>Community</span>
     </button>
     <button 
       class="nav-item" 
-      :class="{ active: activeTab === '/messages' }"
+      :class="{ active: isActive('/messages') }"
       @click="navigate('/messages')"
     >
-      <MessageCircle :size="iconSize" :fill="activeTab === '/messages' ? '#2e5c31' : 'none'" :stroke="activeTab === '/messages' ? '#2e5c31' : '#2e5c31'" stroke-width="2" />
+      <MessageCircle :size="iconSize" :fill="isActive('/messages') ? '#2e5c31' : 'none'" :stroke="isActive('/messages') ? '#2e5c31' : '#2e5c31'" stroke-width="2" />
       <span>Messages</span>
     </button>
     <button 
       class="nav-item" 
-      :class="{ active: activeTab === '/customer/orders' }"
+      :class="{ active: isActive('/customer/orders') || isActive('/orders') }"
       @click="navigate('/customer/orders')"
     >
-      <Package :size="iconSize" :fill="activeTab === '/customer/orders' ? '#2e5c31' : 'none'" :stroke="activeTab === '/customer/orders' ? '#2e5c31' : '#2e5c31'" stroke-width="2" />
+      <Package :size="iconSize" :fill="(isActive('/customer/orders') || isActive('/orders')) ? '#2e5c31' : 'none'" :stroke="(isActive('/customer/orders') || isActive('/orders')) ? '#2e5c31' : '#2e5c31'" stroke-width="2" />
       <span>Orders</span>
     </button>
     <button 
       class="nav-item" 
-      :class="{ active: activeTab === '/cart' }"
-      @click="navigate('/cart')"
+      :class="{ active: isActive('/customer/notifications') }"
+      @click="navigate('/customer/notifications')"
     >
-      <ShoppingCart :size="iconSize" :fill="activeTab === '/cart' ? '#2e5c31' : 'none'" :stroke="activeTab === '/cart' ? '#2e5c31' : '#2e5c31'" stroke-width="2" />
-      <span>Cart</span>
+      <Bell :size="iconSize" :fill="isActive('/customer/notifications') ? '#2e5c31' : 'none'" :stroke="isActive('/customer/notifications') ? '#2e5c31' : '#2e5c31'" stroke-width="2" />
+      <span>Notifications</span>
     </button>
   </div>
 </template>
 
 <script>
-import { Home, MessagesSquare, MessageCircle, Package, ShoppingCart } from 'lucide-vue-next';
+import { Home, MessagesSquare, MessageCircle, Package, Bell } from 'lucide-vue-next';
 
 export default {
   components: {
@@ -52,22 +52,24 @@ export default {
     MessagesSquare,
     MessageCircle,
     Package,
-    ShoppingCart
-  },
-  props: {
-    activeTab: {
-      type: String,
-      default: '/'
-    }
+    Bell
   },
   data() {
     return {
       iconSize: 24
-    }
+    };
   },
   methods: {
     navigate(path) {
-      this.$emit('navigate', path);
+      if (this.$route.path !== path) {
+        this.$router.push(path);
+      }
+    },
+    isActive(path) {
+      if (path === '/') {
+        return this.$route.path === '/';
+      }
+      return this.$route.path.startsWith(path);
     }
   }
 }
@@ -102,6 +104,7 @@ export default {
   transition: all 0.2s ease;
   width: 20%;
   cursor: pointer;
+  position: relative;
 }
 
 .nav-item span {

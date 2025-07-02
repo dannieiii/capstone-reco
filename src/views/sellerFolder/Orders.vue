@@ -6,7 +6,7 @@
       <header class="header">
         <div class="page-title">
           <h1>Orders</h1>
-          <p>Manage and track your customer orders</p>
+          <p>Manage and track customer orders for your products</p>
         </div>
         <button class="theme-toggle" @click="toggleDarkMode">
           <i :class="isDarkMode ? 'i-lucide-sun' : 'i-lucide-moon'"></i>
@@ -54,6 +54,26 @@
             <p class="card-value">{{ deliveredOrdersCount }}</p>
           </div>
         </div>
+        
+        <div class="summary-card">
+          <div class="card-icon received-icon">
+            <i class="i-lucide-package-check"></i>
+          </div>
+          <div class="card-content">
+            <h3>Order Received</h3>
+            <p class="card-value">{{ orderReceivedCount }}</p>
+          </div>
+        </div>
+        
+        <div class="summary-card">
+          <div class="card-icon refund-icon">
+            <i class="i-lucide-rotate-ccw"></i>
+          </div>
+          <div class="card-content">
+            <h3>Refund Processing</h3>
+            <p class="card-value">{{ refundProcessingCount }}</p>
+          </div>
+        </div>
       </div>
 
       <div class="content-wrapper">
@@ -72,24 +92,36 @@
                 <i class="i-lucide-calendar"></i>
                 <input 
                   type="date" 
-                  v-model="selectedDate" 
-                  @change="filterByDate"
+                  v-model="startDate" 
+                  @change="filterByDateRange"
                   class="minimal-date-input"
+                  placeholder="Select Date"
                 />
+                <span v-if="startDate" class="date-separator">to</span>
                 <input 
-                  type="time" 
-                  v-model="selectedTime" 
-                  @change="filterByDate" 
-                  v-if="selectedDate"
-                  class="minimal-time-input"
+                  v-if="startDate"
+                  type="date" 
+                  v-model="endDate" 
+                  @change="filterByDateRange"
+                  class="minimal-date-input"
+                  placeholder="End Date (Optional)"
                 />
                 <button 
-                  v-if="selectedDate || selectedTime" 
+                  v-if="startDate" 
                   @click="resetDateFilter" 
-                  class="minimal-reset-btn"
+                  class="date-clear-btn"
+                  title="Clear date filter"
                 >
                   <i class="i-lucide-x"></i>
                 </button>
+              </div>
+              <div v-if="startDate" class="date-filter-info">
+                <span v-if="!endDate" class="filter-text">
+                  Showing orders from: {{ formatDate(startDate) }}
+                </span>
+                <span v-else class="filter-text">
+                  Showing orders from: {{ formatDate(startDate) }} to {{ formatDate(endDate) }}
+                </span>
               </div>
             </div>
           </div>
@@ -165,7 +197,7 @@
               <td>₱{{ order.totalPrice.toFixed(2) }}</td>
               <td>
                 <div class="status-cell">
-                  <span v-if="!editingStatus[index]" :class="['status-badge', order.status.toLowerCase()]">
+                  <span v-if="!editingStatus[index]" :class="['status-badge', normalizeStatusClass(order.status)]">
                     {{ order.status }}
                     <button class="edit-status-btn" @click="startEditingStatus(index)">
                       <i class="i-lucide-edit-2"></i>
@@ -251,7 +283,7 @@
                 <h3>Order Details</h3>
                 <p><strong>Date:</strong> {{ formatDateTime(selectedOrder.timestamp || selectedOrder.createdAt) }}</p>
                 <p><strong>Status:</strong> 
-                  <span :class="['status-badge', selectedOrder.status.toLowerCase()]">
+                  <span :class="['status-badge', normalizeStatusClass(selectedOrder.status)]">
                     {{ selectedOrder.status }}
                   </span>
                 </p>
@@ -281,9 +313,8 @@
                       </div>
                     </td>
                     <td>{{ getUnitDisplay(selectedOrder.unit) }}</td>
-                    <td>{{ selectedOrder.quantity }}</td>
-                    <td>₱{{ selectedOrder.unitPrice ? selectedOrder.unitPrice.toFixed(2) : '0.00' }}</td>
-                    <td>₱{{ selectedOrder.itemPrice ? selectedOrder.itemPrice.toFixed(2) : (selectedOrder.unitPrice * selectedOrder.quantity).toFixed(2) }}</td>
+                    <td>{{ selectedOrder.quantity }}</td>                    <td>₱{{ getUnitPrice(selectedOrder).toFixed(2) }}</td>
+                    <td>₱{{ (selectedOrder.itemPrice || (getUnitPrice(selectedOrder) * selectedOrder.quantity)).toFixed(2) }}</td>
                   </tr>
                 </tbody>
                 <tfoot>
@@ -302,16 +333,24 @@
                 </tfoot>
               </table>
             </div>
-            
-            <OrderStatusUpdate 
+              <OrderStatusUpdate 
               :orderId="selectedOrder.id" 
               :currentStatus="selectedOrder.status"
+              :orderData="selectedOrder"
               @statusUpdated="handleStatusUpdated"
-            />
-          </div>
+            />          </div>
         </div>
       </div>
     </div>
+
+    <!-- Order Notification -->
+    <OrderNotif
+      v-if="showNotification"
+      :title="notificationTitle"
+      :message="notificationMessage"
+      :type="notificationType"
+      @close="showNotification = false"
+    />
   </div>
 </template>
 
@@ -319,9 +358,10 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import Sidebar from '@/components/Sidebar.vue';
 import { db } from '@/firebase/firebaseConfig';
-import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, query, where, onSnapshot } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
-import OrderStatusUpdate from '@/components/OrderStatusUpdate.vue';
+import OrderStatusUpdate from '@/components/sellerside/OrderStatusUpdate.vue';
+import OrderNotif from '@/components/sellerside/OrderNotif.vue';
 
 // UI State
 const isDarkMode = ref(false);
@@ -334,10 +374,16 @@ const editingStatus = ref({});
 const showOrderModal = ref(false);
 const selectedOrder = ref({});
 const orders = ref([]);
-const selectedDate = ref('');
-const selectedTime = ref('');
+const startDate = ref('');
+const endDate = ref('');
 const currentSellerId = ref('');
 const showExportMenu = ref(false);
+
+// Notification state
+const showNotification = ref(false);
+const notificationTitle = ref('');
+const notificationMessage = ref('');
+const notificationType = ref('success');
 
 // Unit display mapping
 const unitDisplayMap = {
@@ -362,6 +408,11 @@ const getUnitDisplay = (unit) => {
   return unitDisplayMap[unit] || unit || 'Unit';
 };
 
+// Helper function to normalize status for CSS classes
+const normalizeStatusClass = (status) => {
+  return status.toLowerCase().replace(/\s+/g, '-');
+};
+
 // Helper function to get display address
 const getAddressDisplay = (location) => {
   if (!location) return 'N/A';
@@ -377,6 +428,24 @@ const getAddressDisplay = (location) => {
   return parts.length > 0 ? parts.join(', ') : 'N/A';
 };
 
+// Helper function to calculate unit price
+const getUnitPrice = (order) => {
+  // Priority: unitPrice -> pricePerKg -> calculated from total
+  if (order.unitPrice && order.unitPrice > 0) {
+    return order.unitPrice;
+  }
+  if (order.pricePerKg && order.pricePerKg > 0) {
+    return order.pricePerKg;
+  }
+  if (order.totalPrice && order.quantity && order.quantity > 0) {
+    return order.totalPrice / order.quantity;
+  }
+  return 0;
+};
+
+// Real-time orders listener
+let unsubscribeOrders = null;
+
 const initializeOrders = async () => {
   try {
     const auth = getAuth();
@@ -387,54 +456,93 @@ const initializeOrders = async () => {
       return;
     }
 
-    const querySnapshot = await getDocs(collection(db, 'orders'));
-    orders.value = querySnapshot.docs.map(doc => {
-      const data = doc.data();
-      let timestamp = data.createdAt || data.timestamp;
-      
-      // Convert to Date if it's a Firestore Timestamp
-      if (timestamp && typeof timestamp.toDate === 'function') {
-        timestamp = timestamp.toDate();
+    console.log('Setting up real-time orders listener for seller:', currentSellerId.value);
+
+    // Clean up existing listener
+    if (unsubscribeOrders) {
+      unsubscribeOrders();
+    }
+
+    // Create query to filter orders by sellerId - only show orders for current seller
+    const ordersQuery = query(
+      collection(db, 'orders'),
+      where('sellerId', '==', currentSellerId.value)
+    );
+
+    // Set up real-time listener for orders
+    unsubscribeOrders = onSnapshot(ordersQuery, (querySnapshot) => {
+      const orderCount = querySnapshot.size;
+      console.log(`Real-time update: Found ${orderCount} orders for seller ${currentSellerId.value}`);
+
+      if (orderCount === 0) {
+        orders.value = [];
+        console.log('No orders found for this seller');
+        return;
       }
-      // Convert to Date if it's a string
-      else if (typeof timestamp === 'string') {
-        timestamp = new Date(timestamp);
-      }
-      // If it's missing, use current date
-      else if (!timestamp) {
-        timestamp = new Date();
-      }
+
+      orders.value = querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        let timestamp = data.createdAt || data.timestamp;
+        
+        // Convert to Date if it's a Firestore Timestamp
+        if (timestamp && typeof timestamp.toDate === 'function') {
+          timestamp = timestamp.toDate();
+        }
+        // Convert to Date if it's a string
+        else if (typeof timestamp === 'string') {
+          timestamp = new Date(timestamp);
+        }
+        // If it's missing, use current date
+        else if (!timestamp) {
+          timestamp = new Date();
+        }
+        
+        // Ensure Location is properly structured
+        const location = typeof data.Location === 'string' 
+          ? { address: data.Location } 
+          : (data.Location || {});
+        
+        // Debug log for each order
+        if (data.sellerId !== currentSellerId.value) {
+          console.warn(`Order ${doc.id} has different sellerId: ${data.sellerId} vs ${currentSellerId.value}`);
+        }
+        
+        return {
+          id: doc.id,
+          ...data,
+          username: data.username || '',
+          status: data.status || 'Pending', // Default status is now 'Pending'
+          Location: location,
+          totalPrice: data.totalPrice || 0,
+          timestamp: timestamp,
+          sellerId: data.sellerId || '',
+          orderCode: data.orderCode || '',
+          // New fields for multi-unit support
+          unit: data.unit || 'piece',
+          quantity: data.quantity || 1,
+          unitPrice: data.unitPrice || 0,
+          itemPrice: data.itemPrice || 0,
+          deliveryFee: data.deliveryFee || 0,
+          tax: data.tax || 0,
+          paymentMethod: data.paymentMethod || 'Cash on Delivery',
+          gcashNumber: data.gcashNumber || '',
+          deliveryOption: data.deliveryOption || '',
+          payStatus: data.payStatus || 'unpaid'
+        };
+      });
+
+      console.log('Orders updated in real-time:', orders.value.length);
       
-      // Ensure Location is properly structured
-      const location = typeof data.Location === 'string' 
-        ? { address: data.Location } 
-        : (data.Location || {});
-      
-      return {
-        id: doc.id,
-        ...data,
-        username: data.username || '',
-        status: data.status || 'Pending', // Default status is now 'Pending'
-        Location: location,
-        totalPrice: data.totalPrice || 0,
-        timestamp: timestamp,
-        sellerId: data.sellerId || '',
-        orderCode: data.orderCode || '',
-        // New fields for multi-unit support
-        unit: data.unit || 'piece',
-        quantity: data.quantity || 1,
-        unitPrice: data.unitPrice || 0,
-        itemPrice: data.itemPrice || 0,
-        deliveryFee: data.deliveryFee || 0,
-        tax: data.tax || 0,
-        paymentMethod: data.paymentMethod || 'Cash on Delivery',
-        gcashNumber: data.gcashNumber || '',
-        deliveryOption: data.deliveryOption || '',
-        payStatus: data.payStatus || 'unpaid'
-      };
+      // Show success message on first load if orders found
+      if (orders.value.length > 0) {
+        console.log(`Successfully loaded ${orders.value.length} orders for your products`);
+      }
+    }, (error) => {
+      console.error('Error in orders listener:', error);
     });
+
   } catch (error) {
-    console.error('Error fetching orders:', error);
+    console.error('Error setting up orders listener:', error);
   }
 };
 
@@ -445,6 +553,10 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('click', closeExportMenu);
+  // Clean up orders listener
+  if (unsubscribeOrders) {
+    unsubscribeOrders();
+  }
 });
 
 // Toggle dark mode
@@ -453,14 +565,16 @@ const toggleDarkMode = () => {
   document.body.classList.toggle('dark', isDarkMode.value);
 };
 
-const filterOptions = ['All Orders', 'Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled'];
-const statusOptions = ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled'];
+const filterOptions = ['All Orders', 'Pending', 'Processing', 'Shipped', 'Delivered', 'Order Received', 'Refund Processing', 'Cancelled'];
+const statusOptions = ['Pending', 'Processing', 'Shipped', 'Delivered', 'Order Received', 'Refund Processing', 'Cancelled'];
 
 // Order summary stats
 const pendingOrdersCount = computed(() => orders.value.filter(order => order.status === 'Pending').length);
 const processingOrdersCount = computed(() => orders.value.filter(order => order.status === 'Processing').length);
 const shippedOrdersCount = computed(() => orders.value.filter(order => order.status === 'Shipped').length);
 const deliveredOrdersCount = computed(() => orders.value.filter(order => order.status === 'Delivered').length);
+const orderReceivedCount = computed(() => orders.value.filter(order => order.status === 'Order Received').length);
+const refundProcessingCount = computed(() => orders.value.filter(order => order.status === 'Refund Processing').length);
 
 // Filter orders based on search query, active filter, and date
 const filteredOrders = computed(() => {
@@ -481,53 +595,56 @@ const filteredOrders = computed(() => {
       return matchesSearch && matchesFilter && matchesDate;
     })
     .sort((a, b) => {
-      // Sort by timestamp descending (newest first)
+      // First priority: Pending orders always at the top
+      if (a.status === 'Pending' && b.status !== 'Pending') return -1;
+      if (b.status === 'Pending' && a.status !== 'Pending') return 1;
+      
+      // Second priority: Sort by timestamp descending (newest first)
       return b.timestamp - a.timestamp;
     });
 });
 
-// Date filtering logic
+// Date range filtering logic
 const filterByDateCondition = (orderDate) => {
-  if (!selectedDate.value) return true;
+  if (!startDate.value) return true;
   
   const orderDateObj = new Date(orderDate);
-  const selectedDateObj = new Date(selectedDate.value);
+  const startDateObj = new Date(startDate.value);
   
-  // Compare dates (ignoring time)
-  if (!isSameDate(orderDateObj, selectedDateObj)) {
-    return false;
+  // Set time to start of day for start date
+  startDateObj.setHours(0, 0, 0, 0);
+  
+  if (!endDate.value) {
+    // Exact date filtering - only show orders from the selected start date
+    const endOfStartDate = new Date(startDate.value);
+    endOfStartDate.setHours(23, 59, 59, 999);
+    return orderDateObj >= startDateObj && orderDateObj <= endOfStartDate;
+  } else {
+    // Range date filtering - show orders between start and end dates
+    const endDateObj = new Date(endDate.value);
+    endDateObj.setHours(23, 59, 59, 999);
+    return orderDateObj >= startDateObj && orderDateObj <= endDateObj;
   }
-  
-  // If time is selected, compare hours and minutes
-  if (selectedTime.value) {
-    const [hours, minutes] = selectedTime.value.split(':').map(Number);
-    selectedDateObj.setHours(hours, minutes, 0, 0);
-    
-    // Compare hours and minutes
-    return (
-      orderDateObj.getHours() === hours &&
-      orderDateObj.getMinutes() === minutes
-    );
-  }
-  
-  return true;
 };
 
-const isSameDate = (date1, date2) => {
-  return (
-    date1.getFullYear() === date2.getFullYear() &&
-    date1.getMonth() === date2.getMonth() &&
-    date1.getDate() === date2.getDate()
-  );
+// Helper function to format date for display
+const formatDate = (dateString) => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', { 
+    year: 'numeric', 
+    month: 'long', 
+    day: 'numeric' 
+  });
 };
 
-const filterByDate = () => {
+const filterByDateRange = () => {
   currentPage.value = 1;
 };
 
 const resetDateFilter = () => {
-  selectedDate.value = '';
-  selectedTime.value = '';
+  startDate.value = '';
+  endDate.value = '';
   currentPage.value = 1;
 };
 
@@ -621,8 +738,32 @@ const closeModal = () => {
   showOrderModal.value = false;
 };
 
+// Notification helper function
+const showOrderNotification = (title, message, type = 'success', duration = null) => {
+  // Clear any existing notification first
+  showNotification.value = false;
+  
+  // Small delay to ensure the previous notification is cleared
+  setTimeout(() => {
+    notificationTitle.value = title;
+    notificationMessage.value = message;
+    notificationType.value = type;
+    showNotification.value = true;
+    
+    // Auto-hide after specified duration or default based on type
+    const timeout = duration || (type === 'error' ? 5000 : type === 'info' ? 4000 : 3000);
+    setTimeout(() => {
+      showNotification.value = false;
+    }, timeout);
+  }, 100);
+};
+
 const editOrder = (order) => {
-  alert(`Edit order ${order.orderCode ? `#${order.orderCode}` : ''}`);
+  showOrderNotification(
+    'Edit Order',
+    `Editing order ${order.orderCode ? `#${order.orderCode}` : 'details'}`,
+    'info'
+  );
 };
 
 const handleStatusUpdated = (updateData) => {
@@ -638,17 +779,20 @@ const handleStatusUpdated = (updateData) => {
     }
   }
   
-  // Show a success message
-  alert(`Order status updated to ${updateData.status}`);
+  // Note: OrderStatusUpdate component handles the status update notification
+  // No need for duplicate notification here
 };
 
 // Print receipt function
 const printReceipt = () => {
   const order = selectedOrder.value;
   const receiptWindow = window.open('', '_blank');
-  
-  if (!receiptWindow) {
-    alert('Please allow pop-ups to print receipts');
+    if (!receiptWindow) {
+    showOrderNotification(
+      'Print Failed',
+      'Please allow pop-ups to print receipts',
+      'error'
+    );
     return;
   }
   
@@ -737,9 +881,8 @@ const printReceipt = () => {
             <tr>
               <td>${order.productName || 'N/A'}</td>
               <td>${getUnitDisplay(order.unit)}</td>
-              <td>${order.quantity || 0}</td>
-              <td>₱${order.unitPrice ? order.unitPrice.toFixed(2) : '0.00'}</td>
-              <td>₱${order.itemPrice ? order.itemPrice.toFixed(2) : (order.unitPrice * order.quantity).toFixed(2)}</td>
+              <td>${order.quantity || 0}</td>              <td>₱${getUnitPrice(order).toFixed(2)}</td>
+              <td>₱${(order.itemPrice || (getUnitPrice(order) * order.quantity)).toFixed(2)}</td>
             </tr>
           </tbody>
           <tfoot>
@@ -826,7 +969,7 @@ const exportAsCSV = () => {
       order.productName || 'N/A',
       getUnitDisplay(order.unit),
       order.quantity || 0,
-      order.unitPrice ? `₱${order.unitPrice.toFixed(2)}` : '₱0.00',
+      `₱${getUnitPrice(order).toFixed(2)}`,
       getAddressDisplay(order.Location),
       formatDateTime(order.timestamp || order.createdAt),
       `₱${order.totalPrice.toFixed(2)}`,
@@ -841,9 +984,15 @@ const exportAsCSV = () => {
   link.setAttribute('href', url);
   link.setAttribute('download', `orders_export_${new Date().toISOString().slice(0, 10)}.csv`);
   link.style.visibility = 'hidden';
-  document.body.appendChild(link);
-  link.click();
+  document.body.appendChild(link);  link.click();
   document.body.removeChild(link);
+  
+  // Show success notification
+  showOrderNotification(
+    'Export Successful',
+    'Orders exported to CSV successfully',
+    'success'
+  );
 };
 
 // Helper function to escape HTML
@@ -857,9 +1006,12 @@ const escapeHtml = (text) => {
 const exportAsPDF = () => {
   // Create a new window for PDF content
   const printWindow = window.open('', '_blank');
-  
-  if (!printWindow) {
-    alert('Please allow pop-ups to export as PDF');
+    if (!printWindow) {
+    showOrderNotification(
+      'Export Failed',
+      'Please allow pop-ups to export as PDF',
+      'error'
+    );
     return;
   }
   
@@ -929,14 +1081,19 @@ const exportAsPDF = () => {
     <\\/body>
     <\\/html>
   `;
-  
-  // Write content to the new window
+    // Write content to the new window
   printWindow.document.open();
   printWindow.document.write(pdfContent);
   printWindow.document.close();
+  
+  // Show success notification
+  showOrderNotification(
+    'Export Successful',
+    'Orders exported to PDF successfully',
+    'success'
+  );
 };
 </script>
-
 <style scoped>
 .info-group p {
   margin: 8px 0;
@@ -973,8 +1130,6 @@ const exportAsPDF = () => {
 .product-name {
   font-weight: 500;
 }
-
-
 
 .unit-quantity {
   display: flex;
@@ -1019,7 +1174,7 @@ const exportAsPDF = () => {
   flex: 1;
   padding: 20px;
   overflow-y: auto;
-  margin-left: 230px; /* Match the sidebar width */
+  margin-left: 230px;
 }
 
 .header {
@@ -1056,7 +1211,6 @@ const exportAsPDF = () => {
   background: rgba(0,0,0,0.05);
 }
 
-/* Summary Cards */
 .summary-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -1101,6 +1255,16 @@ const exportAsPDF = () => {
 .delivered-icon {
   background-color: #d1fae5;
   color: #059669;
+}
+
+.received-icon {
+  background-color: #ecfdf5;
+  color: #047857;
+}
+
+.refund-icon {
+  background-color: #fff7ed;
+  color: #ea580c;
 }
 
 .card-content h3 {
@@ -1180,43 +1344,96 @@ const exportAsPDF = () => {
   padding: 0;
 }
 
-/* Date Filter Styles */
 .date-filter-container {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 .date-filter {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   background-color: #f9f9f9;
   border-radius: 8px;
   padding: 0 12px;
   border: 1px solid #e0e0e0;
   height: 40px;
+  min-width: fit-content;
+  transition: min-width 0.3s ease;
 }
 
 .date-filter i {
   color: #888;
   font-size: 16px;
+  flex-shrink: 0;
 }
 
-.minimal-date-input,
-.minimal-time-input {
+.date-separator {
+  color: #666;
+  font-size: 14px;
+  margin: 0 2px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.minimal-date-input {
   border: none;
   background: transparent;
-  padding: 8px 0;
+  padding: 6px 2px;
   font-size: 14px;
   color: #333;
   outline: none;
-  width: 120px;
+  width: 110px;
   appearance: none;
   -webkit-appearance: none;
+  flex-shrink: 0;
 }
 
-.minimal-time-input {
-  width: 80px;
+.date-clear-btn {
+  background: #f0f0f0;
+  border: 1px solid #ddd;
+  color: #333;
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  margin-left: 6px;
+  font-size: 16px;
+}
+
+.date-clear-btn:hover {
+  background-color: #dc2626;
+  color: white;
+  border-color: #dc2626;
+  transform: scale(1.1);
+}
+
+.date-clear-btn i {
+  font-size: 14px;
+  font-weight: bold;
+  line-height: 1;
+}
+
+.date-filter-info {
+  margin-top: 5px;
+  padding: 4px 8px;
+  background-color: #e8f5e9;
+  border-radius: 4px;
+  border: 1px solid #c8e6c9;
+  white-space: nowrap;
+}
+
+.filter-text {
+  font-size: 12px;
+  color: #2e7d32;
+  font-weight: 500;
 }
 
 .minimal-reset-btn {
@@ -1429,9 +1646,24 @@ const exportAsPDF = () => {
   color: #059669;
 }
 
+.status-badge.order-received,
+.status-badge.orderreceived,
+.status-badge[class*="order received"],
+.status-badge[class*="order-received"] {
+  background-color: #065f46;
+  color: #ffffff;
+}
+
 .status-badge.cancelled {
   background-color: #fee2e2;
   color: #dc2626;
+}
+
+.status-badge.refund-processing,
+.status-badge[class*="refund processing"],
+.status-badge[class*="refund-processing"] {
+  background-color: #fff7ed;
+  color: #ea580c;
 }
 
 .action-buttons {
@@ -1493,7 +1725,6 @@ const exportAsPDF = () => {
   cursor: not-allowed;
 }
 
-/* Modal Styles */
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -1645,7 +1876,6 @@ const exportAsPDF = () => {
   font-size: 1.1rem;
 }
 
-/* Dark mode styles */
 :global(.dark) .main-content {
   background-color: #111827;
 }
@@ -1670,31 +1900,27 @@ const exportAsPDF = () => {
   color: #9ca3af;
 }
 
-:global(.dark) .summary-card {
-  background-color: #1f2937;
-}
-
 :global(.dark) .card-value {
   color: #f9fafb;
 }
 
 :global(.dark) .search-box,
-:global(.dark) .filter-btn,
 :global(.dark) .date-filter {
-  background-color: #374151;
-  border-color: #4b5563;
+  background-color: #1f2937;
+  border-color: #374151;
   color: #e5e7eb;
 }
 
 :global(.dark) .search-box input,
 :global(.dark) .minimal-date-input,
 :global(.dark) .minimal-time-input {
+  background-color: #1f2937;
   color: #e5e7eb;
 }
 
 :global(.dark) .filter-options {
   background-color: #1f2937;
-  border-color: #4b5563;
+  border-color: #374151;
 }
 
 :global(.dark) .filter-options button {
@@ -1707,7 +1933,6 @@ const exportAsPDF = () => {
 
 :global(.dark) .export-btn {
   background-color: #3b7a3f;
-  color: white;
 }
 
 :global(.dark) .export-btn:hover {
@@ -1716,7 +1941,7 @@ const exportAsPDF = () => {
 
 :global(.dark) .export-menu {
   background-color: #1f2937;
-  border: 1px solid #4b5563;
+  border-color: #374151;
 }
 
 :global(.dark) .export-option {
@@ -1734,7 +1959,6 @@ const exportAsPDF = () => {
 
 :global(.dark) .orders-table td {
   border-color: #4b5563;
-  color: #e5e7eb;
 }
 
 :global(.dark) .order-id {
@@ -1748,15 +1972,6 @@ const exportAsPDF = () => {
 :global(.dark) .pagination button {
   background-color: #374151;
   border-color: #4b5563;
-  color: #e5e7eb;
-}
-
-:global(.dark) .modal-content {
-  background-color: #1f2937;
-}
-
-:global(.dark) .modal-header {
-  border-bottom-color: #4b5563;
 }
 
 :global(.dark) .modal-content {
@@ -1810,7 +2025,6 @@ const exportAsPDF = () => {
   color: #6abe6e;
 }
 
-/* Responsive styles */
 @media (max-width: 768px) {
   .main-content {
     margin-left: 0;

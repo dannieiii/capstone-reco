@@ -18,17 +18,16 @@
       <div v-if="loading" class="loading-state">
         <div class="spinner"></div>
         <p>Loading sales data...</p>
-      </div>
-      
-      <div v-else-if="salesItems.length === 0" class="empty-state">
-        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      </div>      <div v-else-if="displayedItems.length === 0" class="empty-state">
+        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 3v18h18"></path>
           <path d="m19 9-5 5-4-4-3 3"></path>
         </svg>
-        <p>No sales data available for this period</p>
+        <h3>No Sales Data</h3>
+        <p>No sales found for the selected time period.</p>
+        <small>Try selecting a different time period or check if you have any completed sales.</small>
       </div>
-      
-      <div v-else class="sales-item" v-for="(item, index) in salesItems" :key="index">
+        <div v-else class="sales-item" v-for="(item, index) in displayedItems" :key="index">
         <div class="item-info">
           <span class="item-rank">{{ index + 1 }}</span>
           <div class="item-details">
@@ -39,12 +38,11 @@
           <div class="progress-bar-container">
             <div class="progress-bar" :style="{ width: `${item.percentage}%` }"></div>
           </div>
-          <span class="percentage">{{ item.percentage }}%</span>
+          <span class="quantity-sold">{{ item.quantity }}</span>
         </div>
       </div>
     </div>
-    
-    <div class="view-more" v-if="salesItems.length > 5">
+      <div class="view-more" v-if="props.salesItems.length > 5">
       <button @click="toggleViewAll">
         {{ viewAll ? 'Show Less' : 'View All' }}
         <svg v-if="!viewAll" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -60,7 +58,7 @@
 
 <script setup>
 import { ref, onMounted, watch, computed } from 'vue';
-import { getFirestore, collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { getFirestore, collection, query, where, getDocs, orderBy, getDoc, doc, Timestamp } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 
 const props = defineProps({
@@ -78,7 +76,7 @@ const props = defineProps({
   }
 });
 
-defineEmits(['setActivePeriod']);
+const emits = defineEmits(['setActivePeriod', 'updateSalesData']);
 
 const loading = ref(true);
 const viewAll = ref(false);
@@ -104,9 +102,16 @@ const toggleViewAll = () => {
   }
 };
 
+// Handle image loading errors
+const handleImageError = (event) => {
+  event.target.src = '/images/placeholder.jpg';
+};
+
 // Fetch sales data based on selected period
 const fetchSalesData = async () => {
   loading.value = true;
+  console.log('=== Starting fetchSalesData ===');
+  console.log('Active period:', props.activePeriod);
   
   try {
     const auth = getAuth();
@@ -118,7 +123,9 @@ const fetchSalesData = async () => {
       return;
     }
     
-    // Determine date range based on active period
+    console.log('Current user ID:', user.uid);
+    
+    // Calculate date range based on active period
     const now = new Date();
     let startDate = new Date();
     
@@ -130,63 +137,170 @@ const fetchSalesData = async () => {
         startDate.setDate(now.getDate() - 7);
         break;
       case '1m': // This Month
-        startDate.setMonth(now.getMonth(), 1); // First day of current month
+        startDate.setMonth(now.getMonth(), 1);
         break;
       case '1y': // This Year
-        startDate.setMonth(0, 1); // January 1st of current year
+        startDate.setMonth(0, 1);
         break;
       default:
-        startDate.setMonth(now.getMonth(), 1); // Default to month
+        startDate.setMonth(now.getMonth(), 1);
     }
     
-    // Query orders within the date range
-    const ordersRef = collection(db, 'orders');
-    const q = query(
-      ordersRef,
-      where('sellerId', '==', user.uid),
-      where('timestamp', '>=', startDate),
-      orderBy('timestamp', 'desc')
-    );
+    const startTimestamp = Timestamp.fromDate(startDate);
+    console.log('Date range - From:', startDate, 'To:', now);
     
-    const snapshot = await getDocs(q);
+    const salesRef = collection(db, 'sales');
+    let salesData = [];
     
-    // Process orders to get top selling products
-    const productSales = {};
-    
-    snapshot.forEach(doc => {
-      const orderData = doc.data();
-      const productName = orderData.productName || 'Unknown Product';
-      const quantity = orderData.quantity || 1;
+    try {
+      // First attempt: Try with date filter
+      console.log('Attempting query with date filter...');
+      const qWithDate = query(
+        salesRef,
+        where('sellerId', '==', user.uid),
+        where('timestamp', '>=', startTimestamp)
+      );
       
-      if (!productSales[productName]) {
-        productSales[productName] = {
-          name: productName,
+      const snapshotWithDate = await getDocs(qWithDate);
+      console.log('Query with date filter successful. Found', snapshotWithDate.size, 'documents');
+      
+      snapshotWithDate.forEach(doc => {
+        salesData.push({ id: doc.id, ...doc.data() });
+      });
+      
+    } catch (indexError) {
+      console.warn('Date filter query failed (likely missing index):', indexError.message);
+      
+      try {
+        // Fallback: Get all sales for this seller and filter in memory
+        console.log('Falling back to seller-only query...');
+        const qSellerOnly = query(
+          salesRef,
+          where('sellerId', '==', user.uid)
+        );
+        
+        const snapshotSellerOnly = await getDocs(qSellerOnly);
+        console.log('Seller-only query successful. Found', snapshotSellerOnly.size, 'documents');
+        
+        // Filter by date in memory
+        snapshotSellerOnly.forEach(doc => {
+          const data = doc.data();
+          const docTimestamp = data.timestamp;
+          
+          // Check if timestamp exists and is within range
+          if (docTimestamp && docTimestamp.toDate() >= startDate) {
+            salesData.push({ id: doc.id, ...data });
+          }
+        });
+        
+        console.log('After date filtering:', salesData.length, 'documents remain');
+        
+      } catch (sellerError) {
+        console.error('Seller query also failed:', sellerError);
+        
+        // Last resort: Get all sales and filter by seller and date
+        console.log('Last resort: fetching all sales...');
+        const allSalesSnapshot = await getDocs(salesRef);
+        console.log('Total sales in database:', allSalesSnapshot.size);
+        
+        allSalesSnapshot.forEach(doc => {
+          const data = doc.data();
+          const docTimestamp = data.timestamp;
+          
+          if (data.sellerId === user.uid && 
+              docTimestamp && 
+              docTimestamp.toDate() >= startDate) {
+            salesData.push({ id: doc.id, ...data });
+          }
+        });
+        
+        console.log('After filtering by seller and date:', salesData.length, 'documents');
+      }
+    }
+    
+    if (salesData.length === 0) {
+      console.log('No sales data found for current user and period');
+      emits('updateSalesData', []);
+      loading.value = false;
+      return;
+    }
+      // Process sales data to aggregate by product
+    const productSales = {};
+    const productFetches = new Map();
+    
+    salesData.forEach(sale => {
+      // Try different field names for product identification
+      const productId = sale.productId || sale.product_id;
+      const productName = sale.productName || sale.product_name || sale.name;
+      const quantity = parseInt(sale.quantity) || parseInt(sale.qty) || 1;
+      
+      let productKey = productId || productName;
+      
+      if (!productKey) {
+        console.warn('Sale missing product identifier:', sale);
+        return;
+      }
+      
+      // Aggregate sales by product
+      if (!productSales[productKey]) {
+        productSales[productKey] = {
+          id: productId || productKey,
+          name: productName || `Product ${productKey}`,
           quantity: quantity,
-          image: orderData.productImage || '/images/placeholder.jpg'
+          image: '/images/placeholder.jpg'
         };
       } else {
-        productSales[productName].quantity += quantity;
+        productSales[productKey].quantity += quantity;
+      }
+      
+      // Queue product details fetch if we have a productId
+      if (productId && !productFetches.has(productId)) {
+        productFetches.set(productId, getDoc(doc(db, 'products', productId)));
       }
     });
-    
-    // Convert to array and sort by quantity
+      // Fetch product details if needed
+    if (productFetches.size > 0) {
+      try {
+        const productResults = await Promise.allSettled(Array.from(productFetches.values()));
+        const productIds = Array.from(productFetches.keys());
+        
+        productResults.forEach((result, index) => {
+          const productId = productIds[index];
+          
+          if (result.status === 'fulfilled' && result.value.exists()) {
+            const productData = result.value.data();
+            const productName = productData.name || productData.productName || `Product ${productId}`;
+            const productImage = productData.image || productData.imageUrl || productData.images?.[0] || '/images/placeholder.jpg';
+            
+            if (productSales[productId]) {
+              productSales[productId].name = productName;
+              productSales[productId].image = productImage;
+            }
+          }
+        });
+      } catch (error) {
+        console.warn('Error fetching some product details:', error);
+      }
+    }
+      // Convert to array and sort by quantity
     const sortedProducts = Object.values(productSales)
       .sort((a, b) => b.quantity - a.quantity);
     
-    // Calculate percentage relative to highest selling product
+    // Calculate percentages
     if (sortedProducts.length > 0) {
-      const highestQuantity = sortedProducts[0].quantity;
-      
+      const maxQuantity = sortedProducts[0].quantity;
       sortedProducts.forEach(product => {
-        product.percentage = Math.round((product.quantity / highestQuantity) * 100);
+        product.percentage = Math.round((product.quantity / maxQuantity) * 100);
       });
     }
     
-    // Set data loading to false
-    loading.value = false;
+    // Emit the data to parent component
+    emits('updateSalesData', sortedProducts);
     
   } catch (error) {
-    console.error('Error fetching sales data:', error);
+    console.error('Error in fetchSalesData:', error);
+    emits('updateSalesData', []);
+  } finally {
     loading.value = false;
   }
 };
@@ -296,6 +410,26 @@ onMounted(() => {
   margin-bottom: 10px;
 }
 
+.empty-state h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #374151;
+  margin: 5px 0 8px 0;
+}
+
+.empty-state p {
+  font-size: 0.9rem;
+  margin: 0 0 8px 0;
+  color: #6b7280;
+}
+
+.empty-state small {
+  font-size: 0.8rem;
+  color: #9ca3af;
+  display: block;
+  margin-top: 5px;
+}
+
 .sales-item {
   display: flex;
   justify-content: space-between;
@@ -359,11 +493,11 @@ onMounted(() => {
   border-radius: 4px;
 }
 
-.percentage {
-  font-size: 0.8rem;
+.quantity-sold {
+  font-size: 0.9rem;
   font-weight: 600;
   color: #111827;
-  min-width: 40px;
+  min-width: 50px;
   text-align: right;
 }
 
@@ -417,6 +551,18 @@ onMounted(() => {
   color: #4b5563;
 }
 
+:global(.dark) .empty-state h3 {
+  color: #f3f4f6;
+}
+
+:global(.dark) .empty-state p {
+  color: #9ca3af;
+}
+
+:global(.dark) .empty-state small {
+  color: #6b7280;
+}
+
 :global(.dark) .sales-item {
   border-color: #374151;
 }
@@ -434,7 +580,7 @@ onMounted(() => {
   background-color: #374151;
 }
 
-:global(.dark) .percentage {
+:global(.dark) .quantity-sold {
   color: #f9fafb;
 }
 

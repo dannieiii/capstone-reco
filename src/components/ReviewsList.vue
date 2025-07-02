@@ -35,16 +35,29 @@
         </div>
         <div class="review-content">
           <p>{{ review.review }}</p>
+          <div v-if="review.imageUrl" class="review-image">
+            <img :src="review.imageUrl" alt="Review image" @click="openImageModal(review.imageUrl)" />
+          </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Image Modal -->
+    <div v-if="showImageModal" class="image-modal" @click="closeImageModal">
+      <div class="modal-content" @click.stop>
+        <img :src="modalImageUrl" alt="Review image" />
+        <button class="close-modal" @click="closeImageModal">
+          <X size="24" />
+        </button>
       </div>
     </div>
   </div>
 </template>
 
 <script>
-import { Loader2, MessageSquare, Star, User } from 'lucide-vue-next';
+import { Loader2, MessageSquare, Star, User, X } from 'lucide-vue-next';
 import { ref, onMounted } from 'vue';
-import { collection, query, where, orderBy, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/firebase/firebaseConfig';
 
 export default {
@@ -52,7 +65,8 @@ export default {
     Loader2,
     MessageSquare,
     Star,
-    User
+    User,
+    X
   },
   props: {
     productId: {
@@ -67,29 +81,40 @@ export default {
   setup(props) {
     const reviews = ref([]);
     const loading = ref(true);
+    const showImageModal = ref(false);
+    const modalImageUrl = ref('');
     
     const fetchReviews = async () => {
       loading.value = true;
       try {
+        // Simplified query - only filter by productId
         const reviewsQuery = query(
           collection(db, 'reviews'),
-          where('productId', '==', props.productId),
-          orderBy('createdAt', 'desc')
+          where('productId', '==', props.productId)
         );
         
         const querySnapshot = await getDocs(reviewsQuery);
         
-        reviews.value = querySnapshot.docs.map(doc => ({
+        // Get reviews and sort client-side
+        let reviewsData = querySnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data(),
           createdAt: doc.data().createdAt?.toDate() || new Date()
         }));
+
+        // Sort by createdAt descending (newest first)
+        reviewsData.sort((a, b) => b.createdAt - a.createdAt);
         
+        // Apply limit if specified
         if (props.limit > 0) {
-          reviews.value = reviews.value.slice(0, props.limit);
+          reviewsData = reviewsData.slice(0, props.limit);
         }
+
+        reviews.value = reviewsData;
       } catch (error) {
         console.error('Error fetching reviews:', error);
+        // Show user-friendly error message
+        reviews.value = [];
       } finally {
         loading.value = false;
       }
@@ -103,6 +128,16 @@ export default {
         day: 'numeric'
       });
     };
+
+    const openImageModal = (imageUrl) => {
+      modalImageUrl.value = imageUrl;
+      showImageModal.value = true;
+    };
+
+    const closeImageModal = () => {
+      showImageModal.value = false;
+      modalImageUrl.value = '';
+    };
     
     onMounted(() => {
       fetchReviews();
@@ -111,7 +146,11 @@ export default {
     return {
       reviews,
       loading,
-      formatDate
+      formatDate,
+      showImageModal,
+      modalImageUrl,
+      openImageModal,
+      closeImageModal
     };
   }
 };
@@ -224,6 +263,67 @@ export default {
 }
 
 .review-content p {
-  margin: 0;
+  margin: 0 0 10px 0;
+}
+
+.review-image {
+  margin-top: 10px;
+}
+
+.review-image img {
+  max-width: 200px;
+  max-height: 150px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.review-image img:hover {
+  transform: scale(1.02);
+}
+
+.image-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  position: relative;
+  max-width: 90%;
+  max-height: 90%;
+}
+
+.modal-content img {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 8px;
+}
+
+.close-modal {
+  position: absolute;
+  top: -15px;
+  right: -15px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background-color: white;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.close-modal:hover {
+  background-color: #f5f5f5;
 }
 </style>

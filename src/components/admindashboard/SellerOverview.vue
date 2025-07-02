@@ -24,12 +24,12 @@
                 <User size="20" class="profile-icon" />
               </div>
               <div>
-                <div class="seller-name">{{ seller.firstName }} {{ seller.lastName }}</div>
-                <div class="seller-location">{{ seller.farmAddress || seller.address || 'No address' }}</div>
+                <div class="seller-name">{{ seller.personalInfo?.firstName }} {{ seller.personalInfo?.lastName }}</div>
+                <div class="seller-location">{{ seller.farmDetails?.farmAddress || seller.personalInfo?.address || 'No address' }}</div>
               </div>
             </div>
           </td>
-          <td>{{ seller.farmType || 'Not specified' }}</td>
+          <td>{{ seller.farmDetails?.farmType || 'Not specified' }}</td>
           <td>
             <span class="status-badge" :class="getStatusClass(seller)">
               {{ getStatusLabel(seller) }}
@@ -85,9 +85,9 @@ const fetchSellers = async () => {
 };
 
 const getStatusClass = (seller) => {
-  if (seller.registrationStatus === 'Active' || seller.verificationStatus === 'Verified') {
+  if (seller.personalInfo?.status === 'Active' || seller.verificationStatus === 'Verified') {
     return 'active';
-  } else if (seller.registrationStatus === 'Pending' || seller.verificationStatus === 'Pending') {
+  } else if (seller.personalInfo?.registrationStatus === 'Pending' || seller.verificationStatus === 'Pending') {
     return 'pending';
   } else {
     return 'inactive';
@@ -95,9 +95,9 @@ const getStatusClass = (seller) => {
 };
 
 const getStatusLabel = (seller) => {
-  if (seller.registrationStatus === 'Active' || seller.verificationStatus === 'Verified') {
+  if (seller.personalInfo?.status === 'Active' || seller.verificationStatus === 'Verified') {
     return 'Active';
-  } else if (seller.registrationStatus === 'Pending' || seller.verificationStatus === 'Pending') {
+  } else if (seller.personalInfo?.registrationStatus === 'Pending' || seller.verificationStatus === 'Pending') {
     return 'Pending';
   } else {
     return 'Inactive';
@@ -112,6 +112,7 @@ onMounted(() => {
   fetchSellers();
 });
 </script>
+
 
 <style scoped>
 .dashboard-card {

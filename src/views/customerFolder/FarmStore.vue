@@ -108,10 +108,6 @@
               <h3>Products</h3>
               <span class="product-count">{{ products.length }} items</span>
             </div>
-            <button @click="router.push('/seller/add-product')" class="add-product-btn">
-              <Plus size="16" />
-              <span class="btn-text">Add Product</span>
-            </button>
           </div>
           
           <!-- Categories -->
@@ -145,11 +141,7 @@
             </div>
             <h4>No products found</h4>
             <p v-if="selectedCategory">No products in the "{{ selectedCategory }}" category</p>
-            <p v-else>Start adding products to your farm store</p>
-            <button @click="router.push('/seller/add-product')" class="add-btn">
-              <Plus size="16" />
-              Add Product
-            </button>
+            <p v-else>This farm store has no products available</p>
           </div>
           
           <div v-else class="products-grid">
@@ -157,29 +149,41 @@
               v-for="product in filteredProducts" 
               :key="product.id" 
               class="product-card"
-              @click="router.push(`/seller/edit-product/${product.id}`)"
+              @click="viewProduct(product)"
             >
               <div class="product-image">
                 <img :src="getProductImage(product)" alt="Product image" />
-                <div class="stock-badge" :class="{ 'low-stock': (product.stock || 0) < 10 }">
-                  {{ (product.stock || 0) > 0 ? 'In Stock' : 'Out of Stock' }}
+                <div class="stock-badge" :class="{ 'low-stock': getProductStock(product) < 10, 'out-of-stock': getProductStock(product) <= 0 }">
+                  {{ getProductStock(product) > 0 ? 'In Stock' : 'Out of Stock' }}
+                </div>
+                <!-- Product badges -->
+                <div v-if="product.isOrganic" class="product-badge organic">Organic</div>
+                <div v-if="product.isTrending" class="product-badge trending">
+                  <TrendingUp size="12" />
+                  Trending
                 </div>
               </div>
               <div class="product-info">
                 <h4>{{ product.name || product.productName || 'Untitled Product' }}</h4>
                 <div class="product-meta">
-                  <p class="product-price">₱{{ product.price || 0 }}</p>
-                  <p class="product-unit">/ {{ product.unit || 'unit' }}</p>
+                  <p class="product-price">₱{{ getProductPrice(product) }}</p>
+                  <p class="product-unit">/ {{ getProductUnit(product) }}</p>
                 </div>
-                <div class="stock-info" :class="{ 'low-stock': (product.stock || 0) < 10 }">
+                <div class="product-stats">
+                  <div class="stat">
+                    <Eye size="12" />
+                    <span>{{ product.views || 0 }}</span>
+                  </div>
+                  <div class="stat">
+                    <ShoppingBag size="12" />
+                    <span>{{ product.sold || 0 }}</span>
+                  </div>
+                </div>
+                <div class="stock-info" :class="{ 'low-stock': getProductStock(product) < 10, 'out-of-stock': getProductStock(product) <= 0 }">
                   <Package size="14" />
-                  <span>{{ product.stock || 0 }} left</span>
+                  <span>{{ getProductStock(product) }} left</span>
                 </div>
               </div>
-              <button class="edit-btn">
-                <Edit size="14" />
-                Edit
-              </button>
             </div>
           </div>
         </div>
@@ -188,21 +192,25 @@
   </template>
   
   <script setup>
-  import { ref, computed, onMounted, onUnmounted } from 'vue';
-  import { useRouter } from 'vue-router';
+  import { ref, computed, onMounted, watch } from 'vue';
+  import { useRouter, useRoute } from 'vue-router';
   import { 
     ChevronLeft, Star, MapPin, Clock, PackageOpen, 
-    Package, Plus, Edit, Share2, Truck, CreditCard, Phone,
-    CheckCircle
+    Package, Share2, Truck, CreditCard, Phone,
+    CheckCircle, Eye, ShoppingBag, TrendingUp
   } from 'lucide-vue-next';
   import { 
     doc, getDoc, collection, query, where, getDocs 
   } from 'firebase/firestore';
-  import { db, auth } from '@/firebase/firebaseConfig';
+  import { db } from '@/firebase/firebaseConfig';
   
   const router = useRouter();
+  const route = useRoute();
   
-  // Default images (only used if no real data is available)
+  // Get sellerId from route params
+  const sellerId = ref(route.params.sellerId);
+  
+  // Default images
   const defaultImages = {
     banner: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8ZmFybXxlbnwwfHwwfHx8MA%3D%3D&w=1200&q=80',
     profile: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8M3x8cGVyc29ufGVufDB8fDB8fHww&w=400&q=80',
@@ -244,7 +252,6 @@
   
   // Helper function to get product image
   const getProductImage = (product) => {
-    // Try to get the image from different possible properties
     if (product.images && product.images.length > 0) {
       return product.images[0];
     }
@@ -255,6 +262,45 @@
       return product.imageUrl;
     }
     return defaultImages.product;
+  };
+  
+  // Helper function to get product price
+  const getProductPrice = (product) => {
+    if (product.pricePerKilo > 0) return product.pricePerKilo.toFixed(2);
+    if (product.pricePerSack > 0) return product.pricePerSack.toFixed(2);
+    if (product.pricePerTali > 0) return product.pricePerTali.toFixed(2);
+    if (product.pricePerKaing > 0) return product.pricePerKaing.toFixed(2);
+    if (product.pricePerBundle > 0) return product.pricePerBundle.toFixed(2);
+    if (product.pricePerTray > 0) return product.pricePerTray.toFixed(2);
+    if (product.pricePerPiece > 0) return product.pricePerPiece.toFixed(2);
+    if (product.price) return product.price.toFixed(2);
+    return '0.00';
+  };
+  
+  // Helper function to get product unit
+  const getProductUnit = (product) => {
+    if (product.pricePerKilo > 0) return 'kg';
+    if (product.pricePerSack > 0) return 'sack';
+    if (product.pricePerTali > 0) return 'tali';
+    if (product.pricePerKaing > 0) return 'kaing';
+    if (product.pricePerBundle > 0) return 'bundle';
+    if (product.pricePerTray > 0) return 'tray';
+    if (product.pricePerPiece > 0) return 'piece';
+    if (product.unit) return product.unit;
+    return 'unit';
+  };
+  
+  // Helper function to get product stock
+  const getProductStock = (product) => {
+    if (product.stockPerKilo > 0) return product.stockPerKilo;
+    if (product.stockPerSack > 0) return product.stockPerSack;
+    if (product.stockPerTali > 0) return product.stockPerTali;
+    if (product.stockPerKaing > 0) return product.stockPerKaing;
+    if (product.stockPerBundle > 0) return product.stockPerBundle;
+    if (product.stockPerTray > 0) return product.stockPerTray;
+    if (product.stockPerPiece > 0) return product.stockPerPiece;
+    if (product.stock) return product.stock;
+    return 0;
   };
   
   // Extract unique categories from products
@@ -271,67 +317,178 @@
   // Fetch seller profile data
   const fetchProfileData = async (userId) => {
     try {
-      const sellerRef = doc(db, 'sellers', userId);
-      const sellerSnap = await getDoc(sellerRef);
+      console.log('Fetching seller profile for userId:', userId);
       
-      if (sellerSnap.exists()) {
-        const data = sellerSnap.data();
-        
-        // Set all the seller data from Firebase
-        farmName.value = data.farmName || 'My Farm';
-        farmAddress.value = data.farmAddress || data.address || 'No address provided';
-        operatingHours.value = data.operatingHours || 'Not specified';
-        deliveryMethod.value = data.deliveryMethod || 'Not specified';
-        paymentMethod.value = data.paymentMethod || 'Cash on Delivery';
-        contact.value = data.contact || 'No contact provided';
-        email.value = data.email || '';
-        socialMedia.value = data.socialMedia || '';
-        isVerified.value = data.isVerified || data.verificationStatus === 'Verified';
-        
-        // Use real profile image if available
-        if (data.photoUrl && data.photoUrl.trim() !== '') {
-          profileImage.value = data.photoUrl;
-        }
-        
-        // For banner, we'll keep the default farm image for now
-        // You can add a bannerImage field to your sellers collection if needed
-        
-        // Stats
-        averageRating.value = data.averageRating || 4.0;
-        totalReviews.value = data.reviewCount || 0;
+      // Query the sellers collection where userId field matches
+      const sellersQuery = query(
+        collection(db, 'sellers'), 
+        where('userId', '==', userId)
+      );
+      
+      const sellersSnapshot = await getDocs(sellersQuery);
+      
+      if (sellersSnapshot.empty) {
+        console.error('No seller found with userId:', userId);
+        farmName.value = 'Seller not found';
+        return;
       }
+      
+      // Get the first matching seller document
+      const sellerDoc = sellersSnapshot.docs[0];
+      const data = sellerDoc.data();
+      console.log('Seller data found:', data);
+      
+      // Extract farm name from farmDetails map
+      if (data.farmDetails && data.farmDetails.farmName) {
+        farmName.value = data.farmDetails.farmName;
+      } else {
+        // Fallback to personal info
+        const firstName = data.personalInfo?.firstName || '';
+        const lastName = data.personalInfo?.lastName || '';
+        farmName.value = firstName && lastName ? `${firstName} ${lastName}'s Farm` : 'Farm Store';
+      }
+      
+      // Extract farm address
+      if (data.farmDetails && data.farmDetails.farmAddress) {
+        farmAddress.value = data.farmDetails.farmAddress;
+      } else if (data.address) {
+        farmAddress.value = data.address;
+      } else {
+        farmAddress.value = 'Address not provided';
+      }
+      
+      // Extract delivery information
+      if (data.deliveryInfo) {
+        if (data.deliveryInfo.areasCovered && Array.isArray(data.deliveryInfo.areasCovered)) {
+          deliveryMethod.value = `Available in ${data.deliveryInfo.areasCovered.join(', ')}`;
+        } else {
+          deliveryMethod.value = 'Delivery areas not specified';
+        }
+      } else {
+        deliveryMethod.value = 'Delivery info not available';
+      }
+      
+      // Extract operating hours
+      if (data.farmDetails && data.farmDetails.operatingHours) {
+        operatingHours.value = data.farmDetails.operatingHours;
+      } else {
+        operatingHours.value = 'Not specified';
+      }
+      
+      // Extract payment methods
+      if (data.paymentMethods && Array.isArray(data.paymentMethods)) {
+        paymentMethod.value = data.paymentMethods.join(', ');
+      } else {
+        paymentMethod.value = 'Cash on Delivery';
+      }
+      
+      // Extract contact information
+      if (data.personalInfo && data.personalInfo.phoneNumber) {
+        contact.value = data.personalInfo.phoneNumber;
+      } else if (data.contact) {
+        contact.value = data.contact;
+      } else {
+        contact.value = 'No contact provided';
+      }
+      
+      // Extract email
+      if (data.personalInfo && data.personalInfo.email) {
+        email.value = data.personalInfo.email;
+      } else if (data.email) {
+        email.value = data.email;
+      }
+      
+      // Social media (if available)
+      socialMedia.value = data.socialMedia || '';
+      
+      // Verification status
+      isVerified.value = data.verificationStatus === 'Verified' || data.isVerified === true;
+      
+      // Profile image
+      if (data.personalInfo && data.personalInfo.photoUrl && data.personalInfo.photoUrl.trim() !== '') {
+        profileImage.value = data.personalInfo.photoUrl;
+      } else if (data.photoUrl && data.photoUrl.trim() !== '') {
+        profileImage.value = data.photoUrl;
+      }
+      
+      // Stats (you can implement this based on reviews collection)
+      averageRating.value = data.averageRating || 4.0;
+      totalReviews.value = data.reviewCount || 0;
+      
     } catch (error) {
-      console.error("Error fetching profile data:", error);
+      console.error("Error fetching seller profile:", error);
+      farmName.value = 'Error loading seller info';
     }
   };
   
   // Fetch seller products
   const fetchProducts = async (userId) => {
     try {
+      console.log('Fetching products for sellerId:', userId);
+      
       const q = query(
         collection(db, 'products'),
         where('sellerId', '==', userId)
       );
       
       const querySnapshot = await getDocs(q);
+      console.log('Found products:', querySnapshot.docs.length);
+      
       products.value = querySnapshot.docs.map(doc => {
         const data = doc.data();
+        
+        // Calculate if trending based on views and sales
+        const views = parseInt(data.views || 0);
+        const sold = parseInt(data.sold || 0);
+        const isTrending = views > 50 || sold > 20;
+        
         return {
           id: doc.id,
           name: data.name || data.productName || 'Untitled Product',
-          price: data.price || 0,
-          unit: data.unit || 'unit',
-          stock: data.stock || 0,
+          productName: data.productName || data.name || 'Untitled Product',
           category: data.category || 'Uncategorized',
+          
+          // Price fields
+          pricePerKilo: Number(data.pricePerKilo) || 0,
+          pricePerSack: Number(data.pricePerSack) || 0,
+          pricePerTali: Number(data.pricePerTali) || 0,
+          pricePerKaing: Number(data.pricePerKaing) || 0,
+          pricePerBundle: Number(data.pricePerBundle) || 0,
+          pricePerTray: Number(data.pricePerTray) || 0,
+          pricePerPiece: Number(data.pricePerPiece) || 0,
+          price: Number(data.price) || 0,
+          
+          // Stock fields
+          stockPerKilo: Number(data.stockPerKilo) || 0,
+          stockPerSack: Number(data.stockPerSack) || 0,
+          stockPerTali: Number(data.stockPerTali) || 0,
+          stockPerKaing: Number(data.stockPerKaing) || 0,
+          stockPerBundle: Number(data.stockPerBundle) || 0,
+          stockPerTray: Number(data.stockPerTray) || 0,
+          stockPerPiece: Number(data.stockPerPiece) || 0,
+          stock: Number(data.stock) || 0,
+          
+          // Image fields
           images: data.images || [],
           image: data.image || null,
           imageUrl: data.imageUrl || null,
+          
+          // Additional fields
+          unit: data.unit || 'unit',
+          views: data.views || 0,
+          sold: data.sold || 0,
+          isOrganic: data.isOrganic || false,
+          isTrending: isTrending,
+          description: data.description || '',
+          
           ...data
         };
       });
       
       // Extract categories after products are loaded
       categories.value = extractCategories(products.value);
+      console.log('Extracted categories:', categories.value);
+      
     } catch (error) {
       console.error("Error fetching products:", error);
     } finally {
@@ -339,26 +496,30 @@
     }
   };
   
-  const user = ref(null);
-  const unsubscribe = ref(null);
-  const currentUser = ref(null);
+  // Navigate to product details
+  const viewProduct = (product) => {
+    router.push(`/product/${product.id}`);
+  };
   
-  onMounted(async () => {
-    unsubscribe.value = auth.onAuthStateChanged(async (authUser) => {
-      currentUser.value = authUser; // Store the user in the currentUser ref
-      if (currentUser.value) {
-        user.value = currentUser.value;
-        await fetchProfileData(user.value.uid);
-        await fetchProducts(user.value.uid);
-      } else {
-        router.push('/login');
-      }
-    });
+  // Watch for route changes
+  watch(() => route.params.sellerId, (newSellerId) => {
+    if (newSellerId) {
+      sellerId.value = newSellerId;
+      loading.value = true;
+      fetchProfileData(newSellerId);
+      fetchProducts(newSellerId);
+    }
   });
   
-  onUnmounted(() => {
-    if (unsubscribe.value) {
-      unsubscribe.value();
+  onMounted(async () => {
+    if (sellerId.value) {
+      console.log('Mounting FarmStore with sellerId:', sellerId.value);
+      await fetchProfileData(sellerId.value);
+      await fetchProducts(sellerId.value);
+    } else {
+      console.error('No sellerId provided in route params');
+      farmName.value = 'Seller ID not provided';
+      loading.value = false;
     }
   });
   </script>
@@ -813,39 +974,6 @@
     color: #666;
   }
   
-  .add-product-btn {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    background-color: #2e5c31;
-    color: white;
-    border: none;
-    padding: 8px 16px;
-    border-radius: 8px;
-    font-size: 0.9rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background 0.2s ease;
-  }
-  
-  .add-product-btn:hover {
-    background-color: #1e4a21;
-  }
-  
-  @media (max-width: 480px) {
-    .btn-text {
-      display: none;
-    }
-    
-    .add-product-btn {
-      width: 36px;
-      height: 36px;
-      padding: 0;
-      justify-content: center;
-      border-radius: 50%;
-    }
-  }
-  
   /* Categories */
   .categories-container {
     display: flex;
@@ -941,25 +1069,6 @@
     font-size: 0.9rem;
     color: #666;
     margin: 0 0 20px;
-  }
-  
-  .add-btn {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background-color: #2e5c31;
-    color: white;
-    border: none;
-    padding: 10px 20px;
-    border-radius: 8px;
-    font-size: 0.9rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background 0.2s ease;
-  }
-  
-  .add-btn:hover {
-    background-color: #1e4a21;
   }
   
   /* Products Grid */
@@ -1091,6 +1200,32 @@
   
   .stock-info.low-stock {
     color: #ff9800;
+  }
+  
+  /* Product badges */
+  .product-badge {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    background-color: rgba(255, 255, 255, 0.9);
+    color: #333;
+    font-size: 0.7rem;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  
+  .product-badge.organic {
+    background-color: rgba(76, 175, 80, 0.9);
+    color: white;
+  }
+  
+  .product-badge.trending {
+    background-color: rgba(255, 152, 0, 0.9);
+    color: white;
   }
   
   .edit-btn {

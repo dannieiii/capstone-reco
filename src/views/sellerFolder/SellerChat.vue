@@ -1,355 +1,886 @@
 <template>
-  <div class="app-container">
-    <Sidebar />
-    
-    <div class="chat-container">
-      <div class="header">
-        <h1>Messages</h1>
-        <div class="header-actions">
-          <button class="action-button">
-            <Filter size="18" />
-            <span>Filter</span>
-          </button>
-          <button class="action-button">
-            <Search size="18" />
-            <span>Search</span>
-          </button>
-        </div>
-      </div>
+    <div class="app-container">
+      <Sidebar />
       
-      <div class="content">
-        <div class="conversations-panel">
-          <div class="panel-header">
-            <h2>Conversations</h2>
-            <span class="conversation-count">{{ filteredConversations.length }}</span>
+      <div class="chat-container">
+        <div class="header">
+          <h1>Messages</h1>
+          <div class="header-actions">
+            <button class="action-button" @click="toggleFilter">
+              <Filter size="18" />
+              <span>Filter</span>
+            </button>
+            <button class="action-button" @click="toggleSearch">
+              <Search size="18" />
+              <span>Search</span>
+            </button>
           </div>
-          
-          <div class="search-box">
-            <Search size="16" class="search-icon" />
-            <input 
-              type="text" 
-              placeholder="Search conversations..." 
-              v-model="searchQuery"
-            />
-          </div>
-          
-          <div class="conversations-list">
-            <div 
-              v-for="conversation in filteredConversations" 
-              :key="conversation.id"
-              class="conversation-item"
-              :class="{ active: selectedConversationId === conversation.id }"
-              @click="selectConversation(conversation)"
-            >
-              <div class="conversation-avatar">
-                <img :src="conversation.customerAvatar" :alt="conversation.customerName">
-                <div class="status-dot" :class="{ online: conversation.customerOnline }"></div>
-              </div>
-              <div class="conversation-content">
-                <div class="conversation-header">
-                  <h3>{{ conversation.customerName }}</h3>
-                  <span class="conversation-time">{{ formatTime(conversation.lastMessageTime) }}</span>
+        </div>
+        
+        <div class="content">
+          <div class="conversations-panel">
+            <div class="panel-header">
+              <h2>Conversations</h2>
+              <span class="conversation-count">{{ filteredConversations.length }}</span>
+            </div>
+            
+            <div class="tabs">
+              <button 
+                v-for="tab in tabs" 
+                :key="tab.id"
+                class="tab-button" 
+                :class="{ active: activeTab === tab.id }"
+                @click="activeTab = tab.id"
+              >
+                {{ tab.name }}
+                <span v-if="tab.count" class="tab-count">{{ tab.count }}</span>
+              </button>
+            </div>
+            
+            <div v-if="showSearch" class="search-box">
+              <Search size="16" class="search-icon" />
+              <input 
+                type="text" 
+                placeholder="Search conversations..." 
+                v-model="searchQuery"
+                @input="handleSearch"
+              />
+              <button class="close-search" @click="closeSearch">×</button>
+            </div>
+            
+            <div v-if="loadingConversations" class="loading-state">
+              <div class="loading-spinner"></div>
+              <!-- Loading state with skeleton -->
+              <div v-if="loadingConversations" class="loading-skeleton">
+                <div v-for="i in 3" :key="i" class="skeleton-conversation">
+                  <div class="skeleton-avatar"></div>
+                  <div class="skeleton-content">
+                    <div class="skeleton-name"></div>
+                    <div class="skeleton-message"></div>
+                  </div>
                 </div>
-                <p class="conversation-preview">{{ conversation.lastMessage }}</p>
-              </div>
-              <div class="conversation-indicators">
-                <div v-if="conversation.unreadCount > 0 && conversation.lastMessageSender === 'customer'" class="unread-badge">
-                  {{ conversation.unreadCount }}
-                </div>
-                <CheckCheck v-if="conversation.lastMessageSender === 'seller'" size="16" class="read-indicator" />
               </div>
             </div>
             
-            <div v-if="filteredConversations.length === 0" class="empty-state">
+            <div v-else-if="filteredConversations.length === 0" class="empty-state">
               <MessageSquare size="40" />
               <p>No conversations found</p>
             </div>
-          </div>
-        </div>
-        
-        <div class="chat-panel" v-if="selectedConversation">
-          <div class="chat-header">
-            <div class="chat-user">
-              <div class="chat-avatar">
-                <img :src="selectedConversation.customerAvatar" :alt="selectedConversation.customerName">
-                <div class="status-dot" :class="{ online: selectedConversation.customerOnline }"></div>
-              </div>
-              <div class="chat-user-info">
-                <h3>{{ selectedConversation.customerName }}</h3>
-                <p v-if="selectedConversation.customerOnline" class="online-status">Online</p>
-                <p v-else class="offline-status">Offline</p>
-              </div>
-            </div>
-            <div class="chat-actions">
-              <button class="icon-button">
-                <MoreVertical size="18" />
-              </button>
-            </div>
-          </div>
-          
-          <div class="chat-messages" ref="messagesContainer">
-            <div 
-              v-for="(message, index) in chatMessages" 
-              :key="index"
-              class="chat-message"
-              :class="{ 
-                'outgoing': message.senderType === 'seller',
-                'incoming': message.senderType === 'customer'
-              }"
-            >
-              <div class="message-bubble">
-                <p>{{ message.text }}</p>
-              </div>
-              <div class="message-time">
-                {{ formatMessageTime(message.timestamp) }}
-                <CheckCheck 
-                  v-if="message.senderType === 'seller'" 
-                  size="12" 
-                  class="message-status" 
-                  :class="{ 'read': message.read }" 
-                />
-              </div>
-            </div>
-          </div>
-          
-          <div class="chat-input">
-            <div class="input-container">
-              <input 
-                type="text" 
-                placeholder="Type a message..." 
-                v-model="newMessage"
-                @keydown.enter="sendMessage"
+            
+            <div v-else class="conversations-list">
+              <div 
+                v-for="conversation in filteredConversations" 
+                :key="conversation.id"
+                class="conversation-item"
+                :class="{ active: selectedConversationId === conversation.id }"
+                @click="selectConversation(conversation)"
               >
-              <button class="send-button" @click="sendMessage" :disabled="!newMessage.trim()">
-                <Send size="18" />
-              </button>
+                <div class="conversation-avatar">
+                  <img :src="conversation.customerAvatar" :alt="conversation.customerName">
+                  <div class="status-dot" :class="{ online: conversation.customerOnline }"></div>
+                </div>
+                <div class="conversation-content">
+                  <div class="conversation-header">
+                    <h3>{{ conversation.customerName }}</h3>
+                    <span class="conversation-time">{{ formatTime(conversation.lastMessageTime) }}</span>
+                  </div>
+                  <p class="conversation-preview">{{ conversation.lastMessage || 'No messages yet' }}</p>
+                  <div class="conversation-meta">
+                    <span v-if="conversation.orderId" class="order-badge">
+                      Order #{{ conversation.orderId }}
+                    </span>
+                    <span v-if="conversation.isTyping" class="typing-indicator">
+                      Typing...
+                    </span>
+                  </div>
+                </div>
+                <div class="conversation-indicators">
+                  <div v-if="conversation.unreadCount > 0" class="unread-badge">{{ conversation.unreadCount }}</div>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-        
-        <div class="empty-chat" v-else>
-          <div class="empty-chat-content">
-            <MessageSquare size="60" />
-            <h2>Select a conversation</h2>
-            <p>Choose a conversation from the list to start chatting</p>
+          
+          <div class="chat-panel" v-if="selectedConversation">
+            <div class="chat-header">
+              <div class="chat-user">
+                <div class="chat-avatar">
+                  <img :src="selectedConversation.customerAvatar" :alt="selectedConversation.customerName">
+                  <div class="status-dot" :class="{ online: selectedConversation.customerOnline }"></div>
+                </div>
+                <div class="chat-user-info">
+                  <h3>{{ selectedConversation.customerName }}</h3>
+                  <div class="chat-user-meta">
+                    <span v-if="selectedConversation.customerOnline" class="online-status">Online</span>
+                    <span v-else class="offline-status">Last seen {{ formatLastSeen(selectedConversation.lastSeen) }}</span>
+                    <span v-if="selectedConversation.orderId" class="order-number">
+                      Order #{{ selectedConversation.orderId }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div class="chat-actions">
+                <button class="icon-button" @click="toggleCall">
+                  <Phone size="18" />
+                </button>
+                <button class="icon-button" @click="toggleMoreOptions">
+                  <MoreVertical size="18" />
+                </button>
+              </div>
+            </div>
+            
+            <div class="chat-messages" ref="messagesContainer">
+              <div v-if="loadingMessages" class="loading-messages">
+                <div class="loading-spinner"></div>
+                <p>Loading messages...</p>
+              </div>
+              
+              <div v-else>
+                <div class="date-separator">
+                  <span>{{ currentDate }}</span>
+                </div>
+                
+                <div 
+                  v-for="(message, index) in chatMessages" 
+                  :key="message.id || index"
+                  class="chat-message"
+                  :class="{ 
+                    'outgoing': message.senderType === 'seller',
+                    'incoming': message.senderType === 'customer'
+                  }"
+                >
+                  <div v-if="message.senderType === 'system'" class="system-message">
+                    {{ message.text }}
+                  </div>
+                  <template v-else>
+                    <div class="message-bubble">
+                      <p>{{ message.text }}</p>
+                      <div v-if="message.productInfo" class="product-preview">
+                        <img :src="message.productInfo.image" :alt="message.productInfo.name">
+                        <div class="product-details">
+                          <h4>{{ message.productInfo.name }}</h4>
+                          <p>₱{{ message.productInfo.price }}</p>
+                        </div>
+                      </div>
+                      <div v-if="message.orderInfo" class="order-preview">
+                        <div class="order-header">
+                          <ShoppingBag size="16" />
+                          <span>Order #{{ message.orderInfo.id }}</span>
+                        </div>
+                        <div class="order-details">
+                          <p>{{ message.orderInfo.items }} items • ₱{{ message.orderInfo.total }}</p>
+                          <span :class="'order-status-' + message.orderInfo.status.toLowerCase()">
+                            {{ message.orderInfo.status }}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="message-time">
+                      {{ formatMessageTime(message.timestamp) }}
+                      <CheckCheck 
+                        v-if="message.senderType === 'seller'" 
+                        size="14" 
+                        class="message-status" 
+                        :class="{ 'read': message.read }" 
+                      />
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </div>
+            
+            <div v-if="selectedConversation.isTyping" class="typing-indicator">
+              <span class="dot"></span>
+              <span class="dot"></span>
+              <span class="dot"></span>
+            </div>
+            
+            <div class="quick-replies" v-if="quickReplies.length > 0">
+              <button 
+                v-for="(reply, index) in quickReplies" 
+                :key="index"
+                class="quick-reply-button"
+                @click="sendQuickReply(reply)"
+              >
+                {{ reply }}
+              </button>
+            </div>
+            
+            <div class="chat-input">
+              <div class="input-actions">
+                <button class="icon-button" @click="toggleAttachment">
+                  <Paperclip size="18" />
+                </button>
+                <button class="icon-button" @click="toggleImageUpload">
+                  <Image size="18" />
+                </button>
+                <button class="icon-button" @click="toggleProductTag">
+                  <Tag size="18" />
+                </button>
+              </div>
+              <div class="input-container">
+                <textarea 
+                  v-model="newMessage" 
+                  placeholder="Type a message..." 
+                  @keydown.enter.prevent="sendMessage"
+                  @input="handleTyping"
+                  rows="1"
+                  ref="messageInput"
+                ></textarea>
+                <button 
+                  class="send-button" 
+                  @click="sendMessage" 
+                  :disabled="!newMessage.trim() || sendingMessage"
+                >
+                  <Send size="18" />
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <div class="empty-chat" v-else>
+            <div class="empty-chat-content">
+              <MessageSquare size="60" />
+              <h2>Select a conversation</h2>
+              <p>Choose a conversation from the list to start chatting</p>
+            </div>
           </div>
         </div>
       </div>
     </div>
-  </div>
-</template>
-
-<script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
-import { 
-  Search, 
-  Filter, 
-  MessageSquare, 
-  MoreVertical, 
-  Send, 
-  CheckCheck
-} from 'lucide-vue-next';
-import Sidebar from '@/components/Sidebar.vue';
-import { db, auth } from '@/firebase/firebaseConfig';
-import { 
-  collection, query, where, orderBy, onSnapshot, 
-  doc, addDoc, updateDoc, serverTimestamp, getDoc 
-} from 'firebase/firestore';
-
-// Firebase auth
-const sellerId = auth.currentUser?.uid;
-
-// State
-const searchQuery = ref('');
-const selectedConversationId = ref(null);
-const selectedConversation = ref(null);
-const newMessage = ref('');
-const conversations = ref([]);
-const chatMessages = ref([]);
-const messagesContainer = ref(null);
-
-// Unsubscribe functions
-let conversationsUnsubscribe = null;
-let messagesUnsubscribe = null;
-
-// Format time
-const formatTime = (timestamp) => {
-  if (!timestamp) return '';
-  const date = timestamp.toDate();
-  const now = new Date();
-  const diffInDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+  </template>
+  <script setup>
+  import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
+  import { 
+    Filter, 
+    Search, 
+    MessageSquare, 
+    Phone, 
+    MoreVertical, 
+    CheckCheck, 
+    ShoppingBag, 
+    Paperclip, 
+    Image, 
+    Tag, 
+    Send
+  } from 'lucide-vue-next';
+  import Sidebar from '@/components/Sidebar.vue';
+  import { db } from '@/firebase/firebaseConfig';
+  import { 
+    collection, 
+    query, 
+    where, 
+    orderBy, 
+    onSnapshot, 
+    doc, 
+    addDoc, 
+    updateDoc, 
+    serverTimestamp, 
+    getDoc,
+    writeBatch
+  } from 'firebase/firestore';
+  import { getAuth } from 'firebase/auth';
   
-  if (diffInDays === 0) {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  } else if (diffInDays === 1) {
-    return 'Yesterday';
-  } else {
-    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-  }
-};
-
-// Format message time
-const formatMessageTime = (timestamp) => {
-  if (!timestamp) return '';
-  return timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-};
-
-// Filtered conversations based on search query
-const filteredConversations = computed(() => {
-  if (!searchQuery.value) {
-    return conversations.value;
-  }
-  const query = searchQuery.value.toLowerCase();
-  return conversations.value.filter(conv => 
-    conv.customerName.toLowerCase().includes(query) || 
-    conv.lastMessage.toLowerCase().includes(query)
-  );
-});
-
-// Fetch conversations for the seller
-const fetchConversations = () => {
-  const q = query(
-    collection(db, 'conversations'),
-    where('participants', 'array-contains', sellerId),
-    orderBy('lastMessageTime', 'desc')
-  );
+  // Firebase auth
+  const auth = getAuth();
+  const sellerId = auth.currentUser?.uid;
   
-  conversationsUnsubscribe = onSnapshot(q, async (snapshot) => {
-    const convos = [];
+  // State
+  const activeTab = ref('all');
+  const searchQuery = ref('');
+  const selectedConversationId = ref(null);
+  const selectedConversation = ref(null);
+  const newMessage = ref('');
+  const messagesContainer = ref(null);
+  const messageInput = ref(null);
+  const conversations = ref([]);
+  const chatMessages = ref([]);
+  const loadingConversations = ref(true);
+  const loadingMessages = ref(false);
+  const sendingMessage = ref(false);
+  const showSearch = ref(false);
+  const typingTimeout = ref(null);
+  // Unsubscribe functions
+  let conversationsUnsubscribe = null;
+  let messagesUnsubscribe = null;
+  let globalConversationsListener = null;
+  let typingListener = null;
+  let cacheInterval = null;
+  
+  // Customer data cache to avoid redundant fetches
+  const customerCache = new Map();
+    // Tabs - make reactive
+  const tabs = ref([
+    { id: 'all', name: 'All', count: 0 },
+    { id: 'unread', name: 'Unread', count: 0 },
+    { id: 'orders', name: 'Orders', count: 0 },
+    { id: 'support', name: 'Support', count: 0 }
+  ]);
+  
+  // Quick replies
+  const quickReplies = [
+    "Yes, we have that in stock!",
+    "We can deliver tomorrow",
+    "Thank you for your order!",
+    "How can I help you today?"
+  ];
+  
+  // Current date for the chat
+  const currentDate = new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+    // Format time
+  const formatTime = (timestamp) => {
+    if (!timestamp) return '';
     
-    for (const doc of snapshot.docs) {
-      const data = doc.data();
-      const customerId = data.participants.find(id => id !== sellerId);
-      
-      // Get customer details from users collection
-      let customerName = 'Customer';
-      let customerAvatar = 'https://randomuser.me/api/portraits/lego/1.jpg';
-      let customerOnline = false;
-      
-      try {
-        const customerDoc = await getDoc(doc(db, 'users', customerId));
-        if (customerDoc.exists()) {
-          const customerData = customerDoc.data();
-          customerName = customerData.firstName + ' ' + customerData.lastName;
-          customerAvatar = customerData.photoURL || customerAvatar;
-          customerOnline = customerData.isOnline || false;
-        }
-      } catch (error) {
-        console.error('Error fetching customer data:', error);
-      }
-      
-      convos.push({
-        id: doc.id,
-        ...data,
-        customerId,
-        customerName,
-        customerAvatar,
-        customerOnline
-      });
+    // Handle different timestamp types
+    let date;
+    if (timestamp && typeof timestamp.toDate === 'function') {
+      // Firestore Timestamp
+      date = timestamp.toDate();
+    } else if (timestamp instanceof Date) {
+      // JavaScript Date object
+      date = timestamp;
+    } else if (typeof timestamp === 'number') {
+      // Unix timestamp
+      date = new Date(timestamp);
+    } else if (typeof timestamp === 'string') {
+      // ISO string
+      date = new Date(timestamp);
+    } else {
+      return '';
     }
     
-    conversations.value = convos;
-  });
-};
-
-// Select conversation
-const selectConversation = async (conversation) => {
-  selectedConversationId.value = conversation.id;
-  selectedConversation.value = conversation;
-  
-  // Mark as read if there are unread messages from customer
-  if (conversation.unreadCount > 0 && conversation.lastMessageSender === 'customer') {
-    await updateDoc(doc(db, 'conversations', conversation.id), {
-      unreadCount: 0
-    });
-  }
-  
-  // Load messages for this conversation
-  loadMessages(conversation.id);
-};
-
-// Load messages for a conversation
-const loadMessages = (conversationId) => {
-  if (messagesUnsubscribe) {
-    messagesUnsubscribe();
-  }
-  
-  const q = query(
-    collection(db, 'conversations', conversationId, 'messages'),
-    orderBy('timestamp', 'asc')
-  );
-  
-  messagesUnsubscribe = onSnapshot(q, (snapshot) => {
-    chatMessages.value = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+    const now = new Date();
+    const diffInDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
     
-    // Scroll to bottom
-    scrollToBottom();
-  });
-};
-
-// Send a message
-const sendMessage = async () => {
-  if (!newMessage.value.trim() || !selectedConversationId.value) return;
-  
-  const message = {
-    senderId: sellerId,
-    senderType: 'seller',
-    text: newMessage.value,
-    timestamp: serverTimestamp(),
-    read: false
+    if (diffInDays === 0) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } else if (diffInDays === 1) {
+      return 'Yesterday';
+    } else {
+      return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    }
+  };
+    // Format message time
+  const formatMessageTime = (timestamp) => {
+    if (!timestamp) return '';
+    
+    // Handle different timestamp types
+    let date;
+    if (timestamp && typeof timestamp.toDate === 'function') {
+      // Firestore Timestamp
+      date = timestamp.toDate();
+    } else if (timestamp instanceof Date) {
+      // JavaScript Date object
+      date = timestamp;
+    } else if (typeof timestamp === 'number') {
+      // Unix timestamp
+      date = new Date(timestamp);
+    } else if (typeof timestamp === 'string') {
+      // ISO string
+      date = new Date(timestamp);
+    } else {
+      return '';
+    }
+    
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+    // Format last seen
+  const formatLastSeen = (timestamp) => {
+    if (!timestamp) return 'recently';
+    
+    // Handle different timestamp types
+    let date;
+    if (timestamp && typeof timestamp.toDate === 'function') {
+      // Firestore Timestamp
+      date = timestamp.toDate();
+    } else if (timestamp instanceof Date) {
+      // JavaScript Date object
+      date = timestamp;
+    } else if (typeof timestamp === 'number') {
+      // Unix timestamp
+      date = new Date(timestamp);
+    } else if (typeof timestamp === 'string') {
+      // ISO string
+      date = new Date(timestamp);
+    } else {
+      return 'recently';
+    }
+    
+    const now = new Date();
+    const diffInMinutes = Math.floor((now - date) / (1000 * 60));
+    
+    if (diffInMinutes < 1) return 'just now';
+    if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+    if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}h ago`;
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
   };
   
-  // Add message to Firestore
-  await addDoc(
-    collection(db, 'conversations', selectedConversationId.value, 'messages'),
-    message
-  );
-  
-  // Update conversation last message
-  await updateDoc(doc(db, 'conversations', selectedConversationId.value), {
-    lastMessage: newMessage.value,
-    lastMessageTime: serverTimestamp(),
-    lastMessageSender: 'seller',
-    unreadCount: 0 // Reset unread count since seller is sending
-  });
-  
-  // Clear input
-  newMessage.value = '';
-  
-  // Scroll to bottom
-  scrollToBottom();
-};
-
-// Scroll to bottom of messages
-const scrollToBottom = () => {
-  nextTick(() => {
-    if (messagesContainer.value) {
-      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
+  // Filtered conversations based on active tab and search query
+  const filteredConversations = computed(() => {
+    let filtered = conversations.value;
+    
+    // Filter by tab
+    if (activeTab.value !== 'all') {
+      if (activeTab.value === 'unread') {
+        filtered = filtered.filter(conv => conv.hasUnread);
+      } else if (activeTab.value === 'orders') {
+        filtered = filtered.filter(conv => conv.orderId);
+      } else if (activeTab.value === 'support') {
+        filtered = filtered.filter(conv => conv.isSupport);
+      }
     }
+    
+    // Filter by search query
+    if (searchQuery.value) {
+      const query = searchQuery.value.toLowerCase();
+      filtered = filtered.filter(conv => 
+        conv.customerName.toLowerCase().includes(query) || 
+        conv.lastMessage.toLowerCase().includes(query)
+      );
+    }
+    
+    return filtered;
   });
-};
+  // Fetch conversations for the seller
+  const fetchConversations = () => {
+    console.log('Starting to fetch conversations for seller:', sellerId);
+    
+    const q = query(
+      collection(db, 'conversations'),
+      where('participants', 'array-contains', sellerId),
+      orderBy('lastMessageTime', 'desc')
+    );
+    
+    conversationsUnsubscribe = onSnapshot(q, async (snapshot) => {
+      console.log('Conversations snapshot received, documents:', snapshot.docs.length);
+      
+      if (snapshot.docs.length === 0) {
+        conversations.value = [];
+        loadingConversations.value = false;
+        updateTabCounts();
+        return;
+      }
 
-// Initialize on mount
-onMounted(() => {
-  if (sellerId) {
-    fetchConversations();
-  }
-});
+      // Get all unique customer IDs first
+      const customerIds = [...new Set(snapshot.docs.map(doc => {
+        const data = doc.data();
+        return data.participants.find(id => id !== sellerId);
+      }))];
 
-// Clean up on unmount
-onUnmounted(() => {
-  if (conversationsUnsubscribe) {
-    conversationsUnsubscribe();
-  }
-  if (messagesUnsubscribe) {
-    messagesUnsubscribe();
-  }
-});
-</script>
+      console.log('Fetching data for customers:', customerIds);      // Batch fetch all customer data
+      const customerDataMap = new Map();
+      
+      try {
+        // Use Promise.all to fetch all customer data in parallel
+        const customerPromises = customerIds.map(async (customerId) => {
+          try {
+            // Check cache first
+            if (customerCache.has(customerId)) {
+              customerDataMap.set(customerId, customerCache.get(customerId));
+              return;
+            }
+            
+            const customerDoc = await getDoc(doc(db, 'users', customerId));
+            if (customerDoc.exists()) {
+              const customerData = customerDoc.data();
+              customerCache.set(customerId, customerData); // Cache the data
+              customerDataMap.set(customerId, customerData);
+            } else {
+              const emptyData = {};
+              customerCache.set(customerId, emptyData);
+              customerDataMap.set(customerId, emptyData);
+            }
+          } catch (error) {
+            console.error(`Error fetching customer ${customerId}:`, error);
+            const errorData = {};
+            customerCache.set(customerId, errorData);
+            customerDataMap.set(customerId, errorData);
+          }
+        });
 
+        await Promise.all(customerPromises);
+        console.log('Customer data fetched for', customerDataMap.size, 'customers');
+
+      } catch (error) {
+        console.error("Error in batch customer fetch:", error);
+      }
+
+      // Now build conversations with cached customer data
+      const convs = snapshot.docs.map(docSnapshot => {
+        const data = docSnapshot.data();
+        const customerId = data.participants.find(id => id !== sellerId);
+        const customerData = customerDataMap.get(customerId) || {};
+        
+        const fullName = `${customerData.firstName || ''} ${customerData.lastName || ''}`.trim();
+        
+        return {
+          id: docSnapshot.id,
+          customerId: customerId,
+          customerName: fullName || 'Customer',
+          customerAvatar: customerData.photoURL || "https://randomuser.me/api/portraits/lego/1.jpg",
+          customerOnline: customerData.isOnline || false,
+          lastMessage: data.lastMessage || '',
+          lastMessageTime: data.lastMessageTime,
+          lastMessageSender: data.lastMessageSender,
+          unreadCount: (data.lastMessageSender === 'customer') ? (data.unreadCount || 0) : 0,
+          hasUnread: (data.lastMessageSender === 'customer') && (data.unreadCount > 0),
+          type: 'customer',
+          lastSeen: customerData.lastSeen,
+          orderId: data.orderId || null,
+          isSupport: data.type === 'support' || false
+        };
+      });
+      
+      conversations.value = convs;
+      loadingConversations.value = false;
+      
+      console.log('Conversations loaded:', convs.length);
+      
+      // Update tab counts
+      updateTabCounts();
+    }, (error) => {
+      console.error("Error fetching conversations:", error);
+      loadingConversations.value = false;
+    });
+  };
+    // Update tab counts based on conversations
+  const updateTabCounts = () => {
+    const unreadCount = conversations.value.filter(conv => conv.hasUnread).length;
+    const ordersCount = conversations.value.filter(conv => conv.orderId).length;
+    const supportCount = conversations.value.filter(conv => conv.isSupport).length;
+    
+    tabs.value.forEach(tab => {
+      if (tab.id === 'unread') {
+        tab.count = unreadCount;
+      } else if (tab.id === 'orders') {
+        tab.count = ordersCount;
+      } else if (tab.id === 'support') {
+        tab.count = supportCount;
+      } else {
+        tab.count = conversations.value.length;
+      }
+    });
+  };
+    // Select conversation and mark as read
+  const selectConversation = async (conversation) => {
+    selectedConversationId.value = conversation.id;
+    
+    // Ensure we have all customer data before setting as selected
+    let customerData = {};
+    try {
+      const customerDoc = await getDoc(doc(db, 'users', conversation.customerId));
+      if (customerDoc.exists()) {
+        customerData = customerDoc.data();
+      }
+    } catch (error) {
+      console.error("Error fetching customer data:", error);
+    }
+    
+    const fullName = `${customerData.firstName || ''} ${customerData.lastName || ''}`.trim();
+    
+    selectedConversation.value = {
+      ...conversation,
+      customerName: fullName || 'Customer',
+      customerAvatar: customerData.photoURL || 'https://randomuser.me/api/portraits/lego/1.jpg',
+      customerOnline: customerData.isOnline || false,
+      lastSeen: customerData.lastSeen
+    };
+    
+    // Mark as read if the last message was from customer
+    if (conversation.lastMessageSender === 'customer' && conversation.unreadCount > 0) {
+      await updateDoc(doc(db, 'conversations', conversation.id), {
+        unreadCount: 0,
+        lastMessageSeen: serverTimestamp()
+      });
+      
+      // Update local conversation state
+      const convIndex = conversations.value.findIndex(c => c.id === conversation.id);
+      if (convIndex !== -1) {
+        conversations.value[convIndex].unreadCount = 0;
+        conversations.value[convIndex].hasUnread = false;
+      }
+    }
+    
+    // Load messages for this conversation
+    loadMessages(conversation.id);
+    
+    // Set up typing indicator listener
+    setupTypingListener(conversation.id);
+  };
+  
+  // Load messages for a conversation
+  const loadMessages = (conversationId) => {
+    loadingMessages.value = true;
+    
+    if (messagesUnsubscribe) {
+      messagesUnsubscribe();
+    }
+    
+    const q = query(
+      collection(db, 'conversations', conversationId, 'messages'),
+      orderBy('timestamp', 'asc')
+    );
+    
+    messagesUnsubscribe = onSnapshot(q, (snapshot) => {
+      chatMessages.value = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          senderType: data.senderId === sellerId ? 'seller' : 'customer'
+        };
+      });
+      
+      // Mark messages as read when loaded
+      if (snapshot.docs.length > 0) {
+        const unreadMessages = snapshot.docs
+          .filter(doc => doc.data().senderId !== sellerId && !doc.data().read);
+        
+        if (unreadMessages.length > 0) {
+          const batch = writeBatch(db);
+          unreadMessages.forEach(msg => {
+            const msgRef = doc(db, 'conversations', conversationId, 'messages', msg.id);
+            batch.update(msgRef, { read: true });
+          });
+          batch.commit();
+        }
+      }
+      
+      loadingMessages.value = false;
+      scrollToBottom();
+    });
+  };
+    // Set up typing indicator listener
+  const setupTypingListener = (conversationId) => {
+    if (typingListener) {
+      typingListener();
+    }
+    
+    const typingRef = doc(db, 'conversations', conversationId, 'typing', 'status');
+    typingListener = onSnapshot(typingRef, (doc) => {
+      if (doc.exists() && doc.data().customerTyping && selectedConversation.value) {
+        selectedConversation.value.isTyping = true;
+      } else if (selectedConversation.value) {
+        selectedConversation.value.isTyping = false;
+      }
+    });
+  };
+  
+  // Handle typing indicator
+  const handleTyping = () => {
+    if (!selectedConversationId.value) return;
+    
+    // Clear existing timeout
+    if (typingTimeout.value) {
+      clearTimeout(typingTimeout.value);
+    }
+    
+    // Set new timeout
+    typingTimeout.value = setTimeout(() => {
+      updateTypingStatus(false);
+    }, 3000);
+    
+    // Update typing status
+    updateTypingStatus(true);
+  };
+  
+  // Update typing status
+  const updateTypingStatus = async (isTyping) => {
+    if (!selectedConversationId.value) return;
+    
+    try {
+      await updateDoc(doc(db, 'conversations', selectedConversationId.value, 'typing', 'status'), {
+        sellerTyping: isTyping,
+        timestamp: serverTimestamp()
+      });
+    } catch (error) {
+      console.error('Error updating typing status:', error);
+    }
+  };
+    // Send a message
+  const sendMessage = async () => {
+    if (!newMessage.value.trim() || !selectedConversationId.value || sendingMessage.value) return;
+    
+    sendingMessage.value = true;
+    const message = {
+      senderId: sellerId,
+      senderType: 'seller',
+      text: newMessage.value,
+      timestamp: serverTimestamp(),
+      read: false
+    };
+    
+    try {
+      // Add message to Firestore
+      await addDoc(
+        collection(db, 'conversations', selectedConversationId.value, 'messages'),
+        message
+      );
+      
+      // Update conversation last message
+      await updateDoc(doc(db, 'conversations', selectedConversationId.value), {
+        lastMessage: newMessage.value,
+        lastMessageTime: serverTimestamp(),
+        lastMessageSender: 'seller',
+        unreadCount: 1 // Customer has unread message
+      });
+      
+      // Clear typing status
+      await updateTypingStatus(false);
+      
+      newMessage.value = '';
+    } catch (error) {
+      console.error('Error sending message:', error);
+    } finally {
+      sendingMessage.value = false;
+    }
+  };
+  
+  // Send a quick reply
+  const sendQuickReply = (reply) => {
+    newMessage.value = reply;
+    sendMessage();
+  };
+  
+  // Scroll to bottom of messages
+  const scrollToBottom = () => {
+    nextTick(() => {
+      if (messagesContainer.value) {
+        messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
+      }
+    });
+  };
+  
+  // Auto-resize textarea
+  const resizeTextarea = () => {
+    if (messageInput.value) {
+      messageInput.value.style.height = 'auto';
+      messageInput.value.style.height = messageInput.value.scrollHeight + 'px';
+    }
+  };
+  
+  // Toggle search
+  const toggleSearch = () => {
+    showSearch.value = !showSearch.value;
+    if (!showSearch.value) {
+      searchQuery.value = '';
+    }
+  };
+  
+  // Close search
+  const closeSearch = () => {
+    showSearch.value = false;
+    searchQuery.value = '';
+  };
+    // Handle search
+  const handleSearch = () => {
+    // Search is handled by the computed property filteredConversations
+    console.log('Search query:', searchQuery.value);
+    console.log('Filtered conversations:', filteredConversations.value);
+  };
+  
+  // Toggle filter
+  const toggleFilter = () => {
+    // Implement filter functionality
+  };
+  
+  // Toggle call
+  const toggleCall = () => {
+    // Implement call functionality
+  };
+  
+  // Toggle more options
+  const toggleMoreOptions = () => {
+    // Implement more options functionality
+  };
+  
+  // Toggle attachment
+  const toggleAttachment = () => {
+    // Implement attachment functionality
+  };
+  
+  // Toggle image upload
+  const toggleImageUpload = () => {
+    // Implement image upload functionality
+  };
+  
+  // Toggle product tag
+  const toggleProductTag = () => {
+    // Implement product tag functionality
+  };
+  
+  // Watch for changes to newMessage to resize textarea
+  watch(newMessage, () => {
+    resizeTextarea();
+  });
+  
+  // Initialize on mount
+  onMounted(() => {
+    if (sellerId) {
+      fetchConversations();
+      
+      // Global listener for new messages in any conversation
+      const conversationsQuery = query(
+        collection(db, 'conversations'),
+        where('participants', 'array-contains', sellerId)
+      );
+      
+      globalConversationsListener = onSnapshot(conversationsQuery, (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+          if (change.type === 'modified') {
+            const conversation = change.doc.data();
+            if (conversation.lastMessageSender === 'customer' && 
+                conversation.unreadCount > 0 &&
+                change.doc.id !== selectedConversationId.value) {
+              // You can add a notification here
+              console.log('New message in conversation:', change.doc.id);
+            }
+          }
+        });
+      });
+    }
+    scrollToBottom();
+  });
+  
+  // Clean up on unmount  onUnmounted(() => {  // Clean up on unmount
+  onUnmounted(() => {
+    if (conversationsUnsubscribe) {
+      conversationsUnsubscribe();
+    }
+    if (messagesUnsubscribe) {
+      messagesUnsubscribe();
+    }
+    if (globalConversationsListener) {
+      globalConversationsListener();
+    }
+    if (typingListener) {
+      typingListener();
+    }
+    if (typingTimeout.value) {
+      clearTimeout(typingTimeout.value);
+    }
+    if (cacheInterval) {
+      clearInterval(cacheInterval);
+    }
+    customerCache.clear();
+  });
+  
+  // Cache management functions
+  const clearCustomerCache = () => {
+    customerCache.clear();
+    console.log('Customer cache cleared');
+  };
+  
+  // Clear cache every 5 minutes to ensure data freshness
+  cacheInterval = setInterval(() => {
+    clearCustomerCache();
+  }, 5 * 60 * 1000); // 5 minutes
+  </script>
   
   <style scoped>
   .app-container {
@@ -365,12 +896,7 @@ onUnmounted(() => {
     flex-direction: column;
     height: 100vh;
     overflow: hidden;
-    margin-left: 230px;
-    transition: margin-left 0.3s ease;
-  }
-  
-  .sidebar.collapsed ~ .chat-container {
-    margin-left: 70px;
+    margin-left: 230px; /* Match sidebar width */
   }
   
   .header {
@@ -418,18 +944,12 @@ onUnmounted(() => {
     flex: 1;
     overflow: hidden;
   }
-  
-  .conversations-panel {
-    width: 320px;
+    .conversations-panel {
+    width: 350px;
     border-right: 1px solid #e0e0e0;
     display: flex;
     flex-direction: column;
-    background-color: #f9f9f9;
-    transition: width 0.3s ease;
-  }
-  
-  .sidebar.collapsed ~ .chat-container .conversations-panel {
-    width: 280px;
+    background-color: white;
   }
   
   .panel-header {
@@ -517,40 +1037,38 @@ onUnmounted(() => {
     font-size: 13px;
     background-color: white;
   }
-  
-  .conversations-list {
+    .conversations-list {
     flex: 1;
     overflow-y: auto;
-    padding: 10px;
+    padding: 0;
   }
-  
-  .conversation-item {
+    .conversation-item {
     display: flex;
-    padding: 12px;
-    border-radius: 8px;
-    margin-bottom: 8px;
+    padding: 15px 12px;
+    border-radius: 0;
+    margin-bottom: 0;
     cursor: pointer;
     transition: all 0.2s ease;
     background-color: white;
-    border: 1px solid transparent;
+    border-bottom: 1px solid #f0f0f0;
   }
   
   .conversation-item:hover {
-    background-color: #f0f0f0;
+    background-color: #f8f9fa;
   }
   
   .conversation-item.active {
     background-color: #e8f3e8;
-    border-color: #2e5c31;
+    border-left: 3px solid #2e5c31;
   }
-  
-  .conversation-avatar {
+    .conversation-avatar {
     position: relative;
-    width: 45px;
-    height: 45px;
+    width: 50px;
+    height: 50px;
     border-radius: 50%;
     overflow: hidden;
-    margin-right: 12px;
+    margin-right: 15px;
+    flex-shrink: 0;
   }
   
   .conversation-avatar img {
@@ -561,10 +1079,10 @@ onUnmounted(() => {
   
   .status-dot {
     position: absolute;
-    bottom: 0;
-    right: 0;
-    width: 10px;
-    height: 10px;
+    bottom: 2px;
+    right: 2px;
+    width: 12px;
+    height: 12px;
     border-radius: 50%;
     background-color: #ccc;
     border: 2px solid white;
@@ -578,15 +1096,15 @@ onUnmounted(() => {
     flex: 1;
     min-width: 0;
   }
-  
-  .conversation-header {
+    .conversation-header {
     display: flex;
     justify-content: space-between;
-    margin-bottom: 3px;
+    align-items: center;
+    margin-bottom: 5px;
   }
   
   .conversation-header h3 {
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 600;
     margin: 0;
     color: #333;
@@ -599,20 +1117,22 @@ onUnmounted(() => {
     font-size: 12px;
     color: #999;
     white-space: nowrap;
+    margin-left: 10px;
   }
   
   .conversation-preview {
-    font-size: 13px;
+    font-size: 14px;
     color: #666;
     margin: 0 0 5px 0;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    max-width: 200px;
   }
-  
-  .conversation-meta {
+    .conversation-meta {
     display: flex;
-    gap: 5px;
+    gap: 8px;
+    align-items: center;
   }
   
   .order-badge, .product-badge {
@@ -628,6 +1148,12 @@ onUnmounted(() => {
     color: #2e5c31;
   }
   
+  .typing-indicator {
+    color: #4CAF50;
+    font-size: 12px;
+    font-style: italic;
+  }
+  
   .conversation-indicators {
     display: flex;
     flex-direction: column;
@@ -636,18 +1162,18 @@ onUnmounted(() => {
     margin-left: 8px;
     gap: 5px;
   }
-  
-  .unread-badge {
+    .unread-badge {
     background-color: #2e5c31;
     color: white;
-    font-size: 11px;
-    min-width: 18px;
-    height: 18px;
-    border-radius: 9px;
+    font-size: 12px;
+    min-width: 20px;
+    height: 20px;
+    border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0 5px;
+    padding: 0 6px;
+    font-weight: 600;
   }
   
   .priority-indicator {
@@ -1026,218 +1552,306 @@ onUnmounted(() => {
     margin: 0;
   }
   
-  /* Responsive Styles */
-  @media (max-width: 1200px) {
-    .conversations-panel {
-      width: 280px;
-    }
-  }
-  
-  @media (max-width: 992px) {
-    .chat-container {
-      margin-left: 70px;
-    }
-    
-    .conversations-panel {
-      position: absolute;
-      z-index: 90;
-      left: 70px;
-      height: 100%;
-      transform: translateX(-100%);
-      transition: transform 0.3s ease;
-    }
-    
-    .conversations-panel.active {
-      transform: translateX(0);
-    }
-    
-    .sidebar.collapsed ~ .chat-container .conversations-panel {
-      left: 70px;
-    }
-  }
-  
-  @media (max-width: 768px) {
-    .chat-container {
-      margin-left: 0;
-    }
-    
-    .conversations-panel {
-      left: 0;
-      width: 280px;
-    }
-    
-    .sidebar.collapsed ~ .chat-container .conversations-panel {
-      left: 0;
-    }
-    
-    .header {
-      padding: 10px 15px;
-    }
-    
-    .conversation-item {
-      padding: 8px;
-    }
-  }
-  
-  @media (max-width: 576px) {
-    .conversations-panel {
-      width: 100%;
-    }
-    
-    .chat-header {
-      padding: 10px;
-    }
-    
-    .chat-messages {
-      padding: 10px;
-    }
-    
-    .chat-input {
-      padding: 10px;
-    }
-    
-    .chat-message {
-      max-width: 85%;
-    }
-  }
-  
-  /* Dark mode styles */
-  :global(.dark) .chat-container {
+  /* Dark mode support */
+  :root.dark .chat-container {
     background-color: #1a1a1a;
   }
   
-  :global(.dark) .header,
-  :global(.dark) .chat-header {
+  :root.dark .header,
+  :root.dark .chat-header {
     background-color: #222;
     border-color: #333;
   }
   
-  :global(.dark) .header h1,
-  :global(.dark) .chat-user-info h3 {
+  :root.dark .header h1,
+  :root.dark .chat-user-info h3 {
     color: #fff;
   }
   
-  :global(.dark) .action-button,
-  :global(.dark) .icon-button {
+  :root.dark .action-button,
+  :root.dark .icon-button {
     background-color: #333;
     color: #ccc;
   }
   
-  :global(.dark) .action-button:hover,
-  :global(.dark) .icon-button:hover {
+  :root.dark .action-button:hover,
+  :root.dark .icon-button:hover {
     background-color: #444;
   }
   
-  :global(.dark) .conversations-panel {
+  :root.dark .conversations-panel {
     background-color: #222;
     border-color: #333;
   }
   
-  :global(.dark) .panel-header {
+  :root.dark .panel-header {
     border-color: #333;
   }
   
-  :global(.dark) .panel-header h2 {
+  :root.dark .panel-header h2 {
     color: #fff;
   }
   
-  :global(.dark) .tab-button {
+  :root.dark .tab-button {
     color: #ccc;
   }
   
-  :global(.dark) .tab-button:not(.active) .tab-count {
+  :root.dark .tab-button:not(.active) .tab-count {
     background-color: #444;
     color: #ccc;
   }
   
-  :global(.dark) .search-box input {
+  :root.dark .search-box input {
     background-color: #333;
     border-color: #444;
     color: #fff;
   }
   
-  :global(.dark) .conversation-item {
+  :root.dark .conversation-item {
     background-color: #2a2a2a;
   }
   
-  :global(.dark) .conversation-item:hover {
+  :root.dark .conversation-item:hover {
     background-color: #333;
   }
   
-  :global(.dark) .conversation-item.active {
+  :root.dark .conversation-item.active {
     background-color: #2e3c2f;
     border-color: #4a8f4d;
   }
   
-  :global(.dark) .conversation-header h3 {
+  :root.dark .conversation-header h3 {
     color: #fff;
   }
   
-  :global(.dark) .conversation-preview {
+  :root.dark .conversation-preview {
     color: #ccc;
   }
   
-  :global(.dark) .order-badge {
+  :root.dark .order-badge {
     background-color: #2e3c2f;
     color: #8bc34a;
   }
   
-  :global(.dark) .product-badge {
+  :root.dark .product-badge {
     background-color: #333;
     color: #ccc;
   }
   
-  :global(.dark) .chat-messages {
+  :root.dark .chat-messages {
     background-color: #1a1a1a;
   }
   
-  :global(.dark) .date-separator span {
+  :root.dark .date-separator span {
     background-color: #333;
     color: #ccc;
   }
   
-  :global(.dark) .system-message {
+  :root.dark .system-message {
     background-color: #333;
     color: #ccc;
   }
   
-  :global(.dark) .message-bubble {
+  :root.dark .message-bubble {
     background-color: #2a2a2a;
     color: #eee;
   }
   
-  :global(.dark) .chat-message.outgoing .message-bubble {
+  :root.dark .chat-message.outgoing .message-bubble {
     background-color: #2e3c2f;
     color: #eee;
   }
   
-  :global(.dark) .product-preview,
-  :global(.dark) .order-preview {
+  :root.dark .product-preview,
+  :root.dark .order-preview {
     background-color: #333;
   }
   
-  :global(.dark) .quick-reply-button {
+  :root.dark .quick-reply-button {
     background-color: #333;
     color: #ccc;
   }
   
-  :global(.dark) .quick-reply-button:hover {
+  :root.dark .quick-reply-button:hover {
     background-color: #444;
   }
   
-  :global(.dark) .input-container {
+  :root.dark .input-container {
     background-color: #333;
   }
   
-  :global(.dark) .input-container textarea {
+  :root.dark .input-container textarea {
     color: #fff;
   }
   
-  :global(.dark) .empty-chat {
+  :root.dark .empty-chat {
     background-color: #1a1a1a;
   }
   
-  :global(.dark) .empty-chat-content h2 {
+  :root.dark .empty-chat-content h2 {
     color: #ccc;
+  }
+  
+  /* Add new styles for typing indicator */
+  .typing-indicator {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: #666;
+    margin-top: 4px;
+  }
+  
+  .typing-indicator .dot {
+    width: 4px;
+    height: 4px;
+    background-color: #666;
+    border-radius: 50%;
+    animation: typing 1s infinite ease-in-out;
+  }
+  
+  .typing-indicator .dot:nth-child(2) {
+    animation-delay: 0.2s;
+  }
+  
+  .typing-indicator .dot:nth-child(3) {
+    animation-delay: 0.4s;
+  }
+  
+  @keyframes typing {
+    0%, 100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-4px);
+    }
+  }
+  
+  /* Add styles for loading states */
+  .loading-spinner {
+    width: 24px;
+    height: 24px;
+    border: 3px solid #f3f3f3;
+    border-top: 3px solid #2e5c31;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 10px;
+  }
+  
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  
+  .loading-state,
+  .loading-messages {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    color: #666;
+  }
+  
+  /* Add styles for search */
+  .close-search {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    font-size: 20px;
+    color: #666;
+    cursor: pointer;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+  }
+  
+  .close-search:hover {
+    background-color: #f0f0f0;
+  }
+  
+  /* Dark mode support for new elements */
+  :root.dark .typing-indicator {
+    color: #ccc;
+  }
+  
+  :root.dark .typing-indicator .dot {
+    background-color: #ccc;
+  }
+  
+  :root.dark .loading-spinner {
+    border-color: #333;
+    border-top-color: #4a8f4d;
+  }
+  
+  :root.dark .close-search {
+    color: #ccc;
+  }
+  
+  :root.dark .close-search:hover {
+    background-color: #333;
+  }
+  
+  /* Loading skeleton styles */
+  .loading-skeleton {
+    padding: 20px;
+  }
+  
+  .skeleton-conversation {
+    display: flex;
+    align-items: center;
+    padding: 15px;
+    margin-bottom: 10px;
+    border-radius: 12px;
+    background: #f8f9fa;
+  }
+  
+  .skeleton-avatar {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: linear-gradient(90deg, #e2e5e7 25%, #f0f0f0 50%, #e2e5e7 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    margin-right: 15px;
+  }
+  
+  .skeleton-content {
+    flex: 1;
+  }
+  
+  .skeleton-name {
+    height: 16px;
+    width: 120px;
+    background: linear-gradient(90deg, #e2e5e7 25%, #f0f0f0 50%, #e2e5e7 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 4px;
+    margin-bottom: 8px;
+  }
+  
+  .skeleton-message {
+    height: 14px;
+    width: 200px;
+    background: linear-gradient(90deg, #e2e5e7 25%, #f0f0f0 50%, #e2e5e7 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 4px;
+  }
+  
+  @keyframes shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
   }
   </style>

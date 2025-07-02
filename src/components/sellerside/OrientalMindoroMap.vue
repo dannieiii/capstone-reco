@@ -112,7 +112,8 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { db } from '@/firebase/firebaseConfig';
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc } from "firebase/firestore";
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import "leaflet/dist/leaflet.css";
 import { LMap, LTileLayer, LMarker, LPopup } from "@vue-leaflet/vue-leaflet";
 import L from 'leaflet';
@@ -129,7 +130,7 @@ const icon = L.icon({
 
 const loading = ref(true);
 const selectedUserType = ref('all');
-const sellers = ref([]);
+const currentSeller = ref(null);
 const municipalityMarkers = ref([]);
 const zoom = ref(10);
 const center = ref([13.0, 121.5]);
@@ -137,6 +138,8 @@ const bounds = ref([
   [12.2, 120.8],
   [13.6, 121.6]
 ]);
+const auth = getAuth();
+const currentUserId = ref(null);
 
 const municipalities = [
   { name: "Puerto Galera", coordinates: [13.5022, 120.9547] },
@@ -156,95 +159,110 @@ const municipalities = [
   { name: "Bulalacao", coordinates: [12.3333, 121.3500] }
 ];
 
-// Fetch sellers and their areasCovered
-const fetchSellersAreas = async () => {
+// Fetch current seller's delivery areas
+const fetchCurrentSellerAreas = async (userId) => {
   loading.value = true;
   try {
+    console.log('Fetching data for userId:', userId);
+    
+    // Get current seller's document using userId
     const sellersSnapshot = await getDocs(collection(db, "sellers"));
-    sellers.value = sellersSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-    console.log('Fetched sellers:', sellers.value);
-
-    // Collect all unique areasCovered from all sellers (normalized)
-    const coveredAreas = new Set();
-    sellers.value.forEach(seller => {
-      let areas = seller.deliveryInfo?.areasCovered;
-      if (Array.isArray(areas)) {
-        areas.forEach(area => {
-          if (typeof area === 'string') {
-            const normalizedArea = area.trim().toLowerCase().replace(/\s+/g, ' ');
-            coveredAreas.add(normalizedArea);
-          }
-        });
-      } else if (areas && typeof areas === 'object') {
-        Object.values(areas).forEach(area => {
-          if (typeof area === 'string') {
-            const normalizedArea = area.trim().toLowerCase().replace(/\s+/g, ' ');
-            coveredAreas.add(normalizedArea);
-          }
-        });
+    let sellerDoc = null;
+    
+    sellersSnapshot.forEach(doc => {
+      const data = doc.data();
+      if (data.userId === userId) {
+        sellerDoc = { id: doc.id, ...data };
       }
     });
 
-    console.log('Normalized coveredAreas:', Array.from(coveredAreas));
-    console.log('Municipalities:', municipalities.map(m => m.name));
+    if (!sellerDoc) {
+      console.log('No seller found for userId:', userId);
+      municipalityMarkers.value = [];
+      return;
+    }
 
-    // Debug: Check each municipality
-    municipalities.forEach(m => {
-      const normalizedMuni = m.name.trim().toLowerCase().replace(/\s+/g, ' ');
-      console.log('Checking municipality:', m.name, '->', normalizedMuni, 'in coveredAreas?', coveredAreas.has(normalizedMuni));
+    currentSeller.value = sellerDoc;
+    console.log('Found seller:', sellerDoc);
+
+    // Get the seller's covered areas
+    let areas = sellerDoc.deliveryInfo?.areasCovered;
+    console.log('Seller areasCovered:', areas);
+
+    const coveredAreas = new Set();
+    
+    if (Array.isArray(areas)) {
+      areas.forEach(area => {
+        if (typeof area === 'string') {
+          const normalizedArea = area.trim().toLowerCase().replace(/\s+/g, ' ');
+          coveredAreas.add(normalizedArea);
+        }
+      });
+    } else if (areas && typeof areas === 'object') {
+      Object.values(areas).forEach(area => {
+        if (typeof area === 'string') {
+          const normalizedArea = area.trim().toLowerCase().replace(/\s+/g, ' ');
+          coveredAreas.add(normalizedArea);
+        }
+      });
+    }
+
+    console.log('Normalized covered areas:', Array.from(coveredAreas));
+
+    // Filter municipalities to only those covered by current seller
+    municipalityMarkers.value = municipalities.filter(municipality => {
+      if (!municipality || !municipality.name || !municipality.coordinates) return false;
+      const normalizedMuni = municipality.name.trim().toLowerCase().replace(/\s+/g, ' ');
+      const isIncluded = coveredAreas.has(normalizedMuni);
+      console.log(`Municipality ${municipality.name}: ${isIncluded ? 'INCLUDED' : 'excluded'}`);
+      return isIncluded;
     });
 
-    // Filter municipalities to only those covered by sellers
-    municipalityMarkers.value = municipalities.filter(m => {
-      if (!m || !m.name || !m.coordinates) return false;
-      const normalizedMuni = m.name.trim().toLowerCase().replace(/\s+/g, ' ');
-      return coveredAreas.has(normalizedMuni);
-    });
-
-    console.log('Filtered municipalityMarkers:', municipalityMarkers.value);
+    console.log('Final municipalityMarkers:', municipalityMarkers.value);
   } catch (error) {
-    console.error("Error fetching sellers:", error);
+    console.error("Error fetching seller areas:", error);
   } finally {
     loading.value = false;
   }
 };
 
-onMounted(fetchSellersAreas);
+// Listen for authentication changes
+onMounted(() => {
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      currentUserId.value = user.uid;
+      console.log('User authenticated:', user.uid);
+      fetchCurrentSellerAreas(user.uid);
+    } else {
+      console.log('No user authenticated');
+      currentUserId.value = null;
+      municipalityMarkers.value = [];
+      loading.value = false;
+    }
+  });
+});
 
-// For popup info (optional: show how many sellers cover each area)
+// For popup info - show current seller info
 const sellersByMunicipality = computed(() => {
   const map = {};
-  municipalityMarkers.value.forEach(m => {
-    map[m.name] = sellers.value.filter(seller => {
-      let areas = seller.deliveryInfo?.areasCovered;
-      if (Array.isArray(areas)) {
-        return areas.some(area =>
-          typeof area === 'string' &&
-          area.trim().toLowerCase() === m.name.trim().toLowerCase()
-        );
-      } else if (areas && typeof areas === 'object') {
-        return Object.values(areas).some(area =>
-          typeof area === 'string' &&
-          area.trim().toLowerCase() === m.name.trim().toLowerCase()
-        );
-      }
-      return false;
-    });
+  if (!currentSeller.value) return map;
+  
+  municipalityMarkers.value.forEach(municipality => {
+    // Since we're only showing current seller's areas, each municipality will have this seller
+    map[municipality.name] = [currentSeller.value];
   });
   return map;
 });
 
 const topMunicipality = computed(() => {
-  let top = { name: '', count: 0 };
-  Object.entries(sellersByMunicipality.value).forEach(([name, sellers]) => {
-    if (sellers.length > top.count) {
-      top = { name, count: sellers.length };
-    }
-  });
-  return top;
+  if (municipalityMarkers.value.length === 0) {
+    return { name: 'N/A', count: 0 };
+  }
+  // Since we're only showing current seller's areas, all have count of 1
+  return { 
+    name: municipalityMarkers.value[0]?.name || 'N/A', 
+    count: 1 
+  };
 });
 </script>
 

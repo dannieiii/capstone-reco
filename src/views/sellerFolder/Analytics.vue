@@ -388,6 +388,14 @@
         </div>
       </div>
     </div>
+    
+    <!-- Inventory Modal -->
+    <InventoryModal
+      :isVisible="showInventoryModal"
+      :product="selectedProduct"
+      @close="closeInventoryModal"
+      @update="updateProductData"
+    />
   </div>
 </template>
 
@@ -397,6 +405,7 @@ import { useRouter } from 'vue-router';
 import { db, auth } from '@/firebase/firebaseConfig';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import Sidebar from '@/components/Sidebar.vue';
+import InventoryModal from '@/components/sellerside/InventoryModal.vue';
 import Chart from 'chart.js/auto';
 
 const router = useRouter();
@@ -464,6 +473,10 @@ const unitDisplayMap = {
 // Chart filtering and export
 const chartTimeRange = ref('week');
 const showChartExportMenu = ref(false);
+
+// Modal state
+const showInventoryModal = ref(false);
+const selectedProduct = ref(null);
 
 // Helper function to get unit display name
 const getUnitDisplay = (unit) => {
@@ -810,8 +823,10 @@ const fetchOrders = async () => {
         ...orderData
       });
       
-      // Calculate total sales using new order structure
-      const itemPrice = orderData.itemPrice || (orderData.unitPrice * orderData.quantity) || orderData.totalPrice || 0;
+      // Calculate total sales using proper unit price
+      const unitPrice = getOrderUnitPrice(orderData);
+      const quantity = orderData.quantity || orderData.weight || 0;
+      const itemPrice = orderData.itemPrice || (unitPrice * quantity) || orderData.totalPrice || 0;
       totalSalesValue += itemPrice;
       
       // Calculate profit using cost data if available
@@ -900,7 +915,7 @@ const calculateTopProducts = () => {
       productSales[productName] = {
         productName: productName,
         category: order.category || 'Other',
-        unitPrice: order.unitPrice || 0,
+        unitPrice: getOrderUnitPrice(order),
         unit: order.unit || 'piece',
         sold: 0,
         profit: 0,
@@ -910,10 +925,10 @@ const calculateTopProducts = () => {
     }
     
     // Add quantity sold
-    productSales[productName].sold += order.quantity || 0;
+    productSales[productName].sold += order.quantity || order.weight || 0;
     
     // Add profit (simplified calculation)
-    const itemPrice = order.itemPrice || (order.unitPrice * order.quantity) || 0;
+    const itemPrice = order.itemPrice || (getOrderUnitPrice(order) * (order.quantity || order.weight || 0)) || 0;
     productSales[productName].profit += itemPrice * 0.3; // Assume 30% profit margin
   });
   
@@ -921,6 +936,21 @@ const calculateTopProducts = () => {
   topProducts.value = Object.values(productSales)
     .sort((a, b) => b.sold - a.sold)
     .slice(0, 4);
+};
+
+// Helper function to get unit price from order data
+const getOrderUnitPrice = (order) => {
+  // Priority: unitPrice -> pricePerKg -> calculated from total
+  if (order.unitPrice && order.unitPrice > 0) {
+    return order.unitPrice;
+  }
+  if (order.pricePerKg && order.pricePerKg > 0) {
+    return order.pricePerKg;
+  }
+  if (order.totalPrice && (order.quantity || order.weight) && (order.quantity || order.weight) > 0) {
+    return order.totalPrice / (order.quantity || order.weight);
+  }
+  return 0;
 };
 
 // Initialize sales chart with real data
@@ -1075,7 +1105,9 @@ const updateChartsWithOrderData = (orders, categorySales) => {
       const daysDiff = Math.floor((now - orderDate) / (1000 * 60 * 60 * 24));
       if (daysDiff >= 0 && daysDiff < 7) {
         const index = 6 - daysDiff; // Reverse index (newest date at the end)
-        const itemPrice = order.itemPrice || (order.unitPrice * order.quantity) || order.totalPrice || 0;
+        const unitPrice = getOrderUnitPrice(order);
+        const quantity = order.quantity || order.weight || 0;
+        const itemPrice = order.itemPrice || (unitPrice * quantity) || order.totalPrice || 0;
         revenueData[index] += itemPrice;
         profitData[index] += itemPrice * 0.3; // Assume 30% profit margin
       }
@@ -1110,7 +1142,9 @@ const updateChartsWithOrderData = (orders, categorySales) => {
         const weekIndex = Math.floor(daysDiff / 7);
         if (weekIndex < 4) {
           const index = 3 - weekIndex; // Reverse index (newest week at the end)
-          const itemPrice = order.itemPrice || (order.unitPrice * order.quantity) || order.totalPrice || 0;
+          const unitPrice = getOrderUnitPrice(order);
+          const quantity = order.quantity || order.weight || 0;
+          const itemPrice = order.itemPrice || (unitPrice * quantity) || order.totalPrice || 0;
           revenueData[index] += itemPrice;
           profitData[index] += itemPrice * 0.3;
         }
@@ -1143,7 +1177,9 @@ const updateChartsWithOrderData = (orders, categorySales) => {
       
       if (monthDiff >= 0 && monthDiff < 3) {
         const index = 2 - monthDiff; // Reverse index (newest month at the end)
-        const itemPrice = order.itemPrice || (order.unitPrice * order.quantity) || order.totalPrice || 0;
+        const unitPrice = getOrderUnitPrice(order);
+        const quantity = order.quantity || order.weight || 0;
+        const itemPrice = order.itemPrice || (unitPrice * quantity) || order.totalPrice || 0;
         revenueData[index] += itemPrice;
         profitData[index] += itemPrice * 0.3;
       }
@@ -1171,7 +1207,9 @@ const updateChartsWithOrderData = (orders, categorySales) => {
       // Only include orders from current year
       if (orderDate.getFullYear() === currentYear) {
         const month = orderDate.getMonth();
-        const itemPrice = order.itemPrice || (order.unitPrice * order.quantity) || order.totalPrice || 0;
+        const unitPrice = getOrderUnitPrice(order);
+        const quantity = order.quantity || order.weight || 0;
+        const itemPrice = order.itemPrice || (unitPrice * quantity) || order.totalPrice || 0;
         revenueData[month] += itemPrice;
         profitData[month] += itemPrice * 0.3;
       }
@@ -1204,11 +1242,28 @@ const navigateToAddProduct = () => {
 };
 
 const editProduct = (productId) => {
-  router.push(`/edit-product/${productId}`);
+  const product = products.value.find(p => p.id === productId);
+  if (product) {
+    selectedProduct.value = product;
+    showInventoryModal.value = true;
+  }
 };
 
 const viewProductDetails = (productId) => {
   router.push(`/product/${productId}`);
+};
+
+// Modal functions
+const closeInventoryModal = () => {
+  showInventoryModal.value = false;
+  selectedProduct.value = null;
+};
+
+const updateProductData = (updatedProduct) => {
+  const index = products.value.findIndex(p => p.id === updatedProduct.id);
+  if (index !== -1) {
+    products.value[index] = { ...products.value[index], ...updatedProduct };
+  }
 };
 
 // Watch for changes in orders data and update charts
@@ -1221,7 +1276,9 @@ watch(orders, (newOrders) => {
       if (!categorySales[category]) {
         categorySales[category] = 0;
       }
-      const itemPrice = order.itemPrice || (order.unitPrice * order.quantity) || order.totalPrice || 0;
+      const unitPrice = getOrderUnitPrice(order);
+      const quantity = order.quantity || order.weight || 0;
+      const itemPrice = order.itemPrice || (unitPrice * quantity) || order.totalPrice || 0;
       categorySales[category] += itemPrice;
     });
     

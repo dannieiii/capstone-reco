@@ -1,88 +1,170 @@
 <template>
   <div class="dashboard-container">
     <AdminSidebar />
+    
     <div class="main-content">
-      <div class="header-section">
-        <h1 class="page-title">Customer Management</h1>
-        <div class="action-buttons">
-          <button class="secondary-btn">
-            <i class="fas fa-filter"></i> Filter
-          </button>
-          <div class="export-dropdown">
-            <button class="secondary-btn">
-              <i class="fas fa-download"></i> Export
+      <header class="header">
+        <div class="page-title">
+          <h1>Customer Management</h1>
+          <p>Manage your customer information</p>
+        </div>
+        <button class="theme-toggle">
+          <i class="i-lucide-moon"></i>
+        </button>
+      </header>
+
+      <div class="content-wrapper">
+        <!-- Stats Section -->
+        <div class="customers-stats">
+          <div class="stat-card">
+            <h3>Total Customers</h3>
+            <p class="stat-value">{{ allCustomers.length }}</p>
+          </div>
+          <div class="stat-card">
+            <h3>Verified Customers</h3>
+            <p class="stat-value">{{ verifiedCustomers }}</p>
+          </div>
+          <div class="stat-card">
+            <h3>New Customers (This Month)</h3>
+            <p class="stat-value">{{ newCustomers }}</p>
+          </div>
+        </div>
+
+        <div class="actions-bar">
+          <div class="search-and-filter">
+            <div class="search-box">
+              <i class="i-lucide-search search-icon"></i>
+              <input type="text" placeholder="Search customers..." v-model="searchQuery" @input="handleSearch" />
+            </div>
+          </div>
+          <div class="filter-actions">
+            <button class="filter-btn">
+              <i class="fas fa-filter"></i>
+              Filter
             </button>
-            <div class="export-dropdown-content">
-              <button @click="exportData('csv')" class="export-option">
-                <i class="fas fa-file-csv"></i> Export as CSV
+            <div class="export-dropdown">
+              <button class="export-btn">
+                <i class="fas fa-download"></i>
+                Export
+                <i class="fas fa-chevron-down ml-1"></i>
               </button>
-              <button @click="exportData('pdf')" class="export-option">
-                <i class="fas fa-file-pdf"></i> Export as PDF
-              </button>
+              <div class="export-menu">
+                <button class="export-option" @click="exportData('csv')">
+                  <i class="fas fa-file-csv"></i>
+                  Export as CSV
+                </button>
+                <button class="export-option" @click="exportData('pdf')">
+                  <i class="fas fa-file-pdf"></i>
+                  Export as PDF
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-      
-      <div class="customers-stats">
-        <div class="stat-card">
-          <h3>Total Customers</h3>
-          <p class="stat-value">{{ customers.length }}</p>
-        </div>
-        <div class="stat-card">
-          <h3>Verified Customers</h3>
-          <p class="stat-value">{{ verifiedCustomers }}</p>
-        </div>
-        <div class="stat-card">
-          <h3>New Customers (This Month)</h3>
-          <p class="stat-value">{{ newCustomers }}</p>
-        </div>
-      </div>
-      
-      <div class="customers-table">
-        <table>
+
+        <table class="customers-table">
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Username</th>
-              <th>Email</th>
-              <th>Contact Number</th>
-              <th>Address</th>
-              <th>Verified</th>
+              <th>Customer</th>
+              <th>Contact</th>
+              <th>Location</th>
+              <th>Status</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="customer in customers" :key="customer.userId">
-              
+            <tr v-for="customer in paginatedCustomers" :key="customer.userId">
               <td>
-                <div class="customer-name">{{ customer.firstName }} {{ customer.lastName }}</div>
+                <div class="customer-cell">
+                  <div class="customer-avatar" :style="{ backgroundColor: getAvatarColor(customer.username) }">
+                    {{ getInitials(customer.firstName, customer.lastName) }}
+                  </div>
+                  <div class="customer-info">
+                    <div class="customer-name">{{ customer.firstName }} {{ customer.lastName }}</div>
+                    <div class="customer-email">{{ customer.username }}</div>
+                  </div>
+                </div>
               </td>
-              <td>{{ customer.username }}</td>
-              <td>{{ customer.email }}</td>
-              <td>{{ customer.contactNumber }}</td>
-              <td>{{ customer.address }}</td>
               <td>
-                <span :class="['status-badge', customer.isVerified ? 'active' : 'inactive']">
+                <div class="contact-cell">
+                  <div class="email-address">
+                    <i class="i-lucide-mail contact-icon"></i>
+                    {{ customer.email }}
+                  </div>
+                  <div class="phone-number">
+                    <i class="i-lucide-phone contact-icon"></i>
+                    {{ customer.contactNumber || 'N/A' }}
+                  </div>
+                </div>
+              </td>
+              <td>
+                <div class="location-cell">
+                  <i class="i-lucide-map-pin location-icon"></i>
+                  <span>{{ customer.address || 'N/A' }}</span>
+                </div>
+              </td>
+              <td>
+                <span :class="['status-badge', customer.isVerified ? 'verified' : 'pending']">
                   {{ customer.isVerified ? 'Verified' : 'Not Verified' }}
                 </span>
               </td>
               <td>
                 <div class="action-buttons">
-                  <button class="action-btn view" @click="viewMoreInfo(customer)">
-                    <i class="fas fa-eye"></i>
+                  <button class="action-btn view-btn" @click="viewMoreInfo(customer)" title="View Details">
+                    <Eye :size="16" />
                   </button>
-                  <button class="action-btn edit" @click="editCustomer(customer)">
-                    <i class="fas fa-edit"></i>
+                  <button class="action-btn delete-btn" @click="deleteCustomer(customer)" title="Delete Customer">
+                    <Trash2 :size="16" />
                   </button>
-                  <button class="action-btn delete">
-                    <i class="fas fa-trash"></i>
-                  </button>
+                </div>
+              </td>
+            </tr>
+            <tr v-if="paginatedCustomers.length === 0">
+              <td colspan="5" class="empty-state">
+                <div class="empty-message">
+                  <i class="i-lucide-search-x empty-icon"></i>
+                  <p>No customers found</p>
                 </div>
               </td>
             </tr>
           </tbody>
         </table>
+
+        <!-- Pagination -->
+        <div class="pagination-container" v-if="totalPages > 1">
+          <div class="pagination-info">
+            Showing {{ startIndex + 1 }} to {{ Math.min(endIndex, filteredCustomers.length) }} of {{ filteredCustomers.length }} customers
+          </div>
+          <div class="pagination-controls">
+            <button 
+              class="pagination-btn" 
+              @click="goToPage(currentPage - 1)" 
+              :disabled="currentPage === 1"
+              title="Previous Page"
+            >
+              <i class="i-lucide-chevron-left"></i>
+            </button>
+            
+            <button 
+              v-for="page in visiblePages" 
+              :key="page"
+              class="pagination-btn page-number"
+              :class="{ active: page === currentPage }"
+              @click="goToPage(page)"
+            >
+              {{ page }}
+            </button>
+            
+            <button 
+              class="pagination-btn" 
+              @click="goToPage(currentPage + 1)" 
+              :disabled="currentPage === totalPages"
+              title="Next Page"
+            >
+              <i class="i-lucide-chevron-right"></i>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -92,46 +174,123 @@
 import { ref, computed, onMounted } from 'vue';
 import AdminSidebar from '@/components/AdminSidebar.vue';
 import { db } from '@/firebase/firebaseConfig';
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, doc, deleteDoc } from "firebase/firestore";
+import { Eye, Trash2 } from 'lucide-vue-next';
 
-const customers = ref([]);
+const allCustomers = ref([]);
+const searchQuery = ref('');
+const currentPage = ref(1);
+const itemsPerPage = 10;
 
-const verifiedCustomers = computed(() => customers.value.filter(c => c.isVerified).length);
+// Computed properties
+const filteredCustomers = computed(() => {
+  if (!searchQuery.value) {
+    return allCustomers.value;
+  }
+  
+  const query = searchQuery.value.toLowerCase();
+  return allCustomers.value.filter(customer => {
+    const fullName = `${customer.firstName || ''} ${customer.lastName || ''}`.toLowerCase();
+    const email = (customer.email || '').toLowerCase();
+    const username = (customer.username || '').toLowerCase();
+    const address = (customer.address || '').toLowerCase();
+    
+    return fullName.includes(query) || 
+           email.includes(query) || 
+           username.includes(query) || 
+           address.includes(query);
+  });
+});
+
+const totalPages = computed(() => Math.ceil(filteredCustomers.value.length / itemsPerPage));
+
+const startIndex = computed(() => (currentPage.value - 1) * itemsPerPage);
+const endIndex = computed(() => startIndex.value + itemsPerPage);
+
+const paginatedCustomers = computed(() => {
+  return filteredCustomers.value.slice(startIndex.value, endIndex.value);
+});
+
+const visiblePages = computed(() => {
+  const pages = [];
+  const maxVisible = 5;
+  let start = Math.max(1, currentPage.value - Math.floor(maxVisible / 2));
+  let end = Math.min(totalPages.value, start + maxVisible - 1);
+  
+  if (end - start + 1 < maxVisible) {
+    start = Math.max(1, end - maxVisible + 1);
+  }
+  
+  for (let i = start; i <= end; i++) {
+    pages.push(i);
+  }
+  
+  return pages;
+});
+
+const verifiedCustomers = computed(() => allCustomers.value.filter(c => c.isVerified).length);
+
 const newCustomers = computed(() => {
   const oneMonthAgo = new Date();
   oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-  return customers.value.filter(c => new Date(c.createdAt) > oneMonthAgo).length;
+  return allCustomers.value.filter(c => new Date(c.createdAt) > oneMonthAgo).length;
 });
 
+// Methods
 const fetchCustomers = async () => {
   try {
     const querySnapshot = await getDocs(collection(db, "users"));
-    customers.value = querySnapshot.docs
-      .map(doc => doc.data())
+    allCustomers.value = querySnapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
       .filter(user => user.role === "customer");
   } catch (error) {
     console.error("Error fetching customers:", error);
   }
 };
 
-const viewMoreInfo = (customer) => {
-  // Implement a modal or navigate to a detailed view
-  console.log("View more info for:", customer);
+const handleSearch = () => {
+  currentPage.value = 1; // Reset to first page when searching
 };
 
-const editCustomer = (customer) => {
-  // Implement edit functionality
-  console.log("Edit customer:", customer);
+const goToPage = (page) => {
+  if (page >= 1 && page <= totalPages.value) {
+    currentPage.value = page;
+  }
+};
+
+const viewMoreInfo = (customer) => {
+  console.log("View more info for:", customer);
+  // Add your view logic here
+};
+
+const deleteCustomer = async (customer) => {
+  if (confirm(`Are you sure you want to delete ${customer.firstName} ${customer.lastName}?`)) {
+    try {
+      await deleteDoc(doc(db, "users", customer.id));
+      await fetchCustomers(); // Refresh the list
+      
+      // Adjust current page if necessary
+      if (paginatedCustomers.value.length === 0 && currentPage.value > 1) {
+        currentPage.value = currentPage.value - 1;
+      }
+      
+      console.log("Customer deleted successfully");
+    } catch (error) {
+      console.error("Error deleting customer:", error);
+      alert("Failed to delete customer. Please try again.");
+    }
+  }
 };
 
 const exportData = (format) => {
   try {
+    const dataToExport = filteredCustomers.value; // Export filtered data
+    
     if (format === 'csv') {
-      // CSV Export Logic
       const headers = ['Name', 'Username', 'Email', 'Contact Number', 'Address', 'Verified'];
       const csvContent = [
         headers.join(','),
-        ...customers.value.map(customer => [
+        ...dataToExport.map(customer => [
           `${customer.firstName} ${customer.lastName}`,
           customer.username,
           customer.email,
@@ -153,10 +312,8 @@ const exportData = (format) => {
       link.click();
       document.body.removeChild(link);
     } else if (format === 'pdf') {
-      // Create a new window for PDF content
       const printWindow = window.open('', '_blank');
       
-      // Create PDF content
       let pdfContent = '<!DOCTYPE html>';
       pdfContent += '<html>';
       pdfContent += '<head>';
@@ -189,8 +346,7 @@ const exportData = (format) => {
       pdfContent += '</thead>';
       pdfContent += '<tbody>';
       
-      // Add customer rows
-      customers.value.forEach(customer => {
+      dataToExport.forEach(customer => {
         const fullName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'N/A';
         const statusClass = customer.isVerified ? 'status-verified' : 'status-pending';
         const statusText = customer.isVerified ? 'Verified' : 'Not Verified';
@@ -209,7 +365,7 @@ const exportData = (format) => {
       pdfContent += '</table>';
       pdfContent += '<div class="export-info">';
       pdfContent += `<p>Generated on: ${new Date().toLocaleString()}</p>`;
-      pdfContent += `<p>Total Customers: ${customers.value.length}</p>`;
+      pdfContent += `<p>Total Customers: ${dataToExport.length}</p>`;
       pdfContent += '</div>';
       pdfContent += '<script>';
       pdfContent += 'window.onload = function() { window.print(); }';
@@ -217,7 +373,6 @@ const exportData = (format) => {
       pdfContent += '</body>';
       pdfContent += '</html>';
       
-      // Write content to the new window
       printWindow.document.open();
       printWindow.document.write(pdfContent);
       printWindow.document.close();
@@ -228,12 +383,36 @@ const exportData = (format) => {
   }
 };
 
-// Helper function to escape HTML
 const escapeHtml = (text) => {
   if (!text) return '';
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+};
+
+// Helper functions for styling
+const getInitials = (firstName, lastName) => {
+  const first = firstName ? firstName.charAt(0) : '';
+  const last = lastName ? lastName.charAt(0) : '';
+  return (first + last).toUpperCase() || 'NA';
+};
+
+const getAvatarColor = (username) => {
+  if (!username) return '#2e5c31';
+  
+  const colors = [
+    '#2e5c31', '#1e40af', '#9d174d', '#b45309', '#4c1d95',
+    '#064e3b', '#7f1d1d', '#1e3a8a', '#3f6212', '#831843'
+  ];
+  
+  let hash = 0;
+  for (let i = 0; i < username.length; i++) {
+    hash = ((hash << 5) - hash) + username.charCodeAt(i);
+    hash = hash & hash;
+  }
+  
+  const index = Math.abs(hash) % colors.length;
+  return colors[index];
 };
 
 onMounted(fetchCustomers);
@@ -245,90 +424,82 @@ onMounted(fetchCustomers);
 .dashboard-container {
   display: flex;
   min-height: 100vh;
-  background-color: #f5f7fa;
+  background-color: #f9fafb;
 }
 
 .main-content {
   flex: 1;
-  padding: 2rem;
-  margin-left: 260px; /* Adjust this value to match the width of the sidebar */
+  padding: 20px;
+  overflow-y: auto;
+  margin-left: 260px;
 }
 
-.header-section {
+.header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 2rem;
+  margin-bottom: 20px;
 }
 
-.page-title {
-  font-size: 2rem;
-  color: #2e5c31;
-  margin: 0;
+.page-title h1 {
+  font-size: 1.5rem;
   font-weight: 700;
+  color: #111827;
+  margin: 0 0 5px 0;
 }
 
-.action-buttons {
-  display: flex;
-  gap: 1rem;
-}
-
-.primary-btn, .secondary-btn {
-  padding: 0.75rem 1.25rem;
-  border: none;
-  border-radius: 6px;
-  font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  transition: all 0.2s ease;
+.page-title p {
   font-size: 0.9rem;
+  color: #6b7280;
+  margin: 0;
 }
 
-.primary-btn {
-  background-color: #2e5c31;
-  color: white;
+.theme-toggle {
+  background: none;
+  border: none;
+  color: #111827;
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 50%;
 }
 
-.primary-btn:hover {
-  background-color: #1a3a1c;
+.theme-toggle:hover {
+  background: rgba(0,0,0,0.05);
 }
 
-.secondary-btn {
-  background-color: #f8f9fa;
-  color: #2c3e50;
-  border: 1px solid #e9ecef;
-}
-
-.secondary-btn:hover {
-  background-color: #e9ecef;
+.content-wrapper {
+  background-color: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  padding: 20px;
 }
 
 .customers-stats {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 2rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 1.5rem;
+  margin-bottom: 2rem;
 }
 
 .stat-card {
   background-color: #ffffff;
   border-radius: 10px;
   padding: 1.5rem;
-  flex: 1;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
   transition: transform 0.2s ease;
+  border: 1px solid #e5e7eb;
 }
 
 .stat-card:hover {
-  transform: translateY(-5px);
+  transform: translateY(-2px);
 }
 
 .stat-card h3 {
-  font-size: 1rem;
-  color: #6c757d;
+  font-size: 0.9rem;
+  color: #6b7280;
   margin-bottom: 0.5rem;
+  font-weight: 500;
 }
 
 .stat-value {
@@ -338,171 +509,371 @@ onMounted(fetchCustomers);
   margin: 0;
 }
 
-.customers-table {
-  background-color: white;
-  border-radius: 10px;
-  overflow: hidden;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-}
-
-table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-}
-
-th, td {
-  padding: 1rem;
-  text-align: left;
-}
-
-th {
-  background-color: #f8fafc;
-  font-weight: 600;
-  color: #4a5568;
-  text-transform: uppercase;
-  font-size: 0.75rem;
-  letter-spacing: 0.05em;
-}
-
-tr:nth-child(even) {
-  background-color: #f8fafc;
-}
-
-tr:hover {
-  background-color: #f0f7ff;
-}
-
-.customer-name {
-  font-weight: 600;
-  color: #2d3748;
-}
-
-.action-buttons {
+.actions-bar {
   display: flex;
-  gap: 0.5rem;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 16px;
 }
 
-.action-btn {
-  padding: 0.5rem;
-  border: none;
-  border-radius: 4px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
+.search-and-filter {
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 12px;
+  flex-grow: 1;
 }
 
-.action-btn.view {
-  background-color: #2e5c31;
-  color: white;
+.search-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-grow: 1;
+  max-width: 400px;
 }
 
-.action-btn.view:hover {
-  background-color: #1a3a1c;
+.search-box input {
+  width: 100%;
+  padding: 10px 16px 10px 40px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 14px;
+  transition: all 0.2s;
+  background-color: #f9f9f9;
 }
 
-.action-btn.edit {
-  background-color: #2e5c31;
-  color: white;
+.search-box input:focus {
+  outline: none;
+  border-color: #2e5c31;
+  background-color: white;
+  box-shadow: 0 0 0 2px rgba(46, 92, 49, 0.1);
 }
 
-.action-btn.edit:hover {
-  background-color: #1a3a1c;
+.search-icon {
+  position: absolute;
+  left: 12px;
+  color: #888;
 }
 
-.action-btn.delete {
-  background-color: #e74c3c;
-  color: white;
-  width: 36px;
-  height: 36px;
+.filter-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
-.action-btn.delete:hover {
-  background-color: #c0392b;
-}
-
-.status-badge {
-  display: inline-block;
-  padding: 0.25rem 0.75rem;
+.filter-btn, .export-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
   border-radius: 20px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-align: center;
+  font-size: 0.9rem;
+  cursor: pointer;
+  border: none;
+  background-color: #f3f4f6;
+  color: #4b5563;
+  transition: all 0.2s;
 }
 
-.status-badge.active {
-  background-color: #d4edda;
-  color: #155724;
-}
-
-.status-badge.inactive {
-  background-color: #f8d7da;
-  color: #721c24;
-}
-
-@media (max-width: 1200px) {
-  .customers-table {
-    overflow-x: auto;
-  }
-  
-  .customers-stats {
-    flex-direction: column;
-  }
-  
-  .stat-card {
-    width: 100%;
-  }
-  
-  .header-section {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 1rem;
-  }
-  
-  .action-buttons {
-    width: 100%;
-  }
+.filter-btn:hover, .export-btn:hover {
+  background-color: #e5e7eb;
 }
 
 .export-dropdown {
   position: relative;
-  display: inline-block;
 }
 
-.export-dropdown-content {
-  display: none;
+.export-menu {
   position: absolute;
+  top: 100%;
   right: 0;
+  margin-top: 5px;
   background-color: white;
-  min-width: 160px;
-  box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
-  z-index: 1;
-  border-radius: 6px;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  z-index: 10;
+  min-width: 180px;
   overflow: hidden;
+  display: none;
 }
 
-.export-dropdown:hover .export-dropdown-content {
+.export-dropdown:hover .export-menu {
   display: block;
 }
 
 .export-option {
-  color: #2c3e50;
-  padding: 12px 16px;
-  text-decoration: none;
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 10px 16px;
   width: 100%;
   text-align: left;
   border: none;
   background: none;
   cursor: pointer;
+  font-size: 0.9rem;
+  color: #4b5563;
+  transition: background-color 0.2s;
 }
 
 .export-option:hover {
-  background-color: #f1f1f1;
+  background-color: #f9fafb;
+}
+
+.ml-1 {
+  margin-left: 4px;
+}
+
+.customers-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 20px;
+}
+
+.customers-table th,
+.customers-table td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.customers-table th {
+  font-weight: 600;
+  color: #4b5563;
+  background-color: #f9fafb;
+}
+
+.customers-table tbody tr:hover {
+  background-color: #f9fafb;
+}
+
+.customer-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.customer-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background-color: #2e5c31;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.customer-name {
+  font-weight: 500;
+}
+
+.customer-email {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.contact-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.9rem;
+}
+
+.email-address, .phone-number {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.contact-icon {
+  color: #2e5c31;
+  font-size: 0.9rem;
+}
+
+.location-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.location-icon {
+  color: #2e5c31;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.status-badge.verified {
+  background-color: #d1fae5;
+  color: #059669;
+}
+
+.status-badge.pending {
+  background-color: #fef3c7;
+  color: #d97706;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.view-btn {
+  background-color: #e0f2fe;
+  color: #0284c7;
+}
+
+.view-btn:hover {
+  background-color: #bae6fd;
+  transform: scale(1.05);
+}
+
+.delete-btn {
+  background-color: #fee2e2;
+  color: #dc2626;
+}
+
+.delete-btn:hover {
+  background-color: #fecaca;
+  transform: scale(1.05);
+}
+
+.empty-state {
+  padding: 40px 0;
+}
+
+.empty-message {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+}
+
+.empty-icon {
+  font-size: 2rem;
+  margin-bottom: 10px;
+  color: #9ca3af;
+}
+
+/* Pagination Styles */
+.pagination-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.pagination-info {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pagination-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #e5e7eb;
+  background-color: white;
+  color: #6b7280;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 0.875rem;
+}
+
+.pagination-btn:hover:not(:disabled) {
+  background-color: #f9fafb;
+  border-color: #2e5c31;
+  color: #2e5c31;
+}
+
+.pagination-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pagination-btn.active {
+  background-color: #2e5c31;
+  border-color: #2e5c31;
+  color: white;
+}
+
+.pagination-btn.page-number {
+  font-weight: 500;
+}
+
+/* Responsive styles */
+@media (max-width: 768px) {
+  .main-content {
+    margin-left: 0;
+    padding: 15px;
+  }
+  
+  .actions-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .search-and-filter {
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .search-box {
+    max-width: none;
+  }
+  
+  .customers-stats {
+    grid-template-columns: 1fr;
+  }
+  
+  .customers-table {
+    display: block;
+    overflow-x: auto;
+  }
+  
+  .pagination-container {
+    flex-direction: column;
+    gap: 16px;
+    align-items: center;
+  }
+  
+  .pagination-controls {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
 }
 </style>
