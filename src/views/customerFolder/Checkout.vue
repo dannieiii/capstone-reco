@@ -382,13 +382,26 @@
         <div class="success-icon">
           <CheckCircle size="40" />
         </div>
-          <h2>Order Placed Successfully!</h2>
-        <p>Your order has been confirmed and will be processed shortly.</p>
-        <p><small>A confirmation email has been sent to your email address.</small></p>
+        <h2>Order{{ multipleOrderCodes.length > 1 ? 's' : '' }} Placed Successfully!</h2>
+        <p v-if="multipleOrderCodes.length === 1">Your order has been confirmed and will be processed shortly.</p>
+        <p v-else>Your {{ multipleOrderCodes.length }} orders have been confirmed. Each seller will process their items separately.</p>
+        <p><small>Confirmation email{{ multipleOrderCodes.length > 1 ? 's have' : ' has' }} been sent to your email address.</small></p>
         
-        <div class="order-number">
+        <!-- Single order display -->
+        <div v-if="multipleOrderCodes.length === 1" class="order-number">
           <p class="label">Order Code</p>
           <p class="value">#{{ orderNumber }}</p>
+        </div>
+        
+        <!-- Multiple orders display -->
+        <div v-else class="multiple-orders">
+          <p class="label">Order Codes</p>
+          <div class="order-codes-list">
+            <div v-for="(code, index) in multipleOrderCodes" :key="code" class="order-code-item">
+              <span class="order-code">#{{ code }}</span>
+              <small class="order-note">Seller {{ index + 1 }}</small>
+            </div>
+          </div>
         </div>
         
         <!-- Add cancellation notice -->
@@ -672,6 +685,7 @@ export default {
     
     // Order number for success modal
     const orderNumber = ref('');
+    const multipleOrderCodes = ref([]); // Store all order codes for multi-seller orders
     
     // Address data
     const addresses = ref([]);
@@ -1140,20 +1154,22 @@ export default {
           console.log(`Seller ${sellerId}: ${itemsBySeller[sellerId].length} items`);
         });
 
-        // Check if multiple sellers - require separate payments
+        // Handle multiple sellers by creating separate orders for each seller
         const sellerIds = Object.keys(itemsBySeller);
+        console.log(`Processing orders for ${sellerIds.length} seller(s)`);
+        
+        // If multiple sellers, show informative message
         if (sellerIds.length > 1) {
           showNotificationMessage(
-            `You have items from ${sellerIds.length} different sellers. Each seller requires a separate payment. Please checkout items from one seller at a time.`,
-            'error'
+            `Processing ${sellerIds.length} separate orders for different sellers. Each seller will receive their own order.`,
+            'info'
           );
-          return;
         }
 
-        // Generate order code for the single seller
-        const orderCode = generateOrderCode();
-        orderNumber.value = orderCode;
-
+        // Process orders for each seller separately
+        const allOrderCodes = [];
+        const successfulOrders = [];
+        
         // Get user data
         const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
         const userData = userDoc.exists() ? userDoc.data() : {};
@@ -1168,139 +1184,179 @@ export default {
               cartItemsToDelete.push(item.cartItemId);
             }
           });
-        }        // PHASE 1: VALIDATION - Check all products exist and get seller user IDs
-        const productPromises = orderItems.value.map(item => 
-          getDoc(doc(db, 'products', item.productId))
-        );
-        const productSnapshots = await Promise.all(productPromises);
-
-        // Get seller data to extract user IDs
-        const sellerPromises = orderItems.value.map(item => 
-          getDoc(doc(db, 'sellers', item.sellerId))
-        );
-        const sellerSnapshots = await Promise.all(sellerPromises);
-
-        // Verify products exist and prepare seller user IDs
-        const orderItemsWithUserIds = [];
-        for (let i = 0; i < orderItems.value.length; i++) {
-          const item = orderItems.value[i];
-          const productDoc = productSnapshots[i];
-          const sellerDoc = sellerSnapshots[i];
-          
-          if (!productDoc.exists()) {
-            throw new Error(`Product ${item.productName || item.productId} not found`);
-          }
-          
-          if (!sellerDoc.exists()) {
-            throw new Error(`Seller not found for product ${item.productName || item.productId}`);
-          }
-          
-          const sellerData = sellerDoc.data();
-          const sellerUserId = sellerData.userId || sellerData.uid || auth.currentUser?.uid;
-          
-          if (!sellerUserId) {
-            throw new Error(`Seller user ID not found for product ${item.productName || item.productId}`);
-          }
-          
-          orderItemsWithUserIds.push({
-            ...item,
-            sellerUserId: sellerUserId // This is the actual user ID we want to save
-          });
-          
-          console.log(`✅ Item ${i + 1}: Document ID "${item.sellerId}" → User ID "${sellerUserId}"`);
         }
         
-        console.log('=== SELLER ID MAPPING COMPLETE ===');
-        console.log('All items now have correct seller user IDs for Orders.vue compatibility');        // PHASE 2: TRANSACTION - Only writes here
-        await runTransaction(db, async (transaction) => {
-          // Process each item
-          for (let i = 0; i < orderItemsWithUserIds.length; i++) {
-            const item = orderItemsWithUserIds[i];
-            const productData = productSnapshots[i].data();
+        for (const sellerId of sellerIds) {
+          const sellerItems = itemsBySeller[sellerId];
+          const orderCode = generateOrderCode();
+          allOrderCodes.push(orderCode);
+          
+          console.log(`Processing order ${orderCode} for seller ${sellerId} with ${sellerItems.length} items`);
+          
+          try {
+            // PHASE 1: VALIDATION - Check products exist for this seller
+            const productPromises = sellerItems.map(item => 
+              getDoc(doc(db, 'products', item.productId))
+            );
+            const productSnapshots = await Promise.all(productPromises);
 
-            // Calculate all price components
-            const itemPrice = item.unitPrice * item.quantity;
-            const deliveryFeeValue = paymentMethod.value !== 'pickup' ? deliveryFee.value : 0;
-            const taxValue = itemPrice * 0.08; // 8% tax
-            const totalPrice = itemPrice + deliveryFeeValue + taxValue;
-
-            // Prepare location data based on address type
-            let locationData;
-            if (selectedAddress.value.isRegistrationAddress) {
-              locationData = {
-                address: userRegistrationAddress.value,
-                notes: 'Registration Address'
-              };
-            } else {
-              locationData = {
-                province: selectedAddress.value.province,
-                municipality: selectedAddress.value.municipality,
-                barangay: selectedAddress.value.barangay,
-                address: `${selectedAddress.value.barangay}, ${selectedAddress.value.municipality}, ${selectedAddress.value.province}`,
-                notes: selectedAddress.value.locationNotes || ''
-              };
+            // Verify products exist
+            for (let i = 0; i < sellerItems.length; i++) {
+              const item = sellerItems[i];
+              const productDoc = productSnapshots[i];
+              
+              if (!productDoc.exists()) {
+                throw new Error(`Product ${item.productName || item.productId} not found`);
+              }
             }
+            
+            console.log(`✅ Products validated for seller ${sellerId}`);
 
-            // Create order document with complete financial information
-            // Create order document with complete financial information
-              const orderRef = doc(collection(db, 'orders'));
-              transaction.set(orderRef, {
-                orderCode: orderCode,
-                sellerId: item.sellerUserId, // ✅ NOW USING USER ID INSTEAD OF DOCUMENT ID
-                productId: item.productId,
-                productName: item.productName,
-                productImage: item.productImage || placeholderImage,
-                unitPrice: item.unitPrice,
-                quantity: item.quantity,
-                unit: item.unit,
-                itemPrice: itemPrice,
-                paymentMethod: paymentMethod.value,
-                gcashNumber: paymentMethod.value === 'gcash' ? gcashDetails.value.number : null,
-                deliveryOption: paymentMethod.value !== 'pickup' ? deliveryOption.value : null,
-                deliveryFee: deliveryFeeValue,
-                deliveryDistance: deliveryDistance.value || 0,
-                tax: taxValue,
-                totalPrice: totalPrice,
-                Location: locationData,
-                status: 'Pending', // Explicitly set to Pending
-                payStatus: 'unpaid',
-                createdAt: serverTimestamp(),
-                userId: auth.currentUser.uid,
-                username: username,
-                isBuyNow: isBuyNow.value
-              });
+            // PHASE 2: TRANSACTION - Create order for this seller
+            await runTransaction(db, async (transaction) => {
+              // Process each item for this seller
+              for (let i = 0; i < sellerItems.length; i++) {
+                const item = sellerItems[i];
+                const productData = productSnapshots[i].data();
 
-            // Create sale record with accurate financial data
-            const saleRef = doc(collection(db, 'sales'));
-            transaction.set(saleRef, {
-              productId: item.productId,
-              productName: item.productName,
-              category: productData.category || 'uncategorized',
-              quantity: item.quantity,
-              unit: item.unit,
-              price: item.unitPrice,
-              totalPrice: itemPrice,
-              timestamp: serverTimestamp(),
-              sellerId: item.sellerUserId, // ✅ ALSO USING USER ID HERE
-              season: getCurrentSeason(),
-              orderCode: orderCode,
-              isBuyNow: isBuyNow.value,
-              paymentStatus: 'unpaid'
+                // Calculate all price components
+                const itemPrice = item.unitPrice * item.quantity;
+                const deliveryFeeValue = paymentMethod.value !== 'pickup' ? deliveryFee.value : 0;
+                const taxValue = itemPrice * 0.08; // 8% tax
+                const totalPrice = itemPrice + deliveryFeeValue + taxValue;
+
+                // Prepare location data based on address type
+                let locationData;
+                if (selectedAddress.value.isRegistrationAddress) {
+                  locationData = {
+                    address: userRegistrationAddress.value,
+                    notes: 'Registration Address'
+                  };
+                } else {
+                  locationData = {
+                    province: selectedAddress.value.province,
+                    municipality: selectedAddress.value.municipality,
+                    barangay: selectedAddress.value.barangay,
+                    address: `${selectedAddress.value.barangay}, ${selectedAddress.value.municipality}, ${selectedAddress.value.province}`,
+                    notes: selectedAddress.value.locationNotes || ''
+                  };
+                }
+
+                // Create order document with complete financial information
+                const orderRef = doc(collection(db, 'orders'));
+                
+                console.log(`🔍 Creating order for seller:`, {
+                  sellerId: item.sellerId,
+                  sellerIdType: typeof item.sellerId,
+                  productId: item.productId,
+                  productName: item.productName,
+                  orderCode: orderCode
+                });
+                
+                transaction.set(orderRef, {
+                  orderCode: orderCode,
+                  sellerId: item.sellerId, // ✅ SELLER DOCUMENT ID (for seller identification)
+                  productId: item.productId,
+                  productName: item.productName,
+                  productImage: item.productImage || placeholderImage,
+                  unitPrice: item.unitPrice,
+                  quantity: item.quantity,
+                  unit: item.unit,
+                  itemPrice: itemPrice,
+                  paymentMethod: paymentMethod.value,
+                  gcashNumber: paymentMethod.value === 'gcash' ? gcashDetails.value.number : null,
+                  deliveryOption: paymentMethod.value !== 'pickup' ? deliveryOption.value : null,
+                  deliveryFee: deliveryFeeValue,
+                  deliveryDistance: deliveryDistance.value || 0,
+                  estimatedDeliveryHours: deliveryOption.value === 'express' ? 24 : 48,
+                  tax: taxValue,
+                  totalPrice: totalPrice,
+                  Location: locationData,
+                  status: 'Pending', // Explicitly set to Pending
+                  payStatus: 'unpaid',
+                  paymentStatus: 'unpaid',
+                  createdAt: serverTimestamp(),
+                  lastUpdated: serverTimestamp(),
+                  userId: auth.currentUser.uid,
+                  username: username,
+                  isBuyNow: isBuyNow.value,
+                  refundId: null,
+                  refundrequestdAt: null,
+                  sellerContact: null, // Will be populated later if needed
+                  // Multi-seller order metadata
+                  isMultiSellerOrder: sellerIds.length > 1,
+                  totalSellersCount: sellerIds.length,
+                  relatedOrderCodes: allOrderCodes.filter(code => code !== orderCode) // Other order codes for this customer
+                });
+
+                // Create sale record with accurate financial data
+                const saleRef = doc(collection(db, 'sales'));
+                transaction.set(saleRef, {
+                  productId: item.productId,
+                  productName: item.productName,
+                  category: productData.category || 'uncategorized',
+                  quantity: item.quantity,
+                  unit: item.unit,
+                  price: item.unitPrice,
+                  totalPrice: itemPrice,
+                  timestamp: serverTimestamp(),
+                  sellerId: item.sellerId, // ✅ SELLER DOCUMENT ID (for seller identification)
+                  season: getCurrentSeason(),
+                  orderCode: orderCode,
+                  isBuyNow: isBuyNow.value,
+                  paymentStatus: 'unpaid',
+                  // Multi-seller order metadata
+                  isMultiSellerOrder: sellerIds.length > 1,
+                  totalSellersCount: sellerIds.length
+                });
+              }
             });
+
+            successfulOrders.push({
+              sellerId: sellerId,
+              orderCode: orderCode,
+              itemCount: sellerItems.length
+            });
+            
+            console.log(`✅ Order ${orderCode} created successfully for seller ${sellerId}`);
+            
+          } catch (error) {
+            console.error(`❌ Failed to create order for seller ${sellerId}:`, error);
+            throw new Error(`Failed to create order for seller ${sellerId}: ${error.message}`);
           }
+        }
+        
+        console.log('=== ALL ORDERS CREATED SUCCESSFULLY ===');
+        console.log(`Total orders created: ${successfulOrders.length}`);
+        successfulOrders.forEach(order => {
+          console.log(`Order ${order.orderCode}: Seller ${order.sellerId} (${order.itemCount} items)`);
         });
 
-        // PHASE 3: CLEANUP - Delete cart items after successful transaction
+        // Set the primary order number for success modal (first order)
+        orderNumber.value = allOrderCodes[0];
+        multipleOrderCodes.value = allOrderCodes;
+
+        // PHASE 3: CLEANUP - Update cart items status after successful transaction
         if (!isBuyNow.value && cartItemsToDelete.length > 0) {
           try {
-            const deletePromises = cartItemsToDelete.map(cartItemId => 
-              deleteDoc(doc(db, 'carts', cartItemId))
-            );
-            await Promise.all(deletePromises);
+            console.log('=== UPDATING CART STATUS ===');
+            console.log(`Cart items to update: ${cartItemsToDelete.length}`);
+            console.log('Cart item IDs:', cartItemsToDelete);
+            
+            const updatePromises = cartItemsToDelete.map(cartItemId => {
+              console.log(`Updating cart item ${cartItemId} to purchased status`);
+              return updateDoc(doc(db, 'carts', cartItemId), { cartStatus: true });
+            });
+            
+            await Promise.all(updatePromises);
+            console.log(`✅ Successfully updated ${cartItemsToDelete.length} cart items to purchased status`);
           } catch (error) {
-            console.error('Error deleting cart items:', error);
+            console.error('❌ Error updating cart items status:', error);
             // Non-critical error, doesn't affect order success
           }
+        } else {
+          console.log('=== CART STATUS UPDATE SKIPPED ===');
+          console.log(`isBuyNow: ${isBuyNow.value}, cartItemsToDelete.length: ${cartItemsToDelete.length}`);
         }
 
         // PHASE 4: Handle Payment
@@ -1530,7 +1586,16 @@ export default {
         // For cash on delivery, show success modal
         showSuccessModal.value = true;
         canCancel.value = true;
-        showNotificationMessage('Order placed successfully! Check your email for confirmation.', 'success');
+        
+        // Create success message based on number of orders
+        let successMessage;
+        if (successfulOrders.length === 1) {
+          successMessage = 'Order placed successfully! Check your email for confirmation.';
+        } else {
+          successMessage = `${successfulOrders.length} orders placed successfully! Each seller will process their items separately. Check your email for confirmations.`;
+        }
+        
+        showNotificationMessage(successMessage, 'success');
 
         // Save GCash number if requested
         if (paymentMethod.value === 'gcash' && saveGcash.value) {
@@ -1686,6 +1751,7 @@ export default {
         // Order success
       showSuccessModal,
       orderNumber,
+      multipleOrderCodes,
       
       // Email sending
       sendingEmail,
@@ -2444,6 +2510,49 @@ export default {
   font-size: 18px;
   font-weight: 600;
   color: #2e5c31;
+}
+
+.multiple-orders {
+  text-align: left;
+  width: 100%;
+  margin: 20px 0;
+}
+
+.multiple-orders .label {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.order-codes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.order-code-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 15px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border-left: 4px solid #2e5c31;
+}
+
+.order-code {
+  font-size: 16px;
+  font-weight: 700;
+  color: #2e5c31;
+}
+
+.order-note {
+  font-size: 12px;
+  color: #666;
+  background-color: #e9ecef;
+  padding: 2px 8px;
+  border-radius: 4px;
 }
 
 .track-button {

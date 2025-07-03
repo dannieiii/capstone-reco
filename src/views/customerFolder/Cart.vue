@@ -92,6 +92,29 @@
     </div>
     
     <bottom-navigation active-tab="/cart" @navigate="$emit('navigate', $event)" />
+    
+    <!-- Remove Item Confirmation Modal -->
+    <div v-if="showRemoveModal" class="modal-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Remove Item</h3>
+        </div>
+        <div class="modal-body">
+          <p>Do you want to remove this item from your cart?</p>
+          <div class="item-preview" v-if="itemToRemove">
+            <img :src="itemToRemove.productImage" :alt="itemToRemove.productName" class="preview-image">
+            <div class="preview-details">
+              <h4>{{ itemToRemove.productName }}</h4>
+              <p>{{ itemToRemove.farmName }}</p>
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="cancel-btn" @click="cancelRemove">Cancel</button>
+          <button class="confirm-btn" @click="confirmRemove">Remove</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -126,21 +149,30 @@ export default {
     const deliveryFee = ref(50);
     const auth = getAuth();
     const router = useRouter();
+    const showRemoveModal = ref(false);
+    const itemToRemove = ref(null);
+    const itemToRemoveIndex = ref(-1);
 
     const fetchCartItems = async () => {
       try {
         if (auth.currentUser) {
           const userId = auth.currentUser.uid;
+          
+          // Fetch all cart items for the user
           const q = query(
             collection(db, "carts"), 
             where("userId", "==", userId)
           );
           
           const querySnapshot = await getDocs(q);
-          cartItems.value = querySnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          }));
+          
+          // Filter client-side to include items with cartStatus = false or undefined (backward compatibility)
+          cartItems.value = querySnapshot.docs
+            .map(doc => ({
+              id: doc.id,
+              ...doc.data()
+            }))
+            .filter(item => item.cartStatus !== true); // Show items that are not purchased
         }
       } catch (error) {
         console.error("Error fetching cart items:", error);
@@ -203,15 +235,30 @@ export default {
       }
     };
 
-    const removeItem = async (index) => {
+    const removeItem = (index) => {
+      itemToRemove.value = cartItems.value[index];
+      itemToRemoveIndex.value = index;
+      showRemoveModal.value = true;
+    };
+
+    const cancelRemove = () => {
+      showRemoveModal.value = false;
+      itemToRemove.value = null;
+      itemToRemoveIndex.value = -1;
+    };
+
+    const confirmRemove = async () => {
       try {
-        const item = cartItems.value[index];
-        
-        // Delete from Firestore
-        await deleteDoc(doc(db, 'carts', item.id));
-        
-        // Update local state
-        cartItems.value.splice(index, 1);
+        if (itemToRemoveIndex.value >= 0 && itemToRemove.value) {
+          // Delete from Firestore
+          await deleteDoc(doc(db, 'carts', itemToRemove.value.id));
+          
+          // Update local state
+          cartItems.value.splice(itemToRemoveIndex.value, 1);
+          
+          // Close modal
+          cancelRemove();
+        }
       } catch (error) {
         console.error('Error removing item:', error);
       }
@@ -235,17 +282,48 @@ export default {
 
     const hasSelectedItems = computed(() => {
       return selectedItemsCount.value > 0;
+    });
+
+    // Multi-seller detection
+    const uniqueSellers = computed(() => {
+      const sellers = new Set();
+      cartItems.value.forEach(item => {
+        if (item.sellerId) {
+          sellers.add(item.sellerId);
+        }
+      });
+      return Array.from(sellers);
+    });
+
+    const uniqueSellersCount = computed(() => {
+      return uniqueSellers.value.length;
+    });
+
+    const hasMultipleSellers = computed(() => {
+      return uniqueSellersCount.value > 1;
     });    const proceedToCheckout = () => {
       const selectedItems = cartItems.value.filter(item => item.selected);
+      
+      // Log multi-seller information
+      const sellerIds = [...new Set(selectedItems.map(item => item.sellerId))];
+      console.log('=== CART CHECKOUT DEBUG ===');
+      console.log(`Selected items: ${selectedItems.length}`);
+      console.log(`Unique sellers: ${sellerIds.length}`);
+      sellerIds.forEach(sellerId => {
+        const sellerItems = selectedItems.filter(item => item.sellerId === sellerId);
+        console.log(`Seller ${sellerId}: ${sellerItems.length} items`);
+      });
       
       // Transform cart items to match checkout expectations
       const checkoutItems = selectedItems.map(item => ({
         ...item,
+        cartItemId: item.id, // Map the Firestore document ID to cartItemId for checkout
         unitPrice: item.price || item.unitPrice || 0, // Ensure unitPrice field exists
         productImage: item.image || item.productImage, // Handle different image field names
       }));
       
       console.log('Cart items being sent to checkout:', checkoutItems);
+      console.log('Cart item IDs for status update:', checkoutItems.map(item => ({ productName: item.productName, cartItemId: item.cartItemId })));
       
       router.push({
         name: 'Checkout',
@@ -284,10 +362,16 @@ export default {
       deliveryFee,
       selectedItemsCount,
       hasSelectedItems,
+      uniqueSellersCount,
+      hasMultipleSellers,
+      showRemoveModal,
+      itemToRemove,
       goBack,
       increaseQuantity,
       decreaseQuantity,
       removeItem,
+      cancelRemove,
+      confirmRemove,
       calculateSubtotal,
       calculateTotal,
       applyPromoCode,
@@ -463,30 +547,37 @@ export default {
 
 .item-actions {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  margin-right: 10px;
+  align-items: center;
+  gap: 12px;
+  margin-right: 50px; /* Space for delete button */
 }
 
 .quantity-controls {
   display: flex;
   align-items: center;
-  margin-bottom: 5px;
+  gap: 8px;
 }
 
 .quantity-btn {
-  width: 24px;
-  height: 24px;
-  border-radius: 5px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
   background-color: #f0f0f0;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #333;
+  border: 1px solid #e0e0e0;
+  transition: all 0.2s ease;
+}
+
+.quantity-btn:hover {
+  background-color: #e0e0e0;
+  border-color: #ccc;
 }
 
 .quantity {
-  width: 30px;
+  min-width: 25px;
   text-align: center;
   font-size: 14px;
   font-weight: 600;
@@ -496,16 +587,33 @@ export default {
   font-size: 14px;
   font-weight: 700;
   color: #2e5c31;
+  min-width: 60px;
+  text-align: right;
 }
 
 .remove-btn {
   position: absolute;
-  top: 10px;
+  top: 50%;
   right: 10px;
+  transform: translateY(-50%);
   color: #e74c3c;
-  background: none;
-  border: none;
-  padding: 5px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #e74c3c;
+  border-radius: 50%;
+  padding: 6px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.remove-btn:hover {
+  background-color: #e74c3c;
+  color: white;
+  transform: scale(1.1);
 }
 
 .cart-summary {
@@ -576,5 +684,138 @@ export default {
 .checkout-btn:disabled {
   background-color: #ccc;
   cursor: not-allowed;
+}
+
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal {
+  background-color: white;
+  border-radius: 15px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  animation: modalSlideIn 0.3s ease-out;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.modal-header {
+  padding: 20px 20px 0;
+  text-align: center;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+}
+
+.modal-body {
+  padding: 20px;
+  text-align: center;
+}
+
+.modal-body p {
+  margin: 0 0 15px;
+  color: #666;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.item-preview {
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  background-color: #f9f9f9;
+  border-radius: 10px;
+  margin-top: 15px;
+}
+
+.preview-image {
+  width: 50px;
+  height: 50px;
+  object-fit: cover;
+  border-radius: 8px;
+  margin-right: 12px;
+}
+
+.preview-details {
+  flex: 1;
+  text-align: left;
+}
+
+.preview-details h4 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+}
+
+.preview-details p {
+  margin: 0;
+  font-size: 12px;
+  color: #666;
+}
+
+.modal-actions {
+  padding: 0 20px 20px;
+  display: flex;
+  gap: 10px;
+}
+
+.cancel-btn, .confirm-btn {
+  flex: 1;
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cancel-btn {
+  background-color: #f5f5f5;
+  color: #666;
+  border: 1px solid #e0e0e0;
+}
+
+.cancel-btn:hover {
+  background-color: #e9e9e9;
+  border-color: #ccc;
+}
+
+.confirm-btn {
+  background-color: #e74c3c;
+  color: white;
+  border: 1px solid #e74c3c;
+}
+
+.confirm-btn:hover {
+  background-color: #c0392b;
+  border-color: #c0392b;
 }
 </style>

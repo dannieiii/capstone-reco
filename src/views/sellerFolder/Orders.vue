@@ -449,13 +449,46 @@ let unsubscribeOrders = null;
 const initializeOrders = async () => {
   try {
     const auth = getAuth();
-    currentSellerId.value = auth.currentUser?.uid;
+    const currentUserId = auth.currentUser?.uid;
     
-    if (!currentSellerId.value) {
-      console.error('No seller ID found');
+    if (!currentUserId) {
+      console.error('No user ID found');
       return;
     }
 
+    console.log('Finding seller document for user:', currentUserId);
+
+    // Find the seller document that belongs to this user
+    const sellersQuery = query(
+      collection(db, 'sellers'),
+      where('userId', '==', currentUserId)
+    );
+    
+    const sellersSnapshot = await getDocs(sellersQuery);
+    
+    if (sellersSnapshot.empty) {
+      console.error('No seller document found for user:', currentUserId);
+      console.log('Trying alternative seller lookup...');
+      
+      // Alternative: Check if the user IS the seller (userId as sellerId)
+      console.log('Trying to use user ID directly as seller ID...');
+      currentSellerId.value = currentUserId;
+      console.log('Using user ID as seller ID:', currentSellerId.value);
+    } else {
+      // Get the seller document ID (this is what we store in orders)
+      const sellerDoc = sellersSnapshot.docs[0];
+      const sellerData = sellerDoc.data();
+      currentSellerId.value = sellerDoc.id; // This is the seller document ID
+      
+      console.log('Found seller document:', {
+        documentId: sellerDoc.id,
+        userId: sellerData.userId,
+        farmName: sellerData.farmDetails?.farmName || 'No farm name',
+        status: sellerData.status || 'No status'
+      });
+      
+      console.log('Using seller document ID:', currentSellerId.value);
+    }
     console.log('Setting up real-time orders listener for seller:', currentSellerId.value);
 
     // Clean up existing listener
@@ -463,25 +496,111 @@ const initializeOrders = async () => {
       unsubscribeOrders();
     }
 
-    // Create query to filter orders by sellerId - only show orders for current seller
-    const ordersQuery = query(
-      collection(db, 'orders'),
-      where('sellerId', '==', currentSellerId.value)
-    );
+    // Try multiple queries to find orders - seller document ID or user ID
+    const queries = [];
+    
+    // Primary query: using seller document ID
+    if (currentSellerId.value !== currentUserId) {
+      queries.push({
+        query: query(collection(db, 'orders'), where('sellerId', '==', currentSellerId.value)),
+        description: 'Seller Document ID'
+      });
+    }
+    
+    // Fallback query: using user ID as seller ID
+    queries.push({
+      query: query(collection(db, 'orders'), where('sellerId', '==', currentUserId)),
+      description: 'User ID as Seller ID'
+    });
+
+    console.log(`Setting up ${queries.length} queries to find orders...`);
+
+    // Use the first query initially, but we'll combine results from both
+    const ordersQuery = queries[0].query;
 
     // Set up real-time listener for orders
-    unsubscribeOrders = onSnapshot(ordersQuery, (querySnapshot) => {
+    unsubscribeOrders = onSnapshot(ordersQuery, async (querySnapshot) => {
+      let allOrders = [];
       const orderCount = querySnapshot.size;
-      console.log(`Real-time update: Found ${orderCount} orders for seller ${currentSellerId.value}`);
+      console.log(`Primary query found ${orderCount} orders for seller ${currentSellerId.value}`);
+      
+      // Add orders from primary query
+      querySnapshot.forEach(doc => {
+        allOrders.push({
+          id: doc.id,
+          ...doc.data(),
+          source: queries[0].description
+        });
+      });
 
-      if (orderCount === 0) {
+      // If we have multiple queries, check the fallback query too
+      if (queries.length > 1) {
+        try {
+          const fallbackSnapshot = await getDocs(queries[1].query);
+          console.log(`Fallback query found ${fallbackSnapshot.size} orders for user ${currentUserId}`);
+          
+          fallbackSnapshot.forEach(doc => {
+            // Avoid duplicates
+            if (!allOrders.find(order => order.id === doc.id)) {
+              allOrders.push({
+                id: doc.id,
+                ...doc.data(),
+                source: queries[1].description
+              });
+            }
+          });
+        } catch (error) {
+          console.error('Error in fallback query:', error);
+        }
+      }
+      
+      console.log(`Total orders found: ${allOrders.length}`);
+      
+      // Debug: Log the query being used
+      console.log('Query details:', {
+        primarySellerId: currentSellerId.value,
+        fallbackUserId: currentUserId,
+        totalFound: allOrders.length
+      });
+
+      if (allOrders.length === 0) {
         orders.value = [];
         console.log('No orders found for this seller');
+        
+        // Debug: Let's check if there are any orders in the collection at all
+        console.log('Debugging: Checking if any orders exist...');
+        getDocs(collection(db, 'orders')).then(allOrdersSnapshot => {
+          console.log(`Total orders in collection: ${allOrdersSnapshot.size}`);
+          const potentialOrders = [];
+          allOrdersSnapshot.forEach(doc => {
+            const data = doc.data();
+            console.log('Order found:', {
+              id: doc.id,
+              sellerId: data.sellerId,
+              orderCode: data.orderCode,
+              productName: data.productName,
+              timestamp: data.createdAt || data.timestamp,
+              status: data.status
+            });
+            
+            // Check if this order might belong to current user by any chance
+            if (data.sellerId === currentSellerId.value || data.sellerId === currentUserId) {
+              potentialOrders.push(data);
+            }
+          });
+          
+          console.log(`Found ${potentialOrders.length} potential orders for current seller`);
+          
+          if (potentialOrders.length > 0) {
+            console.log('🚨 WARNING: Found orders but they are not being returned by the query!');
+            console.log('Potential orders:', potentialOrders);
+          }
+        });
         return;
       }
 
-      orders.value = querySnapshot.docs.map(doc => {
-        const data = doc.data();
+      orders.value = allOrders.map(orderData => {
+        const data = orderData;
         let timestamp = data.createdAt || data.timestamp;
         
         // Convert to Date if it's a Firestore Timestamp
@@ -503,12 +622,17 @@ const initializeOrders = async () => {
           : (data.Location || {});
         
         // Debug log for each order
-        if (data.sellerId !== currentSellerId.value) {
-          console.warn(`Order ${doc.id} has different sellerId: ${data.sellerId} vs ${currentSellerId.value}`);
-        }
+        console.log(`Processing order ${data.id}:`, {
+          orderCode: data.orderCode,
+          sellerId: data.sellerId,
+          productName: data.productName,
+          status: data.status,
+          source: data.source,
+          timestamp: timestamp
+        });
         
         return {
-          id: doc.id,
+          id: data.id,
           ...data,
           username: data.username || '',
           status: data.status || 'Pending', // Default status is now 'Pending'
@@ -531,7 +655,13 @@ const initializeOrders = async () => {
         };
       });
 
-      console.log('Orders updated in real-time:', orders.value.length);
+      console.log('Orders processed and updated:', orders.value.length);
+      console.log('Order details:', orders.value.map(o => ({
+        code: o.orderCode,
+        product: o.productName,
+        status: o.status,
+        timestamp: o.timestamp
+      })));
       
       // Show success message on first load if orders found
       if (orders.value.length > 0) {
@@ -590,7 +720,20 @@ const filteredOrders = computed(() => {
         activeFilter.value === 'All Orders' || 
         order.status === activeFilter.value;
       
+      // Re-enable date filtering with proper debugging
       const matchesDate = filterByDateCondition(order.timestamp);
+      
+      // Debug logging for date filtering
+      if (startDate.value) {
+        console.log('Date filtering order:', {
+          orderCode: order.orderCode,
+          orderDate: order.timestamp,
+          orderDateFormatted: order.timestamp ? new Date(order.timestamp).toLocaleDateString() : 'Invalid Date',
+          filterDate: startDate.value,
+          filterDateFormatted: new Date(startDate.value).toLocaleDateString(),
+          matchesDate: matchesDate
+        });
+      }
       
       return matchesSearch && matchesFilter && matchesDate;
     })
@@ -608,7 +751,34 @@ const filteredOrders = computed(() => {
 const filterByDateCondition = (orderDate) => {
   if (!startDate.value) return true;
   
-  const orderDateObj = new Date(orderDate);
+  // Ensure we have a valid date
+  if (!orderDate) {
+    console.log('Order has no date, excluding from filter');
+    return false;
+  }
+  
+  let orderDateObj;
+  
+  // Convert order date to Date object
+  if (orderDate instanceof Date) {
+    orderDateObj = orderDate;
+  } else if (typeof orderDate.toDate === 'function') {
+    orderDateObj = orderDate.toDate();
+  } else if (typeof orderDate === 'string') {
+    orderDateObj = new Date(orderDate);
+  } else if (typeof orderDate === 'number') {
+    orderDateObj = new Date(orderDate);
+  } else {
+    console.log('Invalid order date format:', orderDate);
+    return false;
+  }
+  
+  // Validate the converted date
+  if (isNaN(orderDateObj.getTime())) {
+    console.log('Invalid order date after conversion:', orderDate);
+    return false;
+  }
+  
   const startDateObj = new Date(startDate.value);
   
   // Set time to start of day for start date
@@ -618,12 +788,34 @@ const filterByDateCondition = (orderDate) => {
     // Exact date filtering - only show orders from the selected start date
     const endOfStartDate = new Date(startDate.value);
     endOfStartDate.setHours(23, 59, 59, 999);
-    return orderDateObj >= startDateObj && orderDateObj <= endOfStartDate;
+    
+    const isInRange = orderDateObj >= startDateObj && orderDateObj <= endOfStartDate;
+    
+    console.log('Date filtering (single date):', {
+      orderDate: orderDateObj.toLocaleDateString(),
+      filterDate: startDateObj.toLocaleDateString(),
+      orderDateTime: orderDateObj.getTime(),
+      startDateTime: startDateObj.getTime(),
+      endDateTime: endOfStartDate.getTime(),
+      isInRange: isInRange
+    });
+    
+    return isInRange;
   } else {
     // Range date filtering - show orders between start and end dates
     const endDateObj = new Date(endDate.value);
     endDateObj.setHours(23, 59, 59, 999);
-    return orderDateObj >= startDateObj && orderDateObj <= endDateObj;
+    
+    const isInRange = orderDateObj >= startDateObj && orderDateObj <= endDateObj;
+    
+    console.log('Date filtering (date range):', {
+      orderDate: orderDateObj.toLocaleDateString(),
+      startDate: startDateObj.toLocaleDateString(),
+      endDate: endDateObj.toLocaleDateString(),
+      isInRange: isInRange
+    });
+    
+    return isInRange;
   }
 };
 
