@@ -25,7 +25,7 @@
             </div>
           </div>
           <div class="filter-actions">
-            <div class="export-dropdown">
+            <div class="export-dropdown" ref="exportDropdown">
               <button class="export-btn" @click="toggleExportMenu">
                 <i class="i-lucide-download"></i>
                 Export
@@ -231,7 +231,7 @@
                     </td>
                     <td>₱{{ order.totalPrice.toFixed(2) }}</td>
                     <td>
-                      <span :class="['status-badge', order.status.toLowerCase()]">
+                      <span :class="['status-badge', getStatusClass(order.status)]">
                         {{ order.status }}
                       </span>
                     </td>
@@ -255,6 +255,8 @@ import Sidebar from '@/components/Sidebar.vue';
 import { db } from '@/firebase/firebaseConfig';
 import { collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
+// Remove this line:
+// import { escapeHtml } from '@/utils/helpers';
 
 // UI State
 const isDarkMode = ref(false);
@@ -268,6 +270,7 @@ const customers = ref([]);
 const orders = ref([]);
 const usersData = ref({});
 const currentSellerId = ref('');
+const exportDropdown = ref(null);
 
 // Initialize with empty customers
 const initializeData = async () => {
@@ -309,7 +312,7 @@ const initializeData = async () => {
       };
     });
 
-    // Process orders to create customer data\
+    // Process orders to create customer data
     const customerMap = new Map();
     const userIds = new Set();
     
@@ -394,6 +397,29 @@ const paginatedCustomers = computed(() => {
   const end = start + itemsPerPage;
   return filteredCustomers.value.slice(start, end);
 });
+
+// Get status class for order status badges
+const getStatusClass = (status) => {
+  if (!status) return 'pending';
+  const statusLower = status.toLowerCase();
+  
+  switch (statusLower) {
+    case 'pending':
+      return 'pending';
+    case 'processing':
+      return 'processing';
+    case 'shipped':
+      return 'shipped';
+    case 'delivered':
+      return 'delivered';
+    case 'cancelled':
+      return 'cancelled';
+    case 'ordered':
+      return 'ordered';
+    default:
+      return 'pending';
+  }
+};
 
 // Format date and time for display
 const formatDateTime = (timestamp) => {
@@ -526,7 +552,7 @@ const toggleExportMenu = (event) => {
 
 // Close export menu when clicking outside
 const closeExportMenu = (event) => {
-  if (showExportMenu.value && !event.target.closest('.export-dropdown')) {
+  if (showExportMenu.value && exportDropdown.value && !exportDropdown.value.contains(event.target)) {
     showExportMenu.value = false;
   }
 };
@@ -544,115 +570,205 @@ const exportCustomers = (format) => {
 
 // Export as CSV
 const exportAsCSV = () => {
-  // Create CSV content
-  const headers = ['Username', 'Name', 'Email', 'Phone', 'Location', 'Orders', 'Total Spent', 'Status'];
-  
-  const csvContent = [
-    headers.join(','),
-    ...filteredCustomers.value.map(customer => [
-      customer.username || 'Unknown',
-      `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'N/A',
-      customer.email || 'N/A',
-      customer.contactNumber || 'N/A',
-      customer.address || 'N/A',
-      customer.orderCount || 0,
-      (customer.totalSpent || 0).toFixed(2),
-      customer.isVerified ? 'Verified' : 'Pending'
-    ].join(','))
-  ].join('\n');
-  
-  // Create download link
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.setAttribute('href', url);
-  link.setAttribute('download', `customers_export_${new Date().toISOString().slice(0, 10)}.csv`);
-  link.style.visibility = 'hidden';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  try {
+    // Create CSV headers
+    const headers = ['Username', 'Name', 'Email', 'Phone', 'Location', 'Orders', 'Total Spent', 'Status'];
+    
+    // Create CSV rows
+    const csvRows = filteredCustomers.value.map(customer => {
+      const fullName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'N/A';
+      return [
+        `"${(customer.username || 'Unknown').replace(/"/g, '""')}"`,
+        `"${fullName.replace(/"/g, '""')}"`,
+        `"${(customer.email || 'N/A').replace(/"/g, '""')}"`,
+        `"${(customer.contactNumber || 'N/A').replace(/"/g, '""')}"`,
+        `"${(customer.address || 'N/A').replace(/"/g, '""')}"`,
+        customer.orderCount || 0,
+        (customer.totalSpent || 0).toFixed(2),
+        `"${customer.isVerified ? 'Verified' : 'Pending'}"`
+      ].join(',');
+    });
+    
+    // Combine headers and rows
+    const csvContent = [headers.join(','), ...csvRows].join('\n');
+    
+    // Create and trigger download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `customers_export_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error('Error exporting CSV:', error);
+    alert('Error exporting CSV file. Please try again.');
+  }
 };
 
 // Export as PDF
 const exportAsPDF = () => {
-  // Create a new window for PDF content
-  const printWindow = window.open('', '_blank');
-  
-  // Create PDF content - properly escaped for JavaScript string
-  let pdfContent = '<!DOCTYPE html>';
-  pdfContent += '<html>';
-  pdfContent += '<head>';
-  pdfContent += '<title>Customers Export</title>';
-  pdfContent += '<style>';
-  pdfContent += 'body { font-family: Arial, sans-serif; margin: 20px; }';
-  pdfContent += 'h1 { color: #2e5c31; margin-bottom: 20px; }';
-  pdfContent += 'table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }';
-  pdfContent += 'th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }';
-  pdfContent += 'th { background-color: #f2f2f2; font-weight: bold; }';
-  pdfContent += 'tr:nth-child(even) { background-color: #f9f9f9; }';
-  pdfContent += '.export-info { margin-top: 20px; font-size: 12px; color: #666; }';
-  pdfContent += '.status-badge { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 12px; }';
-  pdfContent += '.status-verified { background-color: #d1fae5; color: #059669; }';
-  pdfContent += '.status-pending { background-color: #fef3c7; color: #d97706; }';
-  pdfContent += '</style>';
-  pdfContent += '</head>';
-  pdfContent += '<body>';
-  pdfContent += '<h1>Customers Export</h1>';
-  pdfContent += '<table>';
-  pdfContent += '<thead>';
-  pdfContent += '<tr>';
-  pdfContent += '<th>Username</th>';
-  pdfContent += '<th>Name</th>';
-  pdfContent += '<th>Email</th>';
-  pdfContent += '<th>Phone</th>';
-  pdfContent += '<th>Location</th>';
-  pdfContent += '<th>Orders</th>';
-  pdfContent += '<th>Total Spent</th>';
-  pdfContent += '<th>Status</th>';
-  pdfContent += '</tr>';
-  pdfContent += '</thead>';
-  pdfContent += '<tbody>';
-  
-  // Add customer rows
-  filteredCustomers.value.forEach(customer => {
-    const fullName = `${customer.firstName || ''} ${customer.lastName || ''}`.trim() || 'N/A';
-    const statusClass = customer.isVerified ? 'status-verified' : 'status-pending';
-    const statusText = customer.isVerified ? 'Verified' : 'Pending';
+  try {
+    // Create a new window for PDF content
+    const printWindow = window.open('', '_blank');
     
-    pdfContent += '<tr>';
-    pdfContent += `<td>${escapeHtml(customer.username || 'Unknown')}</td>`;
-    pdfContent += `<td>${escapeHtml(fullName)}</td>`;
-    pdfContent += `<td>${escapeHtml(customer.email || 'N/A')}</td>`;
-    pdfContent += `<td>${escapeHtml(customer.contactNumber || 'N/A')}</td>`;
-    pdfContent += `<td>${escapeHtml(customer.address || 'N/A')}</td>`;
-    pdfContent += `<td>${customer.orderCount || 0}</td>`;
-    pdfContent += `<td>₱${(customer.totalSpent || 0).toFixed(2)}</td>`;
-    pdfContent += `<td><span class="status-badge ${statusClass}">${statusText}</span></td>`;
-    pdfContent += '</tr>';
-  });
-  
-  pdfContent += '</tbody>';
-  pdfContent += '</table>';
-  pdfContent += '<div class="export-info">';
-  pdfContent += `<p>Generated on: ${new Date().toLocaleString()}</p>`;
-  pdfContent += `<p>Total Customers: ${filteredCustomers.value.length}</p>`;
-  pdfContent += '</div>';
-  pdfContent += '<script>';
-  pdfContent += 'window.onload = function() { window.print(); }';
-  pdfContent += '<\/script>';
-  pdfContent += '</body>';
-  pdfContent += '</html>';
-  
-  // Write content to the new window
-  printWindow.document.open();
-  printWindow.document.write(pdfContent);
-  printWindow.document.close();
+    if (!printWindow) {
+      alert('Please allow pop-ups to export PDF');
+      return;
+    }
+    
+    // Create PDF content
+    const currentDate = new Date().toLocaleDateString();
+    const totalCustomers = filteredCustomers.value.length;
+    
+    // Build HTML content as a proper string
+    let htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+    <title>Customers Export</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px; 
+            color: #333;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 2px solid #2e5c31;
+            padding-bottom: 20px;
+        }
+        h1 { 
+            color: #2e5c31; 
+            margin: 0 0 10px 0;
+            font-size: 28px;
+        }
+        .export-info {
+            color: #666;
+            font-size: 14px;
+        }
+        table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin: 20px 0;
+            font-size: 12px;
+        }
+        th, td { 
+            border: 1px solid #ddd; 
+            padding: 8px; 
+            text-align: left; 
+        }
+        th { 
+            background-color: #2e5c31; 
+            color: white;
+            font-weight: bold; 
+        }
+        tr:nth-child(even) { 
+            background-color: #f9f9f9; 
+        }
+        .status-badge { 
+            display: inline-block; 
+            padding: 3px 8px; 
+            border-radius: 12px; 
+            font-size: 11px;
+            font-weight: 500;
+        }
+        .status-verified { 
+            background-color: #d1fae5; 
+            color: #059669; 
+        }
+        .status-pending { 
+            background-color: #fef3c7; 
+            color: #d97706; 
+        }
+        .footer {
+            margin-top: 30px;
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+            border-top: 1px solid #ddd;
+            padding-top: 20px;
+        }
+        @media print {
+            body { margin: 0; }
+            .header { page-break-after: avoid; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Customers Export Report</h1>
+        <div class="export-info">
+            <p>Generated on: ${currentDate} | Total Customers: ${totalCustomers}</p>
+        </div>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Username</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Phone</th>
+                <th>Location</th>
+                <th>Orders</th>
+                <th>Total Spent</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>`;
+    
+    // Add customer rows
+    filteredCustomers.value.forEach(customer => {
+      const fullName = `\${customer.firstName || ''} \${customer.lastName || ''}`.trim() || 'N/A';
+      const statusClass = customer.isVerified ? 'status-verified' : 'status-pending';
+      const statusText = customer.isVerified ? 'Verified' : 'Pending';
+      
+      htmlContent += `
+            <tr>
+                <td>\${escapeHtml(customer.username || 'Unknown')}</td>
+                <td>\${escapeHtml(fullName)}</td>
+                <td>\${escapeHtml(customer.email || 'N/A')}</td>
+                <td>\${escapeHtml(customer.contactNumber || 'N/A')}</td>
+                <td>\${escapeHtml(customer.address || 'N/A')}</td>
+                <td>\${customer.orderCount || 0}</td>
+                <td>₱\${(customer.totalSpent || 0).toFixed(2)}</td>
+                <td><span class="status-badge \${statusClass}">\${statusText}</span></td>
+            </tr>`;
+    });
+    
+    htmlContent += `
+        </tbody>
+    </table>
+    <div class="footer">
+        <p>This report contains \${totalCustomers} customer records.</p>
+    </div>
+</body>
+</html>`;
+    
+    // Write content to the new window
+    printWindow.document.open();
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    
+    // Trigger print after a short delay
+    setTimeout(() => {
+      printWindow.print();
+    }, 500);
+    
+  } catch (error) {
+    console.error('Error exporting PDF:', error);
+    alert('Error exporting PDF file. Please try again.');
+  }
 };
 
-// Helper function to escape HTML
+// Helper function to escape HTML - move this outside the exportAsPDF function
 const escapeHtml = (text) => {
+  if (!text) return '';
   const div = document.createElement('div');
-  div.textContent = text;
+  div.textContent = text.toString();
   return div.innerHTML;
 };
 </script>
@@ -788,13 +904,13 @@ const escapeHtml = (text) => {
   font-size: 0.9rem;
   cursor: pointer;
   border: none;
-  background-color: #f3f4f6;
-  color: #4b5563;
+  background-color: #1f4e23;
+  color: #ffffff;
   transition: all 0.2s;
 }
 
 .export-btn:hover {
-  background-color: #e5e7eb;
+  background-color: #2d5a31;
 }
 
 .export-menu {
@@ -949,6 +1065,11 @@ const escapeHtml = (text) => {
 .status-badge.delivered {
   background-color: #dcfce7;
   color: #16a34a;
+}
+
+.status-badge.ordered {
+  background-color: #f3e8ff;
+  color: #7c3aed;
 }
 
 .status-badge.cancelled {
@@ -1286,12 +1407,12 @@ const escapeHtml = (text) => {
 }
 
 :global(.dark) .export-btn {
-  background-color: #374151;
-  color: #e5e7eb;
+  background-color: #1f4e23;
+  color: #ffffff;
 }
 
 :global(.dark) .export-btn:hover {
-  background-color: #4b5563;
+  background-color: #2d5a31;
 }
 
 :global(.dark) .export-menu {
@@ -1420,20 +1541,26 @@ const escapeHtml = (text) => {
   .main-content {
     margin-left: 0;
     padding: 15px;
+    padding-top: 80px; /* Add top padding to prevent navbar overlap */
   }
   
   .actions-bar {
-    flex-direction: column;
-    align-items: stretch;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
   }
   
   .search-and-filter {
-    flex-direction: column;
-    gap: 12px;
+    flex: 1;
+    min-width: 0;
   }
   
   .search-box {
     max-width: none;
+  }
+  
+  .filter-actions {
+    flex-shrink: 0;
   }
   
   .customer-info-section {
@@ -1443,6 +1570,31 @@ const escapeHtml = (text) => {
   .customers-table {
     display: block;
     overflow-x: auto;
+  }
+  
+  /* Fix for mobile sidebar overlap */
+  .header {
+    position: relative;
+    z-index: 5;
+  }
+  
+  .page-title h1 {
+    font-size: 1.25rem;
+  }
+}
+
+/* Additional mobile fixes */
+@media (max-width: 640px) {
+  .main-content {
+    padding-top: 90px; /* Increase top padding for smaller screens */
+  }
+  
+  .header {
+    margin-bottom: 15px;
+  }
+  
+  .content-wrapper {
+    padding: 15px;
   }
 }
 </style>

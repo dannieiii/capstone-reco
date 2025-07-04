@@ -12,7 +12,7 @@ import HomeView from '../views/HomeView.vue';
 import AddCategory from '../views/adminFolder/AddCategory.vue';
 import AdminCustomer from '../views/adminFolder/AdminCustomer.vue';
 import AdminRegister from '../views/adminFolder/AdminRegister.vue';
-import AdminDashboard from '../views/adminFolder/AdminDashboard.vue';
+
 import Dashboard from '../views/adminFolder/Dashboard.vue'; 
 import Sellers from '../views/adminFolder/Sellers.vue';
 import Customers from '../views/adminFolder/Customers.vue';
@@ -28,6 +28,7 @@ import AdminNotification from '@/views/adminFolder/AdminNotification.vue';
 import Help from '@/views/adminFolder/Help.vue';
 import AdminFeedbacks from '@/views/adminFolder/AdminFeedbacks.vue';
 import AdminReports from '@/views/adminFolder/AdminReports.vue';
+import ProductsPerCategory from '../views/adminFolder/ProductsPerCategory.vue';
 
 
 
@@ -207,12 +208,8 @@ const routes = [
     component: AdminRegister,
     meta: { requiresAuth: false }, // Public route
   },
-  {
-    path: '/admin-dashboard',
-    name: 'admindashboard',
-    component: AdminDashboard,
-    meta: { requiresAuth: true, allowedRoles: ['admin'] }, // Only admins can access
-  },
+
+
   {
     path: '/admin-customer',
     name: 'AdminCcustomer',
@@ -406,7 +403,7 @@ const routes = [
     meta: { requiresAuth: true, allowedRoles: ['seller'] }, // Only admins can access
   },
   {
-    path: '/admin/forecasting',
+    path: '/admin-forecasting',
     name: 'AdminForecasting',
     component: AdminForecasting,
     meta: { requiresAuth: true, allowedRoles: ['admin'] }, // Only admins can access
@@ -417,7 +414,13 @@ const routes = [
     name: 'CommunityView',
     component: CommunityView,
     
-  }
+  },
+  {
+  path: '/admin/category-products/:id',
+  name: 'CategoryProducts',
+  component: ProductsPerCategory,
+  meta: { requiresAuth: true, allowedRoles: ['admin'] },
+},
 ];
 
 const router = createRouter({

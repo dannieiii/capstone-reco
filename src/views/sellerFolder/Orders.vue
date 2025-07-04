@@ -158,75 +158,77 @@
           </div>
         </div>
 
-        <table class="orders-table">
-          <thead>
-            <tr>
-              <th>Order Code</th>
-              <th>Customer</th>
-              <th>Product</th>
-              <th>Unit & Quantity</th>
-              <th>Location</th>
-              <th>Date</th>
-              <th>Total</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(order, index) in paginatedOrders" :key="order.id">
-              <td class="order-id">#{{ order.orderCode || 'N/A' }}</td>
-              <td>{{ order.username }}</td>
-              <td>
-                <div class="product-info">
-                  <span class="product-name">{{ order.productName }}</span>
-                </div>
-              </td>
-              <td>
-                <div class="unit-quantity">
-                  <span class="quantity">{{ order.quantity }}</span>
-                  <span class="unit">{{ getUnitDisplay(order.unit) }}</span>
-                </div>
-              </td>
-              <td>
-                <div class="location-cell">
-                  <i class="i-lucide-map-pin location-icon"></i>
-                  <span>{{ getAddressDisplay(order.Location) }}</span>
-                </div>
-              </td>
-              <td>{{ formatDateTime(order.timestamp || order.createdAt) }}</td>
-              <td>₱{{ order.totalPrice.toFixed(2) }}</td>
-              <td>
-                <div class="status-cell">
-                  <span v-if="!editingStatus[index]" :class="['status-badge', normalizeStatusClass(order.status)]">
-                    {{ order.status }}
-                    <button class="edit-status-btn" @click="startEditingStatus(index)">
-                      <i class="i-lucide-edit-2"></i>
-                    </button>
-                  </span>
-                  <div v-else class="status-dropdown">
-                    <select v-model="order.status" @change="finishEditingStatus(index, order)" class="status-select">
-                      <option v-for="status in statusOptions" :key="status" :value="status">
-                        {{ status }}
-                      </option>
-                    </select>
+        <div class="table-container">
+          <table class="orders-table">
+            <thead>
+              <tr>
+                <th>Order Code</th>
+                <th>Customer</th>
+                <th>Product</th>
+                <th>Unit & Quantity</th>
+                <th>Location</th>
+                <th>Date</th>
+                <th>Total</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(order, index) in paginatedOrders" :key="order.id">
+                <td class="order-id">#{{ order.orderCode || 'N/A' }}</td>
+                <td>{{ order.username }}</td>
+                <td>
+                  <div class="product-info">
+                    <span class="product-name">{{ order.productName }}</span>
                   </div>
-                </div>
-              </td>
-              <td>
-                <div class="action-buttons">
-                  <button class="action-btn view-btn" @click="viewOrderDetails(order)">
-                    <i class="i-lucide-eye"></i>
-                    View
-                  </button>
-                  <button class="action-btn edit-btn" @click="editOrder(order)">
-                    <i class="i-lucide-edit"></i>
-                    Edit
-                  </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+                </td>
+                <td>
+                  <div class="unit-quantity">
+                    <span class="quantity">{{ order.quantity }}</span>
+                    <span class="unit">{{ getUnitDisplay(order.unit) }}</span>
+                  </div>
+                </td>
+                <td>
+                  <div class="location-cell">
+                    <i class="i-lucide-map-pin location-icon"></i>
+                    <span>{{ getAddressDisplay(order.Location) }}</span>
+                  </div>
+                </td>
+                <td>{{ formatDateTime(order.timestamp || order.createdAt) }}</td>
+                <td>₱{{ order.totalPrice.toFixed(2) }}</td>
+                <td>
+                  <div class="status-cell">
+                    <span v-if="!editingStatus[index]" :class="['status-badge', normalizeStatusClass(order.status)]">
+                      {{ order.status }}
+                      <button class="edit-status-btn" @click="startEditingStatus(index)">
+                        <i class="i-lucide-edit-2"></i>
+                      </button>
+                    </span>
+                    <div v-else class="status-dropdown">
+                      <select v-model="order.status" @change="finishEditingStatus(index, order)" class="status-select">
+                        <option v-for="status in statusOptions" :key="status" :value="status">
+                          {{ status }}
+                        </option>
+                      </select>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <div class="action-buttons">
+                    <button class="action-btn view-btn" @click="viewOrderDetails(order)">
+                      <i class="i-lucide-eye"></i>
+                      View
+                    </button>
+                    <button class="action-btn edit-btn" @click="editOrder(order)">
+                      <i class="i-lucide-edit"></i>
+                      Edit
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
         <div class="pagination">
           <button :disabled="currentPage === 1" @click="currentPage--">
@@ -449,13 +451,46 @@ let unsubscribeOrders = null;
 const initializeOrders = async () => {
   try {
     const auth = getAuth();
-    currentSellerId.value = auth.currentUser?.uid;
+    const currentUserId = auth.currentUser?.uid;
     
-    if (!currentSellerId.value) {
-      console.error('No seller ID found');
+    if (!currentUserId) {
+      console.error('No user ID found');
       return;
     }
 
+    console.log('Finding seller document for user:', currentUserId);
+
+    // Find the seller document that belongs to this user
+    const sellersQuery = query(
+      collection(db, 'sellers'),
+      where('userId', '==', currentUserId)
+    );
+    
+    const sellersSnapshot = await getDocs(sellersQuery);
+    
+    if (sellersSnapshot.empty) {
+      console.error('No seller document found for user:', currentUserId);
+      console.log('Trying alternative seller lookup...');
+      
+      // Alternative: Check if the user IS the seller (userId as sellerId)
+      console.log('Trying to use user ID directly as seller ID...');
+      currentSellerId.value = currentUserId;
+      console.log('Using user ID as seller ID:', currentSellerId.value);
+    } else {
+      // Get the seller document ID (this is what we store in orders)
+      const sellerDoc = sellersSnapshot.docs[0];
+      const sellerData = sellerDoc.data();
+      currentSellerId.value = sellerDoc.id; // This is the seller document ID
+      
+      console.log('Found seller document:', {
+        documentId: sellerDoc.id,
+        userId: sellerData.userId,
+        farmName: sellerData.farmDetails?.farmName || 'No farm name',
+        status: sellerData.status || 'No status'
+      });
+      
+      console.log('Using seller document ID:', currentSellerId.value);
+    }
     console.log('Setting up real-time orders listener for seller:', currentSellerId.value);
 
     // Clean up existing listener
@@ -463,25 +498,111 @@ const initializeOrders = async () => {
       unsubscribeOrders();
     }
 
-    // Create query to filter orders by sellerId - only show orders for current seller
-    const ordersQuery = query(
-      collection(db, 'orders'),
-      where('sellerId', '==', currentSellerId.value)
-    );
+    // Try multiple queries to find orders - seller document ID or user ID
+    const queries = [];
+    
+    // Primary query: using seller document ID
+    if (currentSellerId.value !== currentUserId) {
+      queries.push({
+        query: query(collection(db, 'orders'), where('sellerId', '==', currentSellerId.value)),
+        description: 'Seller Document ID'
+      });
+    }
+    
+    // Fallback query: using user ID as seller ID
+    queries.push({
+      query: query(collection(db, 'orders'), where('sellerId', '==', currentUserId)),
+      description: 'User ID as Seller ID'
+    });
+
+    console.log(`Setting up ${queries.length} queries to find orders...`);
+
+    // Use the first query initially, but we'll combine results from both
+    const ordersQuery = queries[0].query;
 
     // Set up real-time listener for orders
-    unsubscribeOrders = onSnapshot(ordersQuery, (querySnapshot) => {
+    unsubscribeOrders = onSnapshot(ordersQuery, async (querySnapshot) => {
+      let allOrders = [];
       const orderCount = querySnapshot.size;
-      console.log(`Real-time update: Found ${orderCount} orders for seller ${currentSellerId.value}`);
+      console.log(`Primary query found ${orderCount} orders for seller ${currentSellerId.value}`);
+      
+      // Add orders from primary query
+      querySnapshot.forEach(doc => {
+        allOrders.push({
+          id: doc.id,
+          ...doc.data(),
+          source: queries[0].description
+        });
+      });
 
-      if (orderCount === 0) {
+      // If we have multiple queries, check the fallback query too
+      if (queries.length > 1) {
+        try {
+          const fallbackSnapshot = await getDocs(queries[1].query);
+          console.log(`Fallback query found ${fallbackSnapshot.size} orders for user ${currentUserId}`);
+          
+          fallbackSnapshot.forEach(doc => {
+            // Avoid duplicates
+            if (!allOrders.find(order => order.id === doc.id)) {
+              allOrders.push({
+                id: doc.id,
+                ...doc.data(),
+                source: queries[1].description
+              });
+            }
+          });
+        } catch (error) {
+          console.error('Error in fallback query:', error);
+        }
+      }
+      
+      console.log(`Total orders found: ${allOrders.length}`);
+      
+      // Debug: Log the query being used
+      console.log('Query details:', {
+        primarySellerId: currentSellerId.value,
+        fallbackUserId: currentUserId,
+        totalFound: allOrders.length
+      });
+
+      if (allOrders.length === 0) {
         orders.value = [];
         console.log('No orders found for this seller');
+        
+        // Debug: Let's check if there are any orders in the collection at all
+        console.log('Debugging: Checking if any orders exist...');
+        getDocs(collection(db, 'orders')).then(allOrdersSnapshot => {
+          console.log(`Total orders in collection: ${allOrdersSnapshot.size}`);
+          const potentialOrders = [];
+          allOrdersSnapshot.forEach(doc => {
+            const data = doc.data();
+            console.log('Order found:', {
+              id: doc.id,
+              sellerId: data.sellerId,
+              orderCode: data.orderCode,
+              productName: data.productName,
+              timestamp: data.createdAt || data.timestamp,
+              status: data.status
+            });
+            
+            // Check if this order might belong to current user by any chance
+            if (data.sellerId === currentSellerId.value || data.sellerId === currentUserId) {
+              potentialOrders.push(data);
+            }
+          });
+          
+          console.log(`Found ${potentialOrders.length} potential orders for current seller`);
+          
+          if (potentialOrders.length > 0) {
+            console.log('🚨 WARNING: Found orders but they are not being returned by the query!');
+            console.log('Potential orders:', potentialOrders);
+          }
+        });
         return;
       }
 
-      orders.value = querySnapshot.docs.map(doc => {
-        const data = doc.data();
+      orders.value = allOrders.map(orderData => {
+        const data = orderData;
         let timestamp = data.createdAt || data.timestamp;
         
         // Convert to Date if it's a Firestore Timestamp
@@ -503,12 +624,17 @@ const initializeOrders = async () => {
           : (data.Location || {});
         
         // Debug log for each order
-        if (data.sellerId !== currentSellerId.value) {
-          console.warn(`Order ${doc.id} has different sellerId: ${data.sellerId} vs ${currentSellerId.value}`);
-        }
+        console.log(`Processing order ${data.id}:`, {
+          orderCode: data.orderCode,
+          sellerId: data.sellerId,
+          productName: data.productName,
+          status: data.status,
+          source: data.source,
+          timestamp: timestamp
+        });
         
         return {
-          id: doc.id,
+          id: data.id,
           ...data,
           username: data.username || '',
           status: data.status || 'Pending', // Default status is now 'Pending'
@@ -531,7 +657,13 @@ const initializeOrders = async () => {
         };
       });
 
-      console.log('Orders updated in real-time:', orders.value.length);
+      console.log('Orders processed and updated:', orders.value.length);
+      console.log('Order details:', orders.value.map(o => ({
+        code: o.orderCode,
+        product: o.productName,
+        status: o.status,
+        timestamp: o.timestamp
+      })));
       
       // Show success message on first load if orders found
       if (orders.value.length > 0) {
@@ -590,7 +722,20 @@ const filteredOrders = computed(() => {
         activeFilter.value === 'All Orders' || 
         order.status === activeFilter.value;
       
+      // Re-enable date filtering with proper debugging
       const matchesDate = filterByDateCondition(order.timestamp);
+      
+      // Debug logging for date filtering
+      if (startDate.value) {
+        console.log('Date filtering order:', {
+          orderCode: order.orderCode,
+          orderDate: order.timestamp,
+          orderDateFormatted: order.timestamp ? new Date(order.timestamp).toLocaleDateString() : 'Invalid Date',
+          filterDate: startDate.value,
+          filterDateFormatted: new Date(startDate.value).toLocaleDateString(),
+          matchesDate: matchesDate
+        });
+      }
       
       return matchesSearch && matchesFilter && matchesDate;
     })
@@ -608,7 +753,34 @@ const filteredOrders = computed(() => {
 const filterByDateCondition = (orderDate) => {
   if (!startDate.value) return true;
   
-  const orderDateObj = new Date(orderDate);
+  // Ensure we have a valid date
+  if (!orderDate) {
+    console.log('Order has no date, excluding from filter');
+    return false;
+  }
+  
+  let orderDateObj;
+  
+  // Convert order date to Date object
+  if (orderDate instanceof Date) {
+    orderDateObj = orderDate;
+  } else if (typeof orderDate.toDate === 'function') {
+    orderDateObj = orderDate.toDate();
+  } else if (typeof orderDate === 'string') {
+    orderDateObj = new Date(orderDate);
+  } else if (typeof orderDate === 'number') {
+    orderDateObj = new Date(orderDate);
+  } else {
+    console.log('Invalid order date format:', orderDate);
+    return false;
+  }
+  
+  // Validate the converted date
+  if (isNaN(orderDateObj.getTime())) {
+    console.log('Invalid order date after conversion:', orderDate);
+    return false;
+  }
+  
   const startDateObj = new Date(startDate.value);
   
   // Set time to start of day for start date
@@ -618,12 +790,34 @@ const filterByDateCondition = (orderDate) => {
     // Exact date filtering - only show orders from the selected start date
     const endOfStartDate = new Date(startDate.value);
     endOfStartDate.setHours(23, 59, 59, 999);
-    return orderDateObj >= startDateObj && orderDateObj <= endOfStartDate;
+    
+    const isInRange = orderDateObj >= startDateObj && orderDateObj <= endOfStartDate;
+    
+    console.log('Date filtering (single date):', {
+      orderDate: orderDateObj.toLocaleDateString(),
+      filterDate: startDateObj.toLocaleDateString(),
+      orderDateTime: orderDateObj.getTime(),
+      startDateTime: startDateObj.getTime(),
+      endDateTime: endOfStartDate.getTime(),
+      isInRange: isInRange
+    });
+    
+    return isInRange;
   } else {
     // Range date filtering - show orders between start and end dates
     const endDateObj = new Date(endDate.value);
     endDateObj.setHours(23, 59, 59, 999);
-    return orderDateObj >= startDateObj && orderDateObj <= endDateObj;
+    
+    const isInRange = orderDateObj >= startDateObj && orderDateObj <= endDateObj;
+    
+    console.log('Date filtering (date range):', {
+      orderDate: orderDateObj.toLocaleDateString(),
+      startDate: startDateObj.toLocaleDateString(),
+      endDate: endDateObj.toLocaleDateString(),
+      isInRange: isInRange
+    });
+    
+    return isInRange;
   }
 };
 
@@ -1213,7 +1407,7 @@ const exportAsPDF = () => {
 
 .summary-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(3, 1fr); /* Exactly 3 cards per row */
   gap: 20px;
   margin-bottom: 20px;
 }
@@ -1225,6 +1419,12 @@ const exportAsPDF = () => {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   display: flex;
   align-items: center;
+  min-height: 80px; /* Consistent height */
+}
+
+.card-content {
+  flex: 1;
+  min-width: 0; /* Prevents overflow issues */
 }
 
 .card-icon {
@@ -1356,11 +1556,24 @@ const exportAsPDF = () => {
   gap: 6px;
   background-color: #f9f9f9;
   border-radius: 8px;
-  padding: 0 12px;
+  padding: 8px 12px;
   border: 1px solid #e0e0e0;
-  height: 40px;
-  min-width: fit-content;
-  transition: min-width 0.3s ease;
+  min-height: 40px;
+  width: fit-content;
+  max-width: 100%;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.date-filter:hover {
+  background-color: #f0f0f0;
+  border-color: #d0d0d0;
+}
+
+.date-filter:focus-within {
+  background-color: white;
+  border-color: #888;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.05);
 }
 
 .date-filter i {
@@ -1371,23 +1584,46 @@ const exportAsPDF = () => {
 
 .date-separator {
   color: #666;
-  font-size: 14px;
+  font-size: 12px;
   margin: 0 2px;
   white-space: nowrap;
   flex-shrink: 0;
+  font-weight: 500;
 }
 
 .minimal-date-input {
   border: none;
   background: transparent;
-  padding: 6px 2px;
-  font-size: 14px;
+  padding: 4px 6px;
+  font-size: 13px;
   color: #333;
   outline: none;
-  width: 110px;
-  appearance: none;
-  -webkit-appearance: none;
+  width: 95px;
+  max-width: 95px;
   flex-shrink: 0;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.minimal-date-input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.6;
+  filter: invert(0.5);
+  width: 14px;
+  height: 14px;
+  margin-left: 2px;
+}
+
+.minimal-date-input::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+  filter: invert(0.3);
+}
+
+.minimal-date-input:focus {
+  background-color: rgba(255, 255, 255, 0.8);
+  border-radius: 4px;
 }
 
 .date-clear-btn {
@@ -1399,13 +1635,13 @@ const exportAsPDF = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   transition: all 0.2s;
   flex-shrink: 0;
-  margin-left: 6px;
-  font-size: 16px;
+  margin-left: 4px;
+  font-size: 12px;
 }
 
 .date-clear-btn:hover {
@@ -1416,7 +1652,7 @@ const exportAsPDF = () => {
 }
 
 .date-clear-btn i {
-  font-size: 14px;
+  font-size: 10px;
   font-weight: bold;
   line-height: 1;
 }
@@ -1563,10 +1799,18 @@ const exportAsPDF = () => {
   margin-left: 4px;
 }
 
+.table-container {
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background-color: white;
+}
+
 .orders-table {
   width: 100%;
   border-collapse: collapse;
   margin-bottom: 20px;
+  min-width: 800px; /* Ensure table has minimum width */
 }
 
 .orders-table th,
@@ -1574,6 +1818,7 @@ const exportAsPDF = () => {
   padding: 12px;
   text-align: left;
   border-bottom: 1px solid #e5e7eb;
+  white-space: nowrap; /* Prevent text wrapping */
 }
 
 .orders-table th {
@@ -1918,6 +2163,14 @@ const exportAsPDF = () => {
   color: #e5e7eb;
 }
 
+:global(.dark) .minimal-date-input::-webkit-calendar-picker-indicator {
+  filter: invert(0.8);
+}
+
+:global(.dark) .minimal-date-input:focus {
+  background-color: #374151;
+}
+
 :global(.dark) .filter-options {
   background-color: #1f2937;
   border-color: #374151;
@@ -2025,6 +2278,21 @@ const exportAsPDF = () => {
   color: #6abe6e;
 }
 
+:global(.dark) .table-container {
+  background-color: #1f2937;
+  border-color: #374151;
+}
+
+:global(.dark) .orders-table th {
+  background-color: #374151;
+  color: #e5e7eb;
+}
+
+:global(.dark) .orders-table td {
+  border-color: #4b5563;
+  color: #e5e7eb;
+}
+
 @media (max-width: 768px) {
   .main-content {
     margin-left: 0;
@@ -2051,12 +2319,40 @@ const exportAsPDF = () => {
   
   .date-filter {
     width: 100%;
-    justify-content: space-between;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    min-height: 36px;
+    padding: 6px 10px;
   }
   
   .minimal-date-input,
   .minimal-time-input {
-    width: 100%;
+    width: 100px;
+    max-width: 100px;
+    padding: 6px 4px;
+    background-color: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+  
+  .minimal-date-input::-webkit-calendar-picker-indicator {
+    opacity: 1;
+    filter: invert(0.5);
+    width: 12px;
+    height: 12px;
+  }
+  
+  .date-separator {
+    font-size: 11px;
+    margin: 0 4px;
+  }
+  
+  .date-clear-btn {
+    width: 18px;
+    height: 18px;
+    font-size: 10px;
+    margin-left: 4px;
   }
   
   .filter-actions {
@@ -2078,13 +2374,68 @@ const exportAsPDF = () => {
     justify-content: center;
   }
   
+  .table-container {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+    border-radius: 8px;
+    box-shadow: inset 0 0 0 1px #e5e7eb;
+    margin-bottom: 20px;
+  }
+  
   .orders-table {
-    font-size: 0.8rem;
+    min-width: 900px; /* Ensure table is wide enough to show all data */
+    font-size: 14px; /* Slightly smaller font on mobile */
+    margin-bottom: 0; /* Remove margin since container handles spacing */
   }
   
   .orders-table th,
   .orders-table td {
-    padding: 8px 4px;
+    padding: 8px 6px; /* Reduce padding for mobile */
+    font-size: 12px; /* Smaller font size */
+  }
+  
+  .order-id {
+    min-width: 80px;
+  }
+  
+  .location-cell {
+    max-width: 150px;
+  }
+  
+  .location-cell span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  
+  .action-buttons {
+    flex-direction: column;
+    gap: 4px;
+    min-width: 70px;
+  }
+  
+  .action-btn {
+    font-size: 11px;
+    padding: 3px 6px;
+  }
+  
+  .status-badge {
+    font-size: 10px;
+    padding: 2px 6px;
+  }
+  
+  .unit-quantity {
+    min-width: 80px;
+  }
+  
+  .pagination {
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .pagination button {
+    width: 100%;
   }
 }
 </style>

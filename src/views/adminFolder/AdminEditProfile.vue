@@ -4,40 +4,22 @@
       
       <div class="main-content">
         <header class="header">
-          <div class="search-container">
-            <div class="search-box">
-              <Search size="18" class="search-icon" />
-              <input type="text" placeholder="Search..." />
-            </div>
+          <div class="header-title">
+            <h2>Edit Profile</h2>
           </div>
           
-          <div class="user-profile" @click="toggleProfileMenu" ref="profileRef">
+          <div class="user-profile">
             <div class="notification-icon">
               <Bell size="20" />
               <span class="notification-badge">5</span>
             </div>
             <div class="avatar">
-              <img :src="adminData.profilePicture || 'https://randomuser.me/api/portraits/men/32.jpg'" alt="Admin avatar" />
-            </div>
-            <div class="user-info">
-              <h3>{{ adminData ? `${adminData.firstName} ${adminData.lastName}` : 'Loading...' }}</h3>
-              <p>{{ adminData ? adminData.email : 'Loading...' }}</p>
+              <UserCircle size="32" class="profile-icon" />
             </div>
           </div>
         </header>
         
         <div class="edit-profile-content">
-          <h1>Edit Profile</h1>
-          
-          <!-- Profile Picture Upload -->
-          <div class="profile-picture-section">
-            <div class="profile-picture-container">
-              <img :src="adminData.profilePicture || 'https://randomuser.me/api/portraits/men/32.jpg'" alt="Profile Picture" class="profile-picture" />
-              <input type="file" @change="handleProfilePictureUpload" accept="image/*" class="profile-picture-input" />
-              <button class="upload-btn" @click="triggerFileInput">Upload Photo</button>
-            </div>
-          </div>
-          
           <!-- Edit Profile Form -->
           <form @submit.prevent="updateProfile" class="edit-profile-form">
             <div class="form-group">
@@ -103,11 +85,10 @@
   <script setup>
   import { ref, onMounted } from 'vue';
   import { getAuth, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
-  import { db, storage } from '@/firebase/firebaseConfig';
+  import { db } from '@/firebase/firebaseConfig';
   import { doc, getDoc, updateDoc } from 'firebase/firestore';
-  import { ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
   import AdminSidebar from '@/components/AdminSidebar.vue';
-  import { Search, Bell } from 'lucide-vue-next';
+  import { Bell, UserCircle } from 'lucide-vue-next';
   
   // Firebase Auth
   const auth = getAuth();
@@ -120,7 +101,6 @@
     contactNumber: '',
     address: '',
     username: '',
-    profilePicture: '',
   });
   
   // Password fields
@@ -196,34 +176,6 @@
     }
   };
   
-  // Handle profile picture upload
-  const handleProfilePictureUpload = async (event) => {
-    const file = event.target.files[0];
-    if (file) {
-      try {
-        const user = auth.currentUser;
-        if (user) {
-          const userId = user.uid;
-          const fileRef = storageRef(storage, `profile-pictures/${userId}`);
-          await uploadBytes(fileRef, file);
-          const downloadURL = await getDownloadURL(fileRef);
-          adminData.value.profilePicture = downloadURL;
-          const adminRef = doc(db, "admins", userId);
-          await updateDoc(adminRef, { profilePicture: downloadURL });
-          alert('Profile picture updated successfully!');
-        }
-      } catch (error) {
-        console.error("Error uploading profile picture:", error);
-        alert('Failed to upload profile picture. Please try again.');
-      }
-    }
-  };
-  
-  // Trigger file input
-  const triggerFileInput = () => {
-    document.querySelector('.profile-picture-input').click();
-  };
-  
   onMounted(() => {
     fetchAdminData(); // Fetch admin data when the component is mounted
   });
@@ -247,73 +199,68 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
+    margin-bottom: 30px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #e5e7eb;
   }
   
-  .search-container {
-    display: flex;
-    align-items: center;
-  }
-  
-  .search-box {
-    display: flex;
-    align-items: center;
-    background-color: #e0e0e0;
-    padding: 8px 12px;
-    border-radius: 8px;
-  }
-  
-  .search-icon {
-    margin-right: 8px;
-    color: #666;
-  }
-  
-  .search-box input {
-    border: none;
-    background: none;
-    outline: none;
-    font-size: 14px;
+  .header-title h2 {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 700;
+    color: #111827;
   }
   
   .user-profile {
     display: flex;
     align-items: center;
-    cursor: pointer;
+    gap: 15px;
   }
   
   .notification-icon {
     position: relative;
-    margin-right: 20px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background-color: #f3f4f6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #6b7280;
+    cursor: pointer;
+    border: 1px solid #e5e7eb;
   }
   
   .notification-badge {
     position: absolute;
     top: -5px;
     right: -5px;
-    background-color: #ff4d4d;
+    background-color: #ef4444;
     color: white;
     font-size: 12px;
     padding: 2px 6px;
     border-radius: 50%;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
   
-  .avatar img {
+  .avatar {
     width: 40px;
     height: 40px;
     border-radius: 50%;
-    margin-right: 10px;
+    background-color: #f3f4f6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #6b7280;
+    border: 1px solid #e5e7eb;
   }
   
-  .user-info h3 {
-    margin: 0;
-    font-size: 16px;
-    color: #333;
-  }
-  
-  .user-info p {
-    margin: 0;
-    font-size: 14px;
-    color: #666;
+  .profile-icon {
+    color: #6b7280;
   }
   
   .edit-profile-content {
@@ -321,79 +268,72 @@
     margin: 0 auto;
   }
   
-  .profile-picture-section {
-    text-align: center;
-    margin-bottom: 20px;
-  }
-  
-  .profile-picture-container {
-    position: relative;
-    display: inline-block;
-  }
-  
-  .profile-picture {
-    width: 120px;
-    height: 120px;
-    border-radius: 50%;
-    object-fit: cover;
-  }
-  
-  .profile-picture-input {
-    display: none;
-  }
-  
-  .upload-btn {
-    margin-top: 10px;
-    padding: 8px 16px;
-    background-color: #2e5c31;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-  }
-  
   .edit-profile-form,
   .change-password-form {
     background-color: #ffffff;
-    padding: 20px;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    padding: 30px;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     margin-bottom: 20px;
+    border: 1px solid #e5e7eb;
+  }
+  
+  .change-password-section h2 {
+    margin: 0 0 20px 0;
+    font-size: 20px;
+    font-weight: 600;
+    color: #111827;
   }
   
   .form-group {
-    margin-bottom: 15px;
+    margin-bottom: 20px;
   }
   
   .form-group label {
     display: block;
-    margin-bottom: 5px;
+    margin-bottom: 8px;
     font-size: 14px;
-    color: #333;
+    font-weight: 500;
+    color: #374151;
   }
   
   .form-group input {
     width: 100%;
-    padding: 10px;
-    border: 1px solid #ddd;
+    padding: 12px 16px;
+    border: 1px solid #d1d5db;
     border-radius: 8px;
     font-size: 14px;
+    transition: border-color 0.2s ease;
+    box-sizing: border-box;
+  }
+  
+  .form-group input:focus {
+    outline: none;
+    border-color: #2e5c31;
+    box-shadow: 0 0 0 3px rgba(46, 92, 49, 0.1);
   }
   
   .save-btn,
   .change-password-btn {
     width: 100%;
-    padding: 12px;
+    padding: 12px 24px;
     background-color: #2e5c31;
     color: white;
     border: none;
     border-radius: 8px;
     font-size: 16px;
+    font-weight: 500;
     cursor: pointer;
+    transition: background-color 0.2s ease;
   }
   
   .save-btn:hover,
   .change-password-btn:hover {
     background-color: #1e3a1c;
+  }
+  
+  .save-btn:active,
+  .change-password-btn:active {
+    transform: translateY(1px);
   }
   </style>

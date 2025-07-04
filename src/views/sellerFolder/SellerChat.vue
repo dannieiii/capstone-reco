@@ -76,7 +76,12 @@
                 @click="selectConversation(conversation)"
               >
                 <div class="conversation-avatar">
-                  <img :src="conversation.customerAvatar" :alt="conversation.customerName">
+                  <img 
+                    :src="conversation.customerAvatar" 
+                    :alt="conversation.customerName" 
+                    @error="handleImageError"
+                    loading="lazy"
+                  >
                   <div class="status-dot" :class="{ online: conversation.customerOnline }"></div>
                 </div>
                 <div class="conversation-content">
@@ -105,7 +110,12 @@
             <div class="chat-header">
               <div class="chat-user">
                 <div class="chat-avatar">
-                  <img :src="selectedConversation.customerAvatar" :alt="selectedConversation.customerName">
+                  <img 
+                    :src="selectedConversation.customerAvatar" 
+                    :alt="selectedConversation.customerName" 
+                    @error="handleImageError"
+                    loading="lazy"
+                  >
                   <div class="status-dot" :class="{ online: selectedConversation.customerOnline }"></div>
                 </div>
                 <div class="chat-user-info">
@@ -309,7 +319,53 @@
   
   // Customer data cache to avoid redundant fetches
   const customerCache = new Map();
-    // Tabs - make reactive
+  
+  // Helper function to get customer avatar with proper fallback
+  const getCustomerAvatar = (customerData) => {
+    // Priority order for avatar fields
+    const avatarFields = [
+      'profileImageUrl',
+      'photoURL', 
+      'avatar',
+      'profilePicture',
+      'imageUrl'
+    ];
+    
+    for (const field of avatarFields) {
+      const imageValue = customerData[field];
+      if (imageValue && typeof imageValue === 'string' && imageValue.trim() !== '') {
+        console.log(`Using customer avatar from ${field}:`, imageValue.trim());
+        return imageValue.trim();
+      }
+    }
+    
+    console.log('No custom avatar found, using default for customer:', customerData);
+    // Default fallback avatar - Generic user silhouette
+    return "data:image/svg+xml;base64," + btoa(`
+      <svg width="150" height="150" viewBox="0 0 150 150" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="75" cy="75" r="75" fill="#e5e7eb"/>
+        <circle cx="75" cy="60" r="25" fill="#9ca3af"/>
+        <ellipse cx="75" cy="130" rx="40" ry="30" fill="#9ca3af"/>
+      </svg>
+    `);
+  };
+  
+  // Handle image loading errors
+  const handleImageError = (event) => {
+    console.warn('Failed to load customer avatar:', event.target.src);
+    // Set to fallback avatar - Generic user silhouette
+    event.target.src = "data:image/svg+xml;base64," + btoa(`
+      <svg width="150" height="150" viewBox="0 0 150 150" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="75" cy="75" r="75" fill="#e5e7eb"/>
+        <circle cx="75" cy="60" r="25" fill="#9ca3af"/>
+        <ellipse cx="75" cy="130" rx="40" ry="30" fill="#9ca3af"/>
+      </svg>
+    `);
+    // Prevent infinite error loops
+    event.target.onerror = null;
+  };
+  
+  // Tabs - make reactive
   const tabs = ref([
     { id: 'all', name: 'All', count: 0 },
     { id: 'unread', name: 'Unread', count: 0 },
@@ -522,7 +578,7 @@
           id: docSnapshot.id,
           customerId: customerId,
           customerName: fullName || 'Customer',
-          customerAvatar: customerData.photoURL || "https://randomuser.me/api/portraits/lego/1.jpg",
+          customerAvatar: getCustomerAvatar(customerData),
           customerOnline: customerData.isOnline || false,
           lastMessage: data.lastMessage || '',
           lastMessageTime: data.lastMessageTime,
@@ -586,7 +642,7 @@
     selectedConversation.value = {
       ...conversation,
       customerName: fullName || 'Customer',
-      customerAvatar: customerData.photoURL || 'https://randomuser.me/api/portraits/lego/1.jpg',
+      customerAvatar: getCustomerAvatar(customerData),
       customerOnline: customerData.isOnline || false,
       lastSeen: customerData.lastSeen
     };

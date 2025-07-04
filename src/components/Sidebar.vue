@@ -36,14 +36,18 @@
       <ul>
         <li v-for="(item, index) in menuItems" :key="index" 
             :class="{ active: activeItem === item.name }"
-            @click="setActiveItem(item.name); isMobile && toggleMobileSidebar()">
-          <router-link :to="item.path" class="nav-link">
+              @click="handleItemClick(item)">
+          <router-link v-if="item.action !== 'logout'" :to="item.path" class="nav-link">
             <component :is="item.icon" class="nav-icon" />
             <span class="nav-text">{{ item.name }}</span>
             <span v-if="item.badge && (!isCollapsed || isMobile)" class="badge" :class="item.badgeClass">
               {{ item.badge }}
             </span>
           </router-link>
+          <div v-else class="nav-link logout-link">
+            <component :is="item.icon" class="nav-icon" />
+            <span class="nav-text">{{ item.name }}</span>
+          </div>
         </li>
       </ul>
     </nav>
@@ -59,6 +63,18 @@
       </button>
     </div>
   </div>
+
+  <!-- Logout Confirmation Modal -->
+  <div v-if="showLogoutModal" class="modal-overlay">
+    <div class="modal-content">
+      <h3>Confirm Logout</h3>
+      <p>Do you really want to logout?</p>
+      <div class="modal-actions">
+        <button class="btn-cancel" @click="cancelLogout">No</button>
+        <button class="btn-confirm" @click="confirmLogout">Yes</button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -72,7 +88,7 @@ import {
   MessageSquare, 
   ThumbsUp, 
   HelpCircle, 
-  Settings,
+  LogOut,
   Sun,
   Moon,
   TrendingUp,
@@ -82,7 +98,8 @@ import {
 } from 'lucide-vue-next';
 import { db } from '@/firebase/firebaseConfig';
 import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
+import { getAuth, signOut } from 'firebase/auth';
+import { useRouter } from 'vue-router';
 
 const props = defineProps({
   initialActiveItem: {
@@ -98,7 +115,9 @@ const isMobile = ref(false);
 const isMobileSidebarOpen = ref(false);
 const mobileBreakpoint = 768;
 const unreadNotifications = ref(0);
-const chatMessages = ref(8); // Keep existing chat badge
+const chatMessages = ref(); // Keep existing chat badge
+const showLogoutModal = ref(false);
+const router = useRouter();
 
 // Real-time notification listener
 const setupNotificationListener = () => {
@@ -171,13 +190,39 @@ const menuItems = computed(() => [
     badgeClass: 'chat-badge'
   },
   { name: 'Feedback', path: '/seller/feedbacks', icon: ThumbsUp },
-  { name: 'Reports', path: '/seller/reports', icon: FileText },
-  { name: 'Help', path: '/sellerhelp', icon: HelpCircle },
-  { name: 'Settings', path: '/seller/settings', icon: Settings }
+  // { name: 'Reports', path: '/seller/reports', icon: FileText },
+  // { name: 'Help', path: '/sellerhelp', icon: HelpCircle },
+  { name: 'Logout', path: '#', icon: LogOut, action: 'logout' }
 ]);
 
 const setActiveItem = (itemName) => {
   activeItem.value = itemName;
+};
+
+const handleItemClick = (item) => {
+  if (item.action === 'logout') {
+    showLogoutModal.value = true;
+  } else {
+    setActiveItem(item.name);
+    if (isMobile.value) {
+      toggleMobileSidebar();
+    }
+  }
+};
+
+const confirmLogout = async () => {
+  try {
+    const auth = getAuth();
+    await signOut(auth);
+    showLogoutModal.value = false;
+    router.push('/login');
+  } catch (error) {
+    console.error('Error signing out:', error);
+  }
+};
+
+const cancelLogout = () => {
+  showLogoutModal.value = false;
 };
 
 const setLightMode = () => {
@@ -284,6 +329,13 @@ onBeforeUnmount(() => {
   top: 0;
   z-index: 999;
   padding: 0;
+  /* Hide scrollbar */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* Internet Explorer 10+ */
+}
+
+.sidebar::-webkit-scrollbar {
+  display: none; /* WebKit browsers (Chrome, Safari, etc.) */
 }
 
 .sidebar.mobile-sidebar {
@@ -343,6 +395,13 @@ onBeforeUnmount(() => {
   margin-top: 8px;
   padding: 0 8px;
   overflow-y: auto;
+  /* Hide scrollbar */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* Internet Explorer 10+ */
+}
+
+.nav-menu::-webkit-scrollbar {
+  display: none; /* WebKit browsers (Chrome, Safari, etc.) */
 }
 
 .nav-menu ul {
@@ -366,6 +425,15 @@ onBeforeUnmount(() => {
 }
 
 .nav-link:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.logout-link {
+  cursor: pointer;
+}
+
+.logout-link:hover {
   background-color: rgba(255, 255, 255, 0.1);
   color: #ffffff;
 }
@@ -504,5 +572,80 @@ onBeforeUnmount(() => {
     transform: none !important;
     display: flex !important;
   }
+}
+
+/* Logout Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1001;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.modal-content h3 {
+  margin: 0 0 16px 0;
+  color: #333;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.modal-content p {
+  margin: 0 0 24px 0;
+  color: #666;
+  font-size: 1rem;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.btn-cancel,
+.btn-confirm {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  flex: 1;
+  max-width: 120px;
+}
+
+.btn-cancel {
+  background-color: #f5f5f5;
+  color: #666;
+  border: 1px solid #e0e0e0;
+}
+
+.btn-cancel:hover {
+  background-color: #e0e0e0;
+  border-color: #ccc;
+}
+
+.btn-confirm {
+  background-color: #ef4444;
+  color: white;
+}
+
+.btn-confirm:hover {
+  background-color: #dc2626;
 }
 </style>

@@ -31,20 +31,7 @@
         </div>
 
         <!-- Test Email Button (for debugging) -->
-        <div class="debug-section" style="margin-bottom: 20px;">
-            <button @click="testEmailJSConfig" class="config-test-btn">
-              🔧 Test EmailJS Config
-            </button>
-            <button @click="testSellerEmail" class="test-email-btn">
-              🧪 Test Email System
-            </button>
-            <button @click="debugEmailTemplate" class="debug-email-btn">
-              🔬 Debug Email Template
-            </button>
-          <small style="margin-left: 10px; color: #666;">
-            (Test email notifications to verify EmailJS configuration - Check console for details)
-          </small>
-        </div>
+        
 
         <div class="actions-bar">
           <div class="search-and-filter">
@@ -54,10 +41,6 @@
             </div>
           </div>
           <div class="filter-actions">
-            <button class="filter-btn">
-              <i class="fas fa-filter"></i>
-              Filter
-            </button>
             <div class="export-dropdown">
               <button class="export-btn">
                 <i class="fas fa-download"></i>
@@ -775,7 +758,7 @@ const exportData = (format) => {
       pdfContent += 'th { background-color: #f2f2f2; font-weight: bold; }';
       pdfContent += 'tr:nth-child(even) { background-color: #f9f9f9; }';
       pdfContent += '.export-info { margin-top: 20px; font-size: 12px; color: #666; }';
-      pdfContent += '.status-badge { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 12px; }';
+      pdfContent += '.status-badge { display: inline-flex; align-items: center; justify-content: center; padding: 8px 12px; border-radius: 6px; font-size: 0.875rem; font-weight: 500; text-align: center; min-width: 100px; height: 36px; line-height: 1.2; }';
       pdfContent += '.status-verified { background-color: #d1fae5; color: #059669; }';
       pdfContent += '.status-pending { background-color: #fef3c7; color: #d97706; }';
       pdfContent += '</style>';
@@ -1026,7 +1009,7 @@ onMounted(() => {
   gap: 10px;
 }
 
-.filter-btn, .export-btn {
+.export-btn {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1035,13 +1018,15 @@ onMounted(() => {
   font-size: 0.9rem;
   cursor: pointer;
   border: none;
-  background-color: #f3f4f6;
-  color: #4b5563;
+  background-color: #1f4e23;
+  color: white;
   transition: all 0.2s;
 }
 
-.filter-btn:hover, .export-btn:hover {
-  background-color: #e5e7eb;
+.export-btn:hover {
+  background-color: #0f2419;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(31, 78, 35, 0.3);
 }
 
 .export-dropdown {
@@ -1177,13 +1162,13 @@ onMounted(() => {
 
 .status-container {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
 }
 
 .custom-dropdown {
   position: relative;
   display: inline-block;
+  width: 120px;
 }
 
 .status-dropdown {
@@ -1191,11 +1176,13 @@ onMounted(() => {
   background-color: #f9fafb;
   border: 1px solid #d1d5db;
   border-radius: 6px;
-  padding: 6px 30px 6px 10px;
+  padding: 8px 32px 8px 12px;
   font-size: 0.875rem;
   color: #374151;
   cursor: pointer;
-  min-width: 100px;
+  width: 120px;
+  height: 36px;
+  line-height: 1.2;
 }
 
 .status-dropdown:focus {
@@ -1206,7 +1193,7 @@ onMounted(() => {
 
 .dropdown-icon {
   position: absolute;
-  right: 8px;
+  right: 10px;
   top: 50%;
   transform: translateY(-50%);
   pointer-events: none;
@@ -1215,13 +1202,18 @@ onMounted(() => {
 }
 
 .status-badge {
-  display: inline-block;
-  padding: 4px 8px;
-  border-radius: 9999px;
-  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.875rem;
   font-weight: 500;
   text-align: center;
-  min-width: 70px;
+  width: 120px;
+  height: 36px;
+  line-height: 1.2;
+  box-sizing: border-box;
 }
 
 .status-badge.verified {

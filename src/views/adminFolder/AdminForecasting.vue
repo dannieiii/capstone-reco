@@ -40,7 +40,11 @@
         <CloudSun size="24" />
         <div class="weather-info">
           <h3>Current Weather</h3>
-          <p>Oriental Mindoro, Philippines</p>
+          <p>{{ weatherLocation }}</p>
+          <div v-if="weatherError" class="weather-error">
+            <AlertCircle size="14" />
+            Weather data may not be current. Showing cached information.
+          </div>
         </div>
       </div>
       <div class="weather-details">
@@ -103,8 +107,28 @@
           </button>
         </div>
       </div>
-      <div class="chart-wrapper">
+      <div class="chart-wrapper-enhanced">
         <canvas ref="seasonChart"></canvas>
+      </div>
+      <div class="chart-summary">
+        <div class="summary-stats">
+          <div class="stat-item excellent">
+            <span class="stat-label">Excellent Crops</span>
+            <span class="stat-value">{{ cropRecommendations.filter(c => c.successRate >= 85).length }}</span>
+          </div>
+          <div class="stat-item good">
+            <span class="stat-label">Good Crops</span>
+            <span class="stat-value">{{ cropRecommendations.filter(c => c.successRate >= 70 && c.successRate < 85).length }}</span>
+          </div>
+          <div class="stat-item fair">
+            <span class="stat-label">Fair Crops</span>
+            <span class="stat-value">{{ cropRecommendations.filter(c => c.successRate >= 55 && c.successRate < 70).length }}</span>
+          </div>
+          <div class="stat-item poor">
+            <span class="stat-label">Poor Crops</span>
+            <span class="stat-value">{{ cropRecommendations.filter(c => c.successRate < 55).length }}</span>
+          </div>
+        </div>
       </div>
     </div>
     
@@ -302,66 +326,6 @@
     </div>
   </div>
 </div>
-
-<!-- Monthly Planting Calendar -->
-<div class="planting-calendar">
-  <h2>Monthly Planting Calendar</h2>
-  <div class="calendar-container">
-    <div class="calendar-header">
-      <div class="month-navigation">
-        <button @click="previousMonth" class="nav-btn">
-          <ChevronLeft size="16" />
-        </button>
-        <h3>{{ currentCalendarMonth.name }} {{ currentCalendarYear }}</h3>
-        <button @click="nextMonth" class="nav-btn">
-          <ChevronRight size="16" />
-        </button>
-      </div>
-      <div class="calendar-legend">
-        <div class="legend-item">
-          <div class="legend-color plant"></div>
-          <span>Planting</span>
-        </div>
-        <div class="legend-item">
-          <div class="legend-color harvest"></div>
-          <span>Harvesting</span>
-        </div>
-      </div>
-    </div>
-    
-    <div class="calendar-grid">
-      <div class="calendar-day-header">Sun</div>
-      <div class="calendar-day-header">Mon</div>
-      <div class="calendar-day-header">Tue</div>
-      <div class="calendar-day-header">Wed</div>
-      <div class="calendar-day-header">Thu</div>
-      <div class="calendar-day-header">Fri</div>
-      <div class="calendar-day-header">Sat</div>
-      
-      <div v-for="day in calendarDays" :key="day.date" 
-           class="calendar-day" 
-           :class="{ 
-             'other-month': !day.isCurrentMonth,
-             'today': day.isToday,
-             'has-activities': day.activities.length > 0
-           }">
-        <div class="day-number">{{ day.day }}</div>
-        <div class="day-activities">
-          <div v-for="activity in day.activities.slice(0, 2)" 
-               :key="activity.crop + activity.type" 
-               class="activity-item" 
-               :class="activity.type"
-               :title="`${activity.type} ${activity.crop}`">
-            <span class="activity-text">{{ activity.crop }}</span>
-          </div>
-          <div v-if="day.activities.length > 2" class="more-activities">
-            +{{ day.activities.length - 2 }} more
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
 </template>
 
 <script setup>
@@ -370,6 +334,7 @@ import { collection, query, where, getDocs, addDoc, Timestamp, orderBy, limit } 
 import { db } from '@/firebase/firebaseConfig';
 import Chart from 'chart.js/auto';
 import AdminSidebar from '@/components/AdminSidebar.vue';
+import axios from 'axios';
 import {
 RefreshCw,
 Send,
@@ -386,9 +351,7 @@ CheckCircle,
 AlertCircle,
 Loader2,
 Eye,
-X,
-ChevronLeft,
-ChevronRight
+X
 } from 'lucide-vue-next';
 
 // Import crop datasets
@@ -404,6 +367,8 @@ const error = ref(null);
 const predictions = ref([]);
 const cropRecommendations = ref([]);
 const statusMessage = ref(null);
+const weatherError = ref(false);
+const weatherLocation = ref('Oriental Mindoro, Philippines');
 
 // Chart refs
 const seasonChart = ref(null);
@@ -411,24 +376,24 @@ const temperatureChart = ref(null);
 const rainfallChart = ref(null);
 const humidityChart = ref(null);
 
-// Weather data for Oriental Mindoro - Static 7-day forecast (unaffected by prediction period)
+// Weather data for Oriental Mindoro - Now real-time
 const currentWeather = ref({
-temperature: 28,
+temperature: 30,
 humidity: 78,
 windSpeed: 15,
 rainfall: 2,
 condition: 'partly-cloudy'
 });
 
-// Static 7-day forecast that doesn't change with prediction period
+// Static 7-day forecast that will be updated with real data
 const staticWeatherForecast = ref([
-{ date: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000), temperature: 29, rainfall: 3, condition: 'partly-cloudy' },
-{ date: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000), temperature: 27, rainfall: 8, condition: 'rain' },
-{ date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), temperature: 30, rainfall: 1, condition: 'clear' },
-{ date: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000), temperature: 28, rainfall: 5, condition: 'clouds' },
-{ date: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000), temperature: 26, rainfall: 12, condition: 'rain' },
-{ date: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000), temperature: 31, rainfall: 0, condition: 'clear' },
-{ date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), temperature: 29, rainfall: 4, condition: 'partly-cloudy' }
+{ date: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000), temperature: 30, rainfall: 3, condition: 'partly-cloudy' },
+{ date: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000), temperature: 29, rainfall: 8, condition: 'rain' },
+{ date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), temperature: 32, rainfall: 1, condition: 'clear' },
+{ date: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000), temperature: 31, rainfall: 5, condition: 'clouds' },
+{ date: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000), temperature: 28, rainfall: 12, condition: 'rain' },
+{ date: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000), temperature: 33, rainfall: 0, condition: 'clear' },
+{ date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), temperature: 31, rainfall: 4, condition: 'partly-cloudy' }
 ]);
 
 // Weather analysis based on prediction period
@@ -446,12 +411,181 @@ successRate: 0
 
 const recentNotifications = ref([]);
 
-// Modal and calendar data
+// Modal data
 const showModal = ref(false);
 const selectedCrop = ref(null);
-const currentCalendarMonth = ref({ name: 'January', number: 1 });
-const currentCalendarYear = ref(new Date().getFullYear());
-const calendarDays = ref([]);
+
+// Real-time weather API functions with multiple location attempts
+const fetchCurrentWeather = async () => {
+  try {
+    // Direct API call with your key for Oriental Mindoro
+    const locationQueries = [
+      'Calapan,Oriental Mindoro,PH',
+      'Oriental Mindoro,PH', 
+      'Calapan,PH'
+    ];
+
+    let weatherData = null;
+    let usedLocation = '';
+
+    for (const location of locationQueries) {
+      try {
+        console.log(`Fetching weather for: ${location}`);
+        const response = await axios.get(
+          `https://api.openweathermap.org/data/2.5/weather?q=${location}&units=metric&appid=8e3dd2afad152c780d45927680ccb5cd`
+        );
+        
+        weatherData = response.data;
+        usedLocation = `${weatherData.name}, ${weatherData.sys.country}`;
+        console.log('✅ Weather API Success:', weatherData);
+        break;
+      } catch (locationError) {
+        console.log(`❌ Failed for ${location}:`, locationError.response?.data || locationError.message);
+        continue;
+      }
+    }
+
+    if (!weatherData) {
+      throw new Error('All location queries failed');
+    }
+
+    // Update weather location display
+    weatherLocation.value = usedLocation;
+
+    // Extract and format the weather data
+    currentWeather.value = {
+      temperature: Math.round(weatherData.main.temp),
+      humidity: weatherData.main.humidity,
+      windSpeed: Math.round(weatherData.wind.speed * 3.6), // Convert m/s to km/h
+      rainfall: weatherData.rain?.['1h'] || weatherData.rain?.['3h'] || 0,
+      condition: mapWeatherCondition(weatherData.weather[0].main)
+    };
+
+    console.log('✅ Updated current weather:', currentWeather.value);
+    weatherError.value = false;
+
+  } catch (error) {
+    console.error('❌ Weather API Error:', error);
+    weatherError.value = true;
+
+    // Fallback data
+    currentWeather.value = {
+      temperature: 30,
+      humidity: 78,
+      windSpeed: 15,
+      rainfall: 2,
+      condition: 'partly-cloudy'
+    };
+    weatherLocation.value = 'Oriental Mindoro, Philippines (Cached)';
+  }
+};
+
+const fetchWeatherForecast = async () => {
+  try {
+    const locationQueries = [
+      'Calapan,Oriental Mindoro,PH',
+      'Oriental Mindoro,PH', 
+      'Calapan,PH'
+    ];
+
+    let forecastData = null;
+
+    for (const location of locationQueries) {
+      try {
+        console.log(`Fetching forecast for: ${location}`);
+        const response = await axios.get(
+          `https://api.openweathermap.org/data/2.5/forecast?q=${location}&units=metric&appid=8e3dd2afad152c780d45927680ccb5cd`
+        );
+        
+        forecastData = response.data;
+        console.log('✅ Forecast API Success:', forecastData);
+        break;
+      } catch (locationError) {
+        console.log(`❌ Forecast failed for ${location}:`, locationError.response?.data || locationError.message);
+        continue;
+      }
+    }
+
+    if (!forecastData) {
+      throw new Error('All forecast queries failed');
+    }
+
+    // Process the 3-hour forecast into daily forecast
+    const dailyForecast = processForecastData(forecastData.list);
+    staticWeatherForecast.value = dailyForecast.slice(0, 7);
+
+    console.log('✅ Updated forecast:', staticWeatherForecast.value);
+    weatherError.value = false;
+
+  } catch (error) {
+    console.error('❌ Forecast API Error:', error);
+    weatherError.value = true;
+
+    // Fallback forecast data
+    staticWeatherForecast.value = [
+      { date: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000), temperature: 30, rainfall: 3, condition: 'partly-cloudy' },
+      { date: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000), temperature: 29, rainfall: 8, condition: 'rain' },
+      { date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), temperature: 32, rainfall: 1, condition: 'clear' },
+      { date: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000), temperature: 31, rainfall: 5, condition: 'clouds' },
+      { date: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000), temperature: 28, rainfall: 12, condition: 'rain' },
+      { date: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000), temperature: 33, rainfall: 0, condition: 'clear' },
+      { date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), temperature: 31, rainfall: 4, condition: 'partly-cloudy' }
+    ];
+  }
+};
+
+// Helper function to map OpenWeather conditions to your icons
+const mapWeatherCondition = (condition) => {
+const lowerCondition = condition.toLowerCase();
+if (lowerCondition.includes('rain')) return 'rain';
+if (lowerCondition.includes('cloud')) return 'clouds';
+if (lowerCondition.includes('clear')) return 'clear';
+return 'partly-cloudy';
+};
+
+// Helper to process 3-hour forecast into daily forecast
+const processForecastData = (forecastList) => {
+const dailyData = {};
+
+forecastList.forEach(item => {
+  const date = new Date(item.dt * 1000);
+  const dateKey = date.toISOString().split('T')[0];
+  
+  if (!dailyData[dateKey]) {
+    dailyData[dateKey] = {
+      date,
+      temperature: [],
+      rainfall: 0,
+      conditions: []
+    };
+  }
+  
+  dailyData[dateKey].temperature.push(item.main.temp);
+  dailyData[dateKey].rainfall += item.rain?.['3h'] || 0;
+  dailyData[dateKey].conditions.push(item.weather[0].main);
+});
+
+return Object.values(dailyData).map(day => {
+  // Get most frequent condition for the day
+  const conditionCounts = {};
+  day.conditions.forEach(cond => {
+    conditionCounts[cond] = (conditionCounts[cond] || 0) + 1;
+  });
+  
+  const mostFrequentCondition = Object.entries(conditionCounts)
+    .sort((a, b) => b[1] - a[1])[0][0];
+  
+  const avgTemp = Math.round(day.temperature.reduce((a, b) => a + b, 0) / day.temperature.length);
+  console.log(`Processing day ${day.date.toDateString()}: Raw temps [${day.temperature.join(', ')}], Average: ${avgTemp}`);
+  
+  return {
+    date: day.date,
+    temperature: avgTemp,
+    rainfall: Math.round(day.rainfall * 10) / 10,
+    condition: mapWeatherCondition(mostFrequentCondition)
+  };
+});
+};
 
 // Helper functions
 const formatDate = (date) => {
@@ -531,37 +665,39 @@ setTimeout(() => {
 }, 3000);
 };
 
-// Generate weather data based on prediction period
+// Updated generateWeatherDataForPeriod to use real forecast data
 const generateWeatherDataForPeriod = (days) => {
-const weatherData = [];
-const baseTemp = currentWeather.value.temperature;
-const baseHumidity = currentWeather.value.humidity;
+// Use the real forecast data we already have for the first 7 days
+const realData = staticWeatherForecast.value.map(day => ({
+  date: day.date,
+  temperature: day.temperature,
+  humidity: currentWeather.value.humidity, // Fallback to current humidity
+  rainfall: day.rainfall,
+  condition: day.condition
+}));
 
-for (let i = 0; i < days; i++) {
-  const date = new Date(Date.now() + i * 24 * 60 * 60 * 1000);
-  const month = date.getMonth() + 1;
-  
-  // Seasonal temperature variation
-  let tempVariation = 0;
-  if (month >= 3 && month <= 5) tempVariation = 2; // Hot season
-  else if (month >= 6 && month <= 11) tempVariation = -1; // Wet season
-  else tempVariation = 1; // Cool dry season
-  
-  // Add some randomness but keep it realistic
-  const temperature = Math.round(baseTemp + tempVariation + (Math.random() - 0.5) * 4);
-  const humidity = Math.round(baseHumidity + (Math.random() - 0.5) * 10);
-  const rainfall = Math.round(Math.random() * (month >= 6 && month <= 11 ? 20 : 8));
-  
-  weatherData.push({
-    date,
-    temperature: Math.max(22, Math.min(35, temperature)),
-    humidity: Math.max(60, Math.min(95, humidity)),
-    rainfall,
-    condition: rainfall > 10 ? 'rain' : rainfall > 5 ? 'clouds' : 'clear'
-  });
+// For days beyond the forecast, extend with reasonable estimates
+if (days > 7) {
+  const lastRealData = realData[realData.length - 1];
+  for (let i = 8; i <= days; i++) {
+    const date = new Date(Date.now() + i * 24 * 60 * 60 * 1000);
+    const month = date.getMonth() + 1;
+    
+    // Similar to your existing logic but using last real data as base
+    const temperature = lastRealData.temperature + (Math.random() - 0.5) * 2;
+    const rainfall = Math.max(0, lastRealData.rainfall + (Math.random() - 0.5) * 3);
+    
+    realData.push({
+      date,
+      temperature: Math.max(25, Math.min(35, temperature)), // Adjusted for Philippines climate
+      humidity: Math.max(60, Math.min(95, lastRealData.humidity + (Math.random() - 0.5) * 5)),
+      rainfall: Math.round(rainfall * 10) / 10,
+      condition: rainfall > 10 ? 'rain' : rainfall > 5 ? 'clouds' : 'clear'
+    });
+  }
 }
 
-return weatherData;
+return realData.slice(0, days);
 };
 
 // Enhanced crop analysis based on prediction period
@@ -859,167 +995,168 @@ showModal.value = false;
 selectedCrop.value = null;
 };
 
-// Calendar functions
-const previousMonth = () => {
-if (currentCalendarMonth.value.number === 1) {
-  currentCalendarMonth.value = { name: 'December', number: 12 };
-  currentCalendarYear.value--;
-} else {
-  const monthNames = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
-  ];
-  currentCalendarMonth.value.number--;
-  currentCalendarMonth.value.name = monthNames[currentCalendarMonth.value.number - 1];
-}
-generateCalendarDays();
-};
-
-const nextMonth = () => {
-if (currentCalendarMonth.value.number === 12) {
-  currentCalendarMonth.value = { name: 'January', number: 1 };
-  currentCalendarYear.value++;
-} else {
-  const monthNames = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
-  ];
-  currentCalendarMonth.value.number++;
-  currentCalendarMonth.value.name = monthNames[currentCalendarMonth.value.number - 1];
-}
-generateCalendarDays();
-};
-
-const generateCalendarDays = () => {
-const year = currentCalendarYear.value;
-const month = currentCalendarMonth.value.number;
-const today = new Date();
-
-const firstDay = new Date(year, month - 1, 1);
-const lastDay = new Date(year, month, 0);
-const daysInMonth = lastDay.getDate();
-const startingDayOfWeek = firstDay.getDay();
-
-const prevMonth = new Date(year, month - 2, 0);
-const daysInPrevMonth = prevMonth.getDate();
-
-const days = [];
-
-// Previous month's days
-for (let i = startingDayOfWeek - 1; i >= 0; i--) {
-  const day = daysInPrevMonth - i;
-  days.push({
-    day,
-    date: `${year}-${month - 1}-${day}`,
-    isCurrentMonth: false,
-    isToday: false,
-    activities: []
-  });
-}
-
-// Current month's days
-for (let day = 1; day <= daysInMonth; day++) {
-  const isToday = today.getFullYear() === year && 
-                 today.getMonth() === month - 1 && 
-                 today.getDate() === day;
-  
-  const activities = getActivitiesForDay(month, day);
-  
-  days.push({
-    day,
-    date: `${year}-${month}-${day}`,
-    isCurrentMonth: true,
-    isToday,
-    activities
-  });
-}
-
-// Next month's days to fill the grid
-const remainingDays = 42 - days.length;
-for (let day = 1; day <= remainingDays; day++) {
-  days.push({
-    day,
-    date: `${year}-${month + 1}-${day}`,
-    isCurrentMonth: false,
-    isToday: false,
-    activities: []
-  });
-}
-
-calendarDays.value = days;
-};
-
-const getActivitiesForDay = (month, day) => {
-const activities = [];
-
-cropRecommendations.value.forEach(crop => {
-  if (crop.plantingMonths?.includes(month)) {
-    const plantingDate = new Date(crop.plantingDate);
-    if (plantingDate.getDate() === day && plantingDate.getMonth() + 1 === month) {
-      activities.push({
-        crop: crop.name,
-        type: 'plant'
-      });
-    }
-  }
-  
-  if (crop.harvestMonths?.includes(month)) {
-    const harvestDate = new Date(crop.harvestDate);
-    if (harvestDate.getDate() === day && harvestDate.getMonth() + 1 === month) {
-      activities.push({
-        crop: crop.name,
-        type: 'harvest'
-      });
-    }
-  }
-});
-
-return activities;
-};
-
 // Chart rendering functions
 const renderSeasonChart = () => {
-if (!seasonChart.value || !cropRecommendations.value.length) return;
+  if (!seasonChart.value || !cropRecommendations.value.length) return;
 
-nextTick(() => {
-  const ctx = seasonChart.value.getContext('2d');
-  
-  const chartData = {
-    labels: cropRecommendations.value.map(crop => crop.name),
-    datasets: [{
-      label: 'Success Rate (%)',
-      data: cropRecommendations.value.map(crop => crop.successRate),
-      backgroundColor: cropRecommendations.value.map(crop => {
-        if (crop.successRate >= 85) return 'rgba(16, 185, 129, 0.8)';
-        if (crop.successRate >= 70) return 'rgba(59, 130, 246, 0.8)';
-        if (crop.successRate >= 55) return 'rgba(245, 158, 11, 0.8)';
-        return 'rgba(239, 68, 68, 0.8)';
-      }),
-      borderColor: '#2e5c31',
-      borderWidth: 2
-    }]
-  };
-  
-  new Chart(ctx, {
-    type: 'bar',
-    data: chartData,
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        title: { 
-          display: true, 
-          text: `Crop Success Rate Predictions - ${predictionPeriod.value} Day Period` 
+  nextTick(() => {
+    const ctx = seasonChart.value.getContext('2d');
+
+    // Sort recommendations by success rate for better visualization
+    const sortedRecommendations = [...cropRecommendations.value].sort((a, b) => b.successRate - a.successRate);
+
+    const chartData = {
+      labels: sortedRecommendations.map(crop => crop.name),
+      datasets: [{
+        label: 'Success Rate (%)',
+        data: sortedRecommendations.map(crop => crop.successRate),
+        backgroundColor: sortedRecommendations.map(crop => {
+          if (crop.successRate >= 85) return 'rgba(16, 185, 129, 0.8)'; // Excellent - Green
+          if (crop.successRate >= 70) return 'rgba(59, 130, 246, 0.8)';  // Good - Blue
+          if (crop.successRate >= 55) return 'rgba(245, 158, 11, 0.8)';  // Fair - Orange
+          return 'rgba(239, 68, 68, 0.8)'; // Poor - Red
+        }),
+        borderColor: sortedRecommendations.map(crop => {
+          if (crop.successRate >= 85) return 'rgba(16, 185, 129, 1)';
+          if (crop.successRate >= 70) return 'rgba(59, 130, 246, 1)';
+          if (crop.successRate >= 55) return 'rgba(245, 158, 11, 1)';
+          return 'rgba(239, 68, 68, 1)';
+        }),
+        borderWidth: 2
+      }]
+    };
+
+    new Chart(ctx, {
+      type: 'bar',
+      data: chartData,
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { 
+            display: true,
+            position: 'top',
+            labels: {
+              generateLabels: function(chart) {
+                return [
+                  { text: 'Excellent (85%+)', fillStyle: 'rgba(16, 185, 129, 0.8)', strokeStyle: 'rgba(16, 185, 129, 1)' },
+                  { text: 'Good (70-84%)', fillStyle: 'rgba(59, 130, 246, 0.8)', strokeStyle: 'rgba(59, 130, 246, 1)' },
+                  { text: 'Fair (55-69%)', fillStyle: 'rgba(245, 158, 11, 0.8)', strokeStyle: 'rgba(245, 158, 11, 1)' },
+                  { text: 'Poor (<55%)', fillStyle: 'rgba(239, 68, 68, 0.8)', strokeStyle: 'rgba(239, 68, 68, 1)' }
+                ];
+              }
+            }
+          },
+          title: { 
+            display: true, 
+            text: `Crop Success Rate Predictions - ${predictionPeriod.value} Day Period`,
+            font: { size: 16, weight: 'bold' }
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                const crop = sortedRecommendations[context.dataIndex];
+                return [
+                  `Success Rate: ${context.parsed.y}%`,
+                  `Weather: ${crop.weatherSuitability}`,
+                  `Market Demand: ${crop.marketDemand}`,
+                  `Season: ${crop.season}`
+                ];
+              }
+            }
+          }
+        },
+        scales: {
+          y: { 
+            beginAtZero: true, 
+            max: 100, 
+            title: { 
+              display: true, 
+              text: 'Success Rate (%)',
+              font: { size: 14, weight: 'bold' }
+            },
+            ticks: {
+              stepSize: 10,
+              callback: function(value) {
+                return value + '%';
+              }
+            },
+            grid: {
+              color: 'rgba(0, 0, 0, 0.1)'
+            }
+          },
+          x: { 
+            title: { 
+              display: true, 
+              text: 'Crops',
+              font: { size: 14, weight: 'bold' }
+            },
+            ticks: {
+              maxRotation: 45,
+              minRotation: 45
+            }
+          }
+        },
+        animation: {
+          duration: 1500,
+          easing: 'easeInOutQuart'
         }
-      },
-      scales: {
-        y: { beginAtZero: true, max: 100, title: { display: true, text: 'Success Rate (%)' } },
-        x: { title: { display: true, text: 'Crops' } }
       }
-    }
+    });
   });
-});
+};
+
+const renderComparisonChart = () => {
+  if (!cropRecommendations.value.length) return;
+  
+  // Create a radar chart for multi-dimensional comparison
+  const topCrops = cropRecommendations.value.slice(0, 5); // Top 5 crops
+  
+  const radarData = {
+    labels: ['Success Rate', 'Weather Suitability', 'Market Demand', 'Region Fit'],
+    datasets: topCrops.map((crop, index) => {
+      const colors = [
+        'rgba(16, 185, 129, 0.6)',   // Green
+        'rgba(59, 130, 246, 0.6)',   // Blue  
+        'rgba(245, 158, 11, 0.6)',   // Orange
+        'rgba(139, 69, 19, 0.6)',    // Brown
+        'rgba(147, 51, 234, 0.6)'    // Purple
+      ];
+      
+      return {
+        label: crop.name,
+        data: [
+          crop.successRate,
+          getNumericValue(crop.weatherSuitability),
+          getNumericValue(crop.marketDemand),
+          getNumericValue(crop.regionSuitability)
+        ],
+        backgroundColor: colors[index],
+        borderColor: colors[index].replace('0.6', '1'),
+        borderWidth: 2,
+        pointBackgroundColor: colors[index].replace('0.6', '1'),
+        pointBorderColor: '#fff',
+        pointHoverBackgroundColor: '#fff',
+        pointHoverBorderColor: colors[index].replace('0.6', '1')
+      };
+    })
+  };
+
+  // You can add this radar chart to a new canvas element if needed
+};
+
+// Helper function to convert text ratings to numeric values
+const getNumericValue = (rating) => {
+  switch(rating.toLowerCase()) {
+    case 'excellent': return 90;
+    case 'good': return 75;
+    case 'fair': return 60;
+    case 'high': return 85;
+    case 'medium': return 65;
+    case 'low': return 40;
+    case 'poor': return 30;
+    default: return 50;
+  }
 };
 
 const renderWeatherCharts = () => {
@@ -1130,14 +1267,6 @@ try {
   
   showStatus('success', `Oriental Mindoro crop season predictions generated for ${predictionPeriod.value} days!`);
   
-  // Initialize calendar
-  const now = new Date();
-  currentCalendarMonth.value = {
-    name: now.toLocaleString('default', { month: 'long' }),
-    number: now.getMonth() + 1
-  };
-  currentCalendarYear.value = now.getFullYear();
-  generateCalendarDays();
 } catch (err) {
   console.error('Error generating predictions:', err);
   error.value = 'Failed to generate predictions. Please check your internet connection and try again.';
@@ -1251,7 +1380,11 @@ try {
 };
 
 onMounted(async () => {
-// Auto-generate initial predictions after a short delay
+// Fetch real weather data first
+await fetchCurrentWeather();
+await fetchWeatherForecast();
+
+// Then generate predictions after a short delay
 setTimeout(() => {
   generatePredictions();
 }, 1500);
@@ -1398,6 +1531,15 @@ setTimeout(() => {
   font-size: 0.85rem;
   color: #6b7280;
   margin: 0;
+}
+
+.weather-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #dc2626;
+  font-size: 0.8rem;
+  margin-top: 8px;
 }
 
 .weather-details {
@@ -1930,191 +2072,6 @@ setTimeout(() => {
   margin: 5px 0;
 }
 
-/* Calendar Styles */
-.planting-calendar {
-  background-color: white;
-  border-radius: 8px;
-  padding: 20px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  margin-top: 24px;
-}
-
-.planting-calendar h2 {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: #111827;
-  margin: 0 0 20px 0;
-}
-
-.calendar-container {
-  width: 100%;
-}
-
-.calendar-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-  padding-bottom: 15px;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.month-navigation {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-}
-
-.month-navigation h3 {
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: #111827;
-  margin: 0;
-  min-width: 180px;
-  text-align: center;
-}
-
-.nav-btn {
-  background-color: #f3f4f6;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  padding: 8px;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.nav-btn:hover {
-  background-color: #e5e7eb;
-}
-
-.calendar-legend {
-  display: flex;
-  gap: 20px;
-}
-
-.legend-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.85rem;
-  color: #374151;
-}
-
-.legend-color {
-  width: 12px;
-  height: 12px;
-  border-radius: 2px;
-}
-
-.legend-color.plant {
-  background-color: #d1fae5;
-  border: 1px solid #059669;
-}
-
-.legend-color.harvest {
-  background-color: #fef3c7;
-  border: 1px solid #d97706;
-}
-
-.calendar-grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 1px;
-  background-color: #e5e7eb;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.calendar-day-header {
-  background-color: #f9fafb;
-  padding: 12px 8px;
-  text-align: center;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: #374151;
-}
-
-.calendar-day {
-  background-color: white;
-  min-height: 100px;
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  position: relative;
-}
-
-.calendar-day.other-month {
-  background-color: #f9fafb;
-  color: #9ca3af;
-}
-
-.calendar-day.today {
-  background-color: #eff6ff;
-  border: 2px solid #3b82f6;
-}
-
-.calendar-day.has-activities {
-  background-color: #fefce8;
-}
-
-.day-number {
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: #111827;
-  margin-bottom: 4px;
-}
-
-.calendar-day.other-month .day-number {
-  color: #9ca3af;
-}
-
-.day-activities {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.activity-item {
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 0.7rem;
-  font-weight: 500;
-  text-align: center;
-  cursor: pointer;
-}
-
-.activity-item.plant {
-  background-color: #d1fae5;
-  color: #059669;
-  border: 1px solid #a7f3d0;
-}
-
-.activity-item.harvest {
-  background-color: #fef3c7;
-  color: #d97706;
-  border: 1px solid #fcd34d;
-}
-
-.activity-text {
-  display: block;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.more-activities {
-  font-size: 0.65rem;
-  color: #6b7280;
-  text-align: center;
-  margin-top: 2px;
-  font-style: italic;
-}
-
 /* View Button Styles */
 .view-btn {
   display: flex;
@@ -2171,25 +2128,67 @@ setTimeout(() => {
   .weather-analysis .analysis-grid {
     grid-template-columns: 1fr;
   }
-  
-  .calendar-header {
-    flex-direction: column;
-    gap: 15px;
-    align-items: stretch;
-  }
-  
-  .calendar-legend {
-    justify-content: center;
-  }
-  
-  .calendar-day {
-    min-height: 80px;
-    padding: 4px;
-  }
-  
-  .activity-item {
-    font-size: 0.6rem;
-    padding: 1px 4px;
-  }
+}
+
+.chart-wrapper-enhanced {
+  height: 400px;
+  margin-top: 16px;
+  padding: 10px;
+  background-color: #fafafa;
+  border-radius: 8px;
+}
+
+.chart-summary {
+  margin-top: 20px;
+  padding: 16px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+}
+
+.summary-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 16px;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.stat-item.excellent {
+  background-color: rgba(16, 185, 129, 0.1);
+  border: 2px solid rgba(16, 185, 129, 0.3);
+}
+
+.stat-item.good {
+  background-color: rgba(59, 130, 246, 0.1);
+  border: 2px solid rgba(59, 130, 246, 0.3);
+}
+
+.stat-item.fair {
+  background-color: rgba(245, 158, 11, 0.1);
+  border: 2px solid rgba(245, 158, 11, 0.3);
+}
+
+.stat-item.poor {
+  background-color: rgba(239, 68, 68, 0.1);
+  border: 2px solid rgba(239, 68, 68, 0.3);
+}
+
+.stat-label {
+  font-size: 0.8rem;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #111827;
 }
 </style>

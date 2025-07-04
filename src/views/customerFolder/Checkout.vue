@@ -11,7 +11,7 @@
     
     <!-- Header -->
     <div class="header">
-      <button class="back-button" @click="$emit('navigate', 'ProductDetails')">
+      <button class="back-button" @click="navigateToProductDetails">
         <ChevronLeft size="22" />
       </button>
       <h1>Checkout</h1>
@@ -382,13 +382,26 @@
         <div class="success-icon">
           <CheckCircle size="40" />
         </div>
-          <h2>Order Placed Successfully!</h2>
-        <p>Your order has been confirmed and will be processed shortly.</p>
-        <p><small>A confirmation email has been sent to your email address.</small></p>
+        <h2>Order{{ multipleOrderCodes.length > 1 ? 's' : '' }} Placed Successfully!</h2>
+        <p v-if="multipleOrderCodes.length === 1">Your order has been confirmed and will be processed shortly.</p>
+        <p v-else>Your {{ multipleOrderCodes.length }} orders have been confirmed. Each seller will process their items separately.</p>
+        <p><small>Confirmation email{{ multipleOrderCodes.length > 1 ? 's have' : ' has' }} been sent to your email address.</small></p>
         
-        <div class="order-number">
+        <!-- Single order display -->
+        <div v-if="multipleOrderCodes.length === 1" class="order-number">
           <p class="label">Order Code</p>
           <p class="value">#{{ orderNumber }}</p>
+        </div>
+        
+        <!-- Multiple orders display -->
+        <div v-else class="multiple-orders">
+          <p class="label">Order Codes</p>
+          <div class="order-codes-list">
+            <div v-for="(code, index) in multipleOrderCodes" :key="code" class="order-code-item">
+              <span class="order-code">#{{ code }}</span>
+              <small class="order-note">Seller {{ index + 1 }}</small>
+            </div>
+          </div>
         </div>
         
         <!-- Add cancellation notice -->
@@ -494,6 +507,98 @@ export default {
     
     // User registration address
     const userRegistrationAddress = ref('');
+    
+    // Validate seller delivery areas against user's delivery municipality
+    const validateSellerDeliveryArea = async (sellerId, deliveryMunicipality) => {
+      try {
+        console.log(`🔍 Validating delivery area for seller ${sellerId} and municipality "${deliveryMunicipality}"`);
+        
+        // Get seller document
+        const sellerDocRef = doc(db, 'sellers', sellerId);
+        const sellerDoc = await getDoc(sellerDocRef);
+        
+        if (!sellerDoc.exists()) {
+          console.error(`Seller document not found for ID: ${sellerId}`);
+          return { isValid: false, reason: 'Seller not found' };
+        }
+        
+        const sellerData = sellerDoc.data();
+        const areasCovered = sellerData.deliveryInfo?.areasCovered || [];
+        
+        console.log('📍 Seller areas covered:', areasCovered);
+        console.log('📍 Customer delivery municipality:', deliveryMunicipality);
+        
+        // Enhanced matching logic - check exact match and normalize text
+        const normalizedDeliveryMunicipality = deliveryMunicipality.toLowerCase().trim();
+        
+        // Check if user's delivery municipality is in seller's covered areas
+        const isValidArea = areasCovered.some(area => {
+          const normalizedArea = area.toLowerCase().trim();
+          
+          // Exact match
+          if (normalizedArea === normalizedDeliveryMunicipality) {
+            console.log(`✅ Exact match found: "${area}" matches "${deliveryMunicipality}"`);
+            return true;
+          }
+          
+          // Handle common variations (e.g., "Calapan City" vs "Calapan")
+          if (normalizedArea.includes(normalizedDeliveryMunicipality) || 
+              normalizedDeliveryMunicipality.includes(normalizedArea)) {
+            console.log(`✅ Partial match found: "${area}" matches "${deliveryMunicipality}"`);
+            return true;
+          }
+          
+          return false;
+        });
+        
+        if (!isValidArea) {
+          console.log(`❌ No match found for "${deliveryMunicipality}" in areas: [${areasCovered.join(', ')}]`);
+          return {
+            isValid: false,
+            reason: `Seller does not deliver to ${deliveryMunicipality}`,
+            areasCovered: areasCovered,
+            farmName: sellerData.farmDetails?.farmName || 'Unknown Farm'
+          };
+        }
+        
+        console.log(`✅ Delivery area validation passed for "${deliveryMunicipality}"`);
+        return { isValid: true };
+        
+      } catch (error) {
+        console.error('Error validating seller delivery area:', error);
+        return { isValid: false, reason: 'Error validating delivery area' };
+      }
+    };
+    
+    // Helper function to extract municipality from address string
+    const extractMunicipalityFromAddress = (addressString) => {
+      if (!addressString) return null;
+      
+      const knownMunicipalities = Object.keys(orientalMindoroData);
+      
+      // First, try comma-separated format
+      const addressParts = addressString.split(',');
+      if (addressParts.length >= 2) {
+        const potentialMunicipality = addressParts[1].trim();
+        
+        // Check if it matches any known municipality
+        for (const municipality of knownMunicipalities) {
+          if (potentialMunicipality.toLowerCase().includes(municipality.toLowerCase()) ||
+              municipality.toLowerCase().includes(potentialMunicipality.toLowerCase())) {
+            return municipality;
+          }
+        }
+      }
+      
+      // If comma separation doesn't work, search for any known municipality in the address
+      for (const municipality of knownMunicipalities) {
+        if (addressString.toLowerCase().includes(municipality.toLowerCase())) {
+          return municipality;
+        }
+      }
+      
+      return null;
+    };
     
     // Enhanced seller validation function
     const validateSellerExists = async (sellerId) => {
@@ -672,6 +777,7 @@ export default {
     
     // Order number for success modal
     const orderNumber = ref('');
+    const multipleOrderCodes = ref([]); // Store all order codes for multi-seller orders
     
     // Address data
     const addresses = ref([]);
@@ -1095,6 +1201,8 @@ export default {
       }
 
       // Enhanced validation for all order items
+      console.log('🔍 STARTING DELIVERY AREA VALIDATION FOR ALL ITEMS');
+      
       for (const item of orderItems.value) {
         if (!item.productId) {
           showNotificationMessage(`Product ID missing for ${item.productName || 'an item'}`, 'error');
@@ -1119,7 +1227,62 @@ export default {
           showNotificationMessage(`Seller for ${item.productName || 'an item'} is no longer available. Please refresh and try again.`, 'error');
           return;
         }
+        
+        // ✅ CRITICAL: DELIVERY AREA VALIDATION - Check specific selected delivery address
+        // This validation ensures the customer's selected delivery municipality matches
+        // the seller's covered delivery areas EXACTLY
+        let deliveryMunicipality = null;
+        
+        if (selectedAddress.value.isRegistrationAddress) {
+          // For registration address, extract municipality from the address string
+          deliveryMunicipality = extractMunicipalityFromAddress(userRegistrationAddress.value);
+          
+          if (!deliveryMunicipality) {
+            showNotificationMessage('Could not determine your municipality from registration address. Please add a specific delivery address with complete municipality information.', 'error');
+            return;
+          }
+        } else {
+          // For selected address, use the specific municipality - THIS IS THE KEY VALIDATION
+          deliveryMunicipality = selectedAddress.value.municipality;
+        }
+        
+        console.log('=== DELIVERY VALIDATION DEBUG ===');
+        console.log('Selected address:', selectedAddress.value);
+        console.log('Is registration address:', selectedAddress.value.isRegistrationAddress);
+        console.log('Final delivery municipality:', deliveryMunicipality);
+        console.log('Item seller ID:', item.sellerId);
+        console.log('Item product name:', item.productName);
+        
+        if (deliveryMunicipality) {
+          const deliveryValidation = await validateSellerDeliveryArea(item.sellerId, deliveryMunicipality);
+          console.log('Delivery validation result:', deliveryValidation);
+          
+          if (!deliveryValidation.isValid) {
+            const farmName = deliveryValidation.farmName || 'Unknown Farm';
+            let errorMessage = `🚫 Cannot place order!\n\n${farmName} does not deliver to ${deliveryMunicipality}.`;
+            
+            if (deliveryValidation.areasCovered && deliveryValidation.areasCovered.length > 0) {
+              errorMessage += `\n\n📍 Available delivery areas:\n${deliveryValidation.areasCovered.join(', ')}.`;
+              errorMessage += `\n\n💡 Solution: Change your delivery address to one of the available areas above.`;
+            }
+            
+            console.log('🛑 DELIVERY VALIDATION FAILED - BLOCKING ORDER');
+            console.log('Expected municipality:', deliveryMunicipality);
+            console.log('Seller areas covered:', deliveryValidation.areasCovered);
+            
+            showNotificationMessage(errorMessage, 'error');
+            return;
+          } else {
+            console.log(`✅ Delivery validation passed for ${deliveryMunicipality}`);
+          }
+        } else {
+          console.log('🛑 NO DELIVERY MUNICIPALITY FOUND - BLOCKING ORDER');
+          showNotificationMessage('Could not determine your delivery municipality. Please select a complete address with municipality information.', 'error');
+          return;
+        }
       }
+      
+      console.log('✅ ALL DELIVERY AREA VALIDATIONS PASSED - PROCEEDING WITH ORDER');
       
       try {
         if (!auth.currentUser) throw new Error('User not authenticated');
@@ -1140,20 +1303,22 @@ export default {
           console.log(`Seller ${sellerId}: ${itemsBySeller[sellerId].length} items`);
         });
 
-        // Check if multiple sellers - require separate payments
+        // Handle multiple sellers by creating separate orders for each seller
         const sellerIds = Object.keys(itemsBySeller);
+        console.log(`Processing orders for ${sellerIds.length} seller(s)`);
+        
+        // If multiple sellers, show informative message
         if (sellerIds.length > 1) {
           showNotificationMessage(
-            `You have items from ${sellerIds.length} different sellers. Each seller requires a separate payment. Please checkout items from one seller at a time.`,
-            'error'
+            `Processing ${sellerIds.length} separate orders for different sellers. Each seller will receive their own order.`,
+            'info'
           );
-          return;
         }
 
-        // Generate order code for the single seller
-        const orderCode = generateOrderCode();
-        orderNumber.value = orderCode;
-
+        // Process orders for each seller separately
+        const allOrderCodes = [];
+        const successfulOrders = [];
+        
         // Get user data
         const userDoc = await getDoc(doc(db, 'users', auth.currentUser.uid));
         const userData = userDoc.exists() ? userDoc.data() : {};
@@ -1168,139 +1333,179 @@ export default {
               cartItemsToDelete.push(item.cartItemId);
             }
           });
-        }        // PHASE 1: VALIDATION - Check all products exist and get seller user IDs
-        const productPromises = orderItems.value.map(item => 
-          getDoc(doc(db, 'products', item.productId))
-        );
-        const productSnapshots = await Promise.all(productPromises);
-
-        // Get seller data to extract user IDs
-        const sellerPromises = orderItems.value.map(item => 
-          getDoc(doc(db, 'sellers', item.sellerId))
-        );
-        const sellerSnapshots = await Promise.all(sellerPromises);
-
-        // Verify products exist and prepare seller user IDs
-        const orderItemsWithUserIds = [];
-        for (let i = 0; i < orderItems.value.length; i++) {
-          const item = orderItems.value[i];
-          const productDoc = productSnapshots[i];
-          const sellerDoc = sellerSnapshots[i];
-          
-          if (!productDoc.exists()) {
-            throw new Error(`Product ${item.productName || item.productId} not found`);
-          }
-          
-          if (!sellerDoc.exists()) {
-            throw new Error(`Seller not found for product ${item.productName || item.productId}`);
-          }
-          
-          const sellerData = sellerDoc.data();
-          const sellerUserId = sellerData.userId || sellerData.uid || auth.currentUser?.uid;
-          
-          if (!sellerUserId) {
-            throw new Error(`Seller user ID not found for product ${item.productName || item.productId}`);
-          }
-          
-          orderItemsWithUserIds.push({
-            ...item,
-            sellerUserId: sellerUserId // This is the actual user ID we want to save
-          });
-          
-          console.log(`✅ Item ${i + 1}: Document ID "${item.sellerId}" → User ID "${sellerUserId}"`);
         }
         
-        console.log('=== SELLER ID MAPPING COMPLETE ===');
-        console.log('All items now have correct seller user IDs for Orders.vue compatibility');        // PHASE 2: TRANSACTION - Only writes here
-        await runTransaction(db, async (transaction) => {
-          // Process each item
-          for (let i = 0; i < orderItemsWithUserIds.length; i++) {
-            const item = orderItemsWithUserIds[i];
-            const productData = productSnapshots[i].data();
+        for (const sellerId of sellerIds) {
+          const sellerItems = itemsBySeller[sellerId];
+          const orderCode = generateOrderCode();
+          allOrderCodes.push(orderCode);
+          
+          console.log(`Processing order ${orderCode} for seller ${sellerId} with ${sellerItems.length} items`);
+          
+          try {
+            // PHASE 1: VALIDATION - Check products exist for this seller
+            const productPromises = sellerItems.map(item => 
+              getDoc(doc(db, 'products', item.productId))
+            );
+            const productSnapshots = await Promise.all(productPromises);
 
-            // Calculate all price components
-            const itemPrice = item.unitPrice * item.quantity;
-            const deliveryFeeValue = paymentMethod.value !== 'pickup' ? deliveryFee.value : 0;
-            const taxValue = itemPrice * 0.08; // 8% tax
-            const totalPrice = itemPrice + deliveryFeeValue + taxValue;
-
-            // Prepare location data based on address type
-            let locationData;
-            if (selectedAddress.value.isRegistrationAddress) {
-              locationData = {
-                address: userRegistrationAddress.value,
-                notes: 'Registration Address'
-              };
-            } else {
-              locationData = {
-                province: selectedAddress.value.province,
-                municipality: selectedAddress.value.municipality,
-                barangay: selectedAddress.value.barangay,
-                address: `${selectedAddress.value.barangay}, ${selectedAddress.value.municipality}, ${selectedAddress.value.province}`,
-                notes: selectedAddress.value.locationNotes || ''
-              };
+            // Verify products exist
+            for (let i = 0; i < sellerItems.length; i++) {
+              const item = sellerItems[i];
+              const productDoc = productSnapshots[i];
+              
+              if (!productDoc.exists()) {
+                throw new Error(`Product ${item.productName || item.productId} not found`);
+              }
             }
+            
+            console.log(`✅ Products validated for seller ${sellerId}`);
 
-            // Create order document with complete financial information
-            // Create order document with complete financial information
-              const orderRef = doc(collection(db, 'orders'));
-              transaction.set(orderRef, {
-                orderCode: orderCode,
-                sellerId: item.sellerUserId, // ✅ NOW USING USER ID INSTEAD OF DOCUMENT ID
-                productId: item.productId,
-                productName: item.productName,
-                productImage: item.productImage || placeholderImage,
-                unitPrice: item.unitPrice,
-                quantity: item.quantity,
-                unit: item.unit,
-                itemPrice: itemPrice,
-                paymentMethod: paymentMethod.value,
-                gcashNumber: paymentMethod.value === 'gcash' ? gcashDetails.value.number : null,
-                deliveryOption: paymentMethod.value !== 'pickup' ? deliveryOption.value : null,
-                deliveryFee: deliveryFeeValue,
-                deliveryDistance: deliveryDistance.value || 0,
-                tax: taxValue,
-                totalPrice: totalPrice,
-                Location: locationData,
-                status: 'Pending', // Explicitly set to Pending
-                payStatus: 'unpaid',
-                createdAt: serverTimestamp(),
-                userId: auth.currentUser.uid,
-                username: username,
-                isBuyNow: isBuyNow.value
-              });
+            // PHASE 2: TRANSACTION - Create order for this seller
+            await runTransaction(db, async (transaction) => {
+              // Process each item for this seller
+              for (let i = 0; i < sellerItems.length; i++) {
+                const item = sellerItems[i];
+                const productData = productSnapshots[i].data();
 
-            // Create sale record with accurate financial data
-            const saleRef = doc(collection(db, 'sales'));
-            transaction.set(saleRef, {
-              productId: item.productId,
-              productName: item.productName,
-              category: productData.category || 'uncategorized',
-              quantity: item.quantity,
-              unit: item.unit,
-              price: item.unitPrice,
-              totalPrice: itemPrice,
-              timestamp: serverTimestamp(),
-              sellerId: item.sellerUserId, // ✅ ALSO USING USER ID HERE
-              season: getCurrentSeason(),
-              orderCode: orderCode,
-              isBuyNow: isBuyNow.value,
-              paymentStatus: 'unpaid'
+                // Calculate all price components
+                const itemPrice = item.unitPrice * item.quantity;
+                const deliveryFeeValue = paymentMethod.value !== 'pickup' ? deliveryFee.value : 0;
+                const taxValue = itemPrice * 0.08; // 8% tax
+                const totalPrice = itemPrice + deliveryFeeValue + taxValue;
+
+                // Prepare location data based on address type
+                let locationData;
+                if (selectedAddress.value.isRegistrationAddress) {
+                  locationData = {
+                    address: userRegistrationAddress.value,
+                    notes: 'Registration Address'
+                  };
+                } else {
+                  locationData = {
+                    province: selectedAddress.value.province,
+                    municipality: selectedAddress.value.municipality,
+                    barangay: selectedAddress.value.barangay,
+                    address: `${selectedAddress.value.barangay}, ${selectedAddress.value.municipality}, ${selectedAddress.value.province}`,
+                    notes: selectedAddress.value.locationNotes || ''
+                  };
+                }
+
+                // Create order document with complete financial information
+                const orderRef = doc(collection(db, 'orders'));
+                
+                console.log(`🔍 Creating order for seller:`, {
+                  sellerId: item.sellerId,
+                  sellerIdType: typeof item.sellerId,
+                  productId: item.productId,
+                  productName: item.productName,
+                  orderCode: orderCode
+                });
+                
+                transaction.set(orderRef, {
+                  orderCode: orderCode,
+                  sellerId: item.sellerId, // ✅ SELLER DOCUMENT ID (for seller identification)
+                  productId: item.productId,
+                  productName: item.productName,
+                  productImage: item.productImage || placeholderImage,
+                  unitPrice: item.unitPrice,
+                  quantity: item.quantity,
+                  unit: item.unit,
+                  itemPrice: itemPrice,
+                  paymentMethod: paymentMethod.value,
+                  gcashNumber: paymentMethod.value === 'gcash' ? gcashDetails.value.number : null,
+                  deliveryOption: paymentMethod.value !== 'pickup' ? deliveryOption.value : null,
+                  deliveryFee: deliveryFeeValue,
+                  deliveryDistance: deliveryDistance.value || 0,
+                  estimatedDeliveryHours: deliveryOption.value === 'express' ? 24 : 48,
+                  tax: taxValue,
+                  totalPrice: totalPrice,
+                  Location: locationData,
+                  status: 'Pending', // Explicitly set to Pending
+                  payStatus: 'unpaid',
+                  paymentStatus: 'unpaid',
+                  createdAt: serverTimestamp(),
+                  lastUpdated: serverTimestamp(),
+                  userId: auth.currentUser.uid,
+                  username: username,
+                  isBuyNow: isBuyNow.value,
+                  refundId: null,
+                  refundrequestdAt: null,
+                  sellerContact: null, // Will be populated later if needed
+                  // Multi-seller order metadata
+                  isMultiSellerOrder: sellerIds.length > 1,
+                  totalSellersCount: sellerIds.length,
+                  relatedOrderCodes: allOrderCodes.filter(code => code !== orderCode) // Other order codes for this customer
+                });
+
+                // Create sale record with accurate financial data
+                const saleRef = doc(collection(db, 'sales'));
+                transaction.set(saleRef, {
+                  productId: item.productId,
+                  productName: item.productName,
+                  category: productData.category || 'uncategorized',
+                  quantity: item.quantity,
+                  unit: item.unit,
+                  price: item.unitPrice,
+                  totalPrice: itemPrice,
+                  timestamp: serverTimestamp(),
+                  sellerId: item.sellerId, // ✅ SELLER DOCUMENT ID (for seller identification)
+                  season: getCurrentSeason(),
+                  orderCode: orderCode,
+                  isBuyNow: isBuyNow.value,
+                  paymentStatus: 'unpaid',
+                  // Multi-seller order metadata
+                  isMultiSellerOrder: sellerIds.length > 1,
+                  totalSellersCount: sellerIds.length
+                });
+              }
             });
+
+            successfulOrders.push({
+              sellerId: sellerId,
+              orderCode: orderCode,
+              itemCount: sellerItems.length
+            });
+            
+            console.log(`✅ Order ${orderCode} created successfully for seller ${sellerId}`);
+            
+          } catch (error) {
+            console.error(`❌ Failed to create order for seller ${sellerId}:`, error);
+            throw new Error(`Failed to create order for seller ${sellerId}: ${error.message}`);
           }
+        }
+        
+        console.log('=== ALL ORDERS CREATED SUCCESSFULLY ===');
+        console.log(`Total orders created: ${successfulOrders.length}`);
+        successfulOrders.forEach(order => {
+          console.log(`Order ${order.orderCode}: Seller ${order.sellerId} (${order.itemCount} items)`);
         });
 
-        // PHASE 3: CLEANUP - Delete cart items after successful transaction
+        // Set the primary order number for success modal (first order)
+        orderNumber.value = allOrderCodes[0];
+        multipleOrderCodes.value = allOrderCodes;
+
+        // PHASE 3: CLEANUP - Update cart items status after successful transaction
         if (!isBuyNow.value && cartItemsToDelete.length > 0) {
           try {
-            const deletePromises = cartItemsToDelete.map(cartItemId => 
-              deleteDoc(doc(db, 'carts', cartItemId))
-            );
-            await Promise.all(deletePromises);
+            console.log('=== UPDATING CART STATUS ===');
+            console.log(`Cart items to update: ${cartItemsToDelete.length}`);
+            console.log('Cart item IDs:', cartItemsToDelete);
+            
+            const updatePromises = cartItemsToDelete.map(cartItemId => {
+              console.log(`Updating cart item ${cartItemId} to purchased status`);
+              return updateDoc(doc(db, 'carts', cartItemId), { cartStatus: true });
+            });
+            
+            await Promise.all(updatePromises);
+            console.log(`✅ Successfully updated ${cartItemsToDelete.length} cart items to purchased status`);
           } catch (error) {
-            console.error('Error deleting cart items:', error);
+            console.error('❌ Error updating cart items status:', error);
             // Non-critical error, doesn't affect order success
           }
+        } else {
+          console.log('=== CART STATUS UPDATE SKIPPED ===');
+          console.log(`isBuyNow: ${isBuyNow.value}, cartItemsToDelete.length: ${cartItemsToDelete.length}`);
         }
 
         // PHASE 4: Handle Payment
@@ -1530,7 +1735,16 @@ export default {
         // For cash on delivery, show success modal
         showSuccessModal.value = true;
         canCancel.value = true;
-        showNotificationMessage('Order placed successfully! Check your email for confirmation.', 'success');
+        
+        // Create success message based on number of orders
+        let successMessage;
+        if (successfulOrders.length === 1) {
+          successMessage = 'Order placed successfully! Check your email for confirmation.';
+        } else {
+          successMessage = `${successfulOrders.length} orders placed successfully! Each seller will process their items separately. Check your email for confirmations.`;
+        }
+        
+        showNotificationMessage(successMessage, 'success');
 
         // Save GCash number if requested
         if (paymentMethod.value === 'gcash' && saveGcash.value) {
@@ -1636,6 +1850,16 @@ export default {
       showSuccessModal.value = false;
       router.push('/');
     };
+
+    const navigateToProductDetails = () => {
+      // Get the first product's ID from order items
+      if (orderItems.value.length > 0 && orderItems.value[0].productId) {
+        router.push(`/product/${orderItems.value[0].productId}`);
+      } else {
+        // Fallback to home if no product ID is available
+        router.push('/');
+      }
+    };
     
     return {
       orderItems,
@@ -1681,11 +1905,12 @@ export default {
       
       // Notification
       showNotification,
-      notificationMessage,
+           notificationMessage,
       notificationType,
         // Order success
       showSuccessModal,
       orderNumber,
+      multipleOrderCodes,
       
       // Email sending
       sendingEmail,
@@ -1695,6 +1920,7 @@ export default {
       saveNewAddress,
       cancelNewAddress,
       continueShopping,
+      navigateToProductDetails,
       showNotificationMessage,
       canCancel,
       cancelOrder,
@@ -1756,6 +1982,862 @@ export default {
 
 .quantity-btn:hover {
   background-color: #e0e0e0;
+}
+
+.quantity {
+  font-size: 14px;
+  min-width: 40px;
+  text-align: center;
+}
+
+.price {
+  font-size: 18px;
+  font-weight: 600;
+  color: #2e5c31;
+}
+
+/* Remove the seller-id style as we're hiding it */
+.seller-id {
+  display: none;
+}
+
+/* Adjust product-item layout */
+.product-item {
+  flex-direction: column;
+  gap: 12px;
+}
+
+.product-image {
+  width: 100%;
+  height: 150px;
+}
+
+.product-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.checkout {
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 80px;
+  background-color: #f5f5f5;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  padding: 20px 15px;
+  background-color: #2e5c31;
+  color: white;
+}
+
+.back-button {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.header h1 {
+  font-size: 18px;
+  font-weight: 600;
+  margin-left: 15px;
+}
+
+.checkout-content {
+  flex: 1;
+  padding: 15px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.checkout-section {
+  background-color: white;
+  border-radius: 15px;
+  padding: 15px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.checkout-section h2 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #2e5c31;
+  margin-bottom: 15px;
+}
+
+.change-button {
+  color: #2e5c31;
+  font-size: 14px;
+  font-weight: 500;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* Delivery info styles */
+.delivery-info {
+  margin-top: 5px;
+  color: #666;
+  font-size: 12px;
+}
+
+.delivery-loading {
+  padding: 20px;
+  text-align: center;
+  color: #666;
+}
+
+.delivery-error {
+  padding: 10px;
+  background-color: #fff3cd;
+  border: 1px solid #ffeaa7;
+  border-radius: 5px;
+  color: #856404;
+  font-size: 12px;
+  margin-top: 10px;
+}
+
+.distance-info {
+  font-size: 11px;
+  color: #888;
+  margin-top: 2px;
+}
+
+/* Loading and error states */
+.loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: rgba(255, 255, 255, 0.8);
+  z-index: 100;
+}
+
+.loading-spinner {
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #2e5c31;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.error-message {
+  padding: 20px;
+  background-color: #ffebee;
+  color: #c62828;
+  border-radius: 8px;
+  margin: 15px;
+  text-align: center;
+}
+
+.error-message button {
+  margin-top: 10px;
+  padding: 8px 16px;
+  background-color: #2e5c31;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 20px;
+}
+
+.empty-state button {
+  margin-top: 10px;
+  padding: 10px 20px;
+  background-color: #2e5c31;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+/* Address styles */
+.address-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.address-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background-color: #f0e6ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #7b61ff;
+  flex-shrink: 0;
+}
+
+.address-details h3 {
+  font-size: 16px;
+  font-weight: 500;
+  margin-bottom: 5px;
+}
+
+.address-details p {
+  font-size: 14px;
+  color: #666;
+}
+
+/* Product item styles */
+.order-items {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.product-item {
+  display: flex;
+  gap: 15px;
+  padding: 0;
+  background-color: transparent;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.product-image {
+  width: 80px;
+  height: 80px;
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: #f5f5f5;
+  flex-shrink: 0;
+}
+
+.product-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.product-details {
+  flex: 1;
+}
+
+.product-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 5px;
+}
+
+.product-header h3 {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.seller-id {
+  font-size: 12px;
+  color: #666;
+}
+
+.weight {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.product-price-quantity {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.price {
+  font-size: 18px;
+  font-weight: 600;
+  color: #2e5c31;
+}
+
+.product-id {
+  font-size: 12px;
+  color: #666;
+}
+
+/* Payment method styles */
+.options-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.option-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.option-item.active {
+  border-color: #2e5c31;
+  background-color: rgba(46, 92, 49, 0.05);
+}
+
+.radio-input {
+  display: none;
+}
+
+.option-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.option-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background-color: rgba(46, 92, 49, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #2e5c31;
+}
+
+.option-icon.express {
+  background-color: #f0e6ff;
+  color: #7b61ff;
+}
+
+.option-icon.gcash {
+  background-color: #e6f0ff;
+  color: #3498db;
+}
+
+.option-icon.pickup {
+  background-color: #fff4e6;
+  color: #e67e22;
+}
+
+/* Peso icon for Cash on Delivery */
+.peso-icon {
+  font-size: 18px;
+  font-weight: bold;
+  color: #3498db;
+}
+
+.option-title {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.gcash-details {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid #eee;
+}
+
+.form-group {
+  margin-bottom: 15px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 5px;
+  color: #333;
+}
+
+.form-group input[type="text"] {
+  width: 100%;
+  height: 45px;
+  padding: 0 15px;
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.checkbox-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: #333;
+  cursor: pointer;
+}
+
+.checkbox-container input {
+  width: 18px;
+  height: 18px;
+}
+
+/* Delivery options */
+.delivery-options h3, .pickup-options h3 {
+  font-size: 16px;
+  font-weight: 500;
+  margin-bottom: 12px;
+}
+
+.option-details {
+  display: flex;
+  flex-direction: column;
+}
+
+.option-subtitle {
+  font-size: 12px;
+  color: #666;
+}
+
+.option-price {
+  font-size: 14px;
+  font-weight: 500;
+  color: #2e5c31;
+}
+
+/* Order total styles */
+.total-breakdown {
+  display: flex;
+  flex-direction: column;
+}
+
+.total-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.total-row.final {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+.total-row.final span:last-child {
+  color: #2e5c31;
+}
+
+.separator {
+  height: 1px;
+  background-color: #eee;
+  margin: 15px 0;
+}
+
+/* Bottom action */
+.bottom-action {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 15px;
+  background-color: white;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+}
+
+.place-order-button {
+  width: 100%;
+  height: 50px;
+  background-color: #2e5c31;
+  color: white;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  box-shadow: 0 3px 8px rgba(46, 92, 49, 0.3);
+  transition: all 0.2s ease;
+  border: none;
+  cursor: pointer;
+}
+
+.place-order-button:hover {
+  background-color: #26492a;
+}
+
+.place-order-button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+/* Modal Styles */
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal-content {
+  width: 90%;
+  max-width: 400px;
+  background-color: white;
+  border-radius: 15px;
+  overflow: hidden;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px;
+  border-bottom: 1px solid #eee;
+}
+
+.modal-header h2 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.close-button {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #666;
+  background-color: #f5f5f5;
+  border: none;
+  cursor: pointer;
+}
+
+.address-list {
+  padding: 15px;
+  overflow-y: auto;
+  max-height: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.address-option {
+  display: flex;
+  padding: 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.address-option.active {
+  border-color: #2e5c31;
+  background-color: rgba(46, 92, 49, 0.05);
+}
+
+.address-option-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex: 1;
+}
+
+.address-option-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background-color: #f0e6ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #7b61ff;
+  flex-shrink: 0;
+}
+
+.address-option-details h3 {
+  font-size: 16px;
+  font-weight: 500;
+  margin-bottom: 5px;
+}
+
+.address-option-details p {
+  font-size: 14px;
+  color: #666;
+}
+
+.add-address-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px dashed #2e5c31;
+  border-radius: 10px;
+  color: #2e5c31;
+  font-weight: 500;
+  margin-top: 5px;
+  background: none;
+  cursor: pointer;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  padding: 15px;
+  border-top: 1px solid #eee;
+}
+
+.cancel-button {
+  flex: 1;
+  height: 45px;
+  background-color: #f5f5f5;
+  color: #333;
+  border-radius: 10px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+}
+
+.confirm-button {
+  flex: 1;
+  height: 45px;
+  background-color: #2e5c31;
+  color: white;
+  border-radius: 10px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+}
+
+/* Success Modal */
+.success-modal {
+  padding: 25px 20px;
+  text-align: center;
+}
+
+.success-icon {
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  background-color: #e6f7e6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #2e5c31;
+  margin: 0 auto 20px;
+}
+
+.success-modal h2 {
+  font-size: 20px;
+  font-weight: 600;
+  color: #2e5c31;
+  margin-bottom: 10px;
+}
+
+.success-modal p {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 20px;
+}
+
+.order-number {
+  background-color: #f9f9f9;
+  padding: 15px;
+  border-radius: 10px;
+  margin-bottom: 20px;
+}
+
+.order-number .label {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 5px;
+}
+
+.order-number .value {
+  font-size: 18px;
+  font-weight: 600;
+  color: #2e5c31;
+}
+
+.multiple-orders {
+  text-align: left;
+  width: 100%;
+  margin: 20px 0;
+}
+
+.multiple-orders .label {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.order-codes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.order-code-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 15px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border-left: 4px solid #2e5c31;
+}
+
+.order-code {
+  font-size: 16px;
+  font-weight: 700;
+  color: #2e5c31;
+}
+
+.order-note {
+  font-size: 12px;
+  color: #666;
+  background-color: #e9ecef;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.continue-button {
+  width: 100%;
+  height: 45px;
+  background-color: #2e5c31;
+  color: white;
+  border-radius: 10px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+}
+
+.new-address-form {
+  background-color: #f8f9fa;
+  padding: 15px;
+  border-radius: 10px;
+  margin-bottom: 15px;
+}
+
+.new-address-form h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 15px;
+  color: #2e5c31;
+}
+
+.form-group {
+  margin-bottom: 15px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 5px;
+  color: #333;
+}
+
+.form-group input,
+.form-group textarea,
+.form-group select {
+  width: 100%;
+  height: 45px;
+  padding: 0 15px;
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.form-group textarea {
+  height: 80px;
+  padding: 15px;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.form-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.location-notes {
+  font-size: 12px;
+  color: #666;
+  margin-top: 3px;
+}
+
+.cancellation-notice {
+  background-color: #fff3cd;
+  padding: 15px;
+  border-radius: 10px;
+  margin: 20px 0;
+  text-align: center;
+}
+
+.cancellation-notice p {
+  font-size: 13px;
+  color: #856404;
+  margin-bottom: 10px;
+}
+
+.cancel-order-button {
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.cancel-order-button:hover {
+  background-color: #c82333;
+}
+
+.unit {
+  font-size: 12px;
+  color: #666;
+}
+
+.loading-addresses {
+  text-align: center;
+  padding: 20px;
+  color: #666;
 }
 
 .quantity {
@@ -1993,10 +3075,10 @@ export default {
 .product-item {
   display: flex;
   gap: 15px;
-  padding: 15px;
-  background-color: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  padding: 0;
+  background-color: transparent;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .product-image {
@@ -2026,47 +3108,6 @@ export default {
 }
 
 .product-header h3 {
-  font-size: 16px;
-  font-weight: 500;
-}
-
-.seller-id {
-  font-size: 12px;
-  color: #666;
-}
-
-.weight {
-  font-size: 14px;
-  color: #666;
-  margin-bottom: 8px;
-}
-
-.product-price-quantity {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.price {
-  font-size: 18px;
-  font-weight: 600;
-  color: #2e5c31;
-}
-
-.product-id {
-  font-size: 12px;
-  color: #666;
-}
-
-/* Payment method styles */
-.options-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.option-item {
-  display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 12px;
@@ -2444,6 +3485,49 @@ export default {
   font-size: 18px;
   font-weight: 600;
   color: #2e5c31;
+}
+
+.multiple-orders {
+  text-align: left;
+  width: 100%;
+  margin: 20px 0;
+}
+
+.multiple-orders .label {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.order-codes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.order-code-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 15px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border-left: 4px solid #2e5c31;
+}
+
+.order-code {
+  font-size: 16px;
+  font-weight: 700;
+  color: #2e5c31;
+}
+
+.order-note {
+  font-size: 12px;
+  color: #666;
+  background-color: #e9ecef;
+  padding: 2px 8px;
+  border-radius: 4px;
 }
 
 .track-button {

@@ -274,6 +274,7 @@ const topMunicipality = computed(() => {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   display: flex;
   flex-direction: column;
+  height: 100%;
 }
 
 .card-header {
@@ -281,6 +282,7 @@ const topMunicipality = computed(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 15px;
+  flex-shrink: 0;
 }
 
 .card-header h3 {
@@ -310,6 +312,7 @@ const topMunicipality = computed(() => {
   background-color: #f9fafb;
   border-radius: 8px;
   margin-bottom: 15px;
+  flex: 1;
 }
 
 .spinner {
@@ -329,12 +332,13 @@ const topMunicipality = computed(() => {
 
 .map-container {
   position: relative;
-  height: 600px; /* Increased height for better visibility */
+  height: 320px; /* Match the chart container height */
   width: 100%;
   border-radius: 8px;
   overflow: hidden;
   margin-bottom: 15px;
   border: 1px solid #d1e5f0;
+  flex: 1;
 }
 
 .popup-content {
@@ -406,6 +410,7 @@ const topMunicipality = computed(() => {
   display: flex;
   justify-content: space-between;
   margin-top: auto;
+  flex-shrink: 0;
 }
 
 .stat-item {
@@ -425,8 +430,6 @@ const topMunicipality = computed(() => {
   color: #111827;
 }
 
-
-
 .leaflet-control-attribution {
   display: none !important;
 }
@@ -436,7 +439,5 @@ const topMunicipality = computed(() => {
   color: #888;
   margin-top: -10px;
 }
-
-
 
 </style>

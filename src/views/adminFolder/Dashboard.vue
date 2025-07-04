@@ -11,90 +11,17 @@
           </div>
         </div>
         
-        <div class="user-profile" @click="toggleProfileMenu" ref="profileRef">
+        <div class="user-profile" @click="navigateToEditProfile">
           <div class="notification-icon">
             <Bell size="20" />
             <span class="notification-badge">5</span>
           </div>
           <div class="avatar">
-            <User size="24" class="profile-icon" />
+            <UserCircle size="24" class="profile-icon" />
           </div>
           <div class="user-info">
             <h3>{{ adminData ? `${adminData.firstName} ${adminData.lastName}` : 'Loading...' }}</h3>
             <p>{{ adminData ? adminData.email : 'Loading...' }}</p>
-          </div>
-          
-          <!-- Profile Dropdown Menu -->
-          <div class="profile-dropdown" v-if="showProfileMenu">
-            <div class="profile-header">
-              <div class="profile-avatar">
-                <User size="24" class="profile-icon" />
-              </div>
-              <div>
-                <h3>{{ adminData ? `${adminData.firstName} ${adminData.lastName}` : 'Loading...' }}</h3>
-                <p>{{ adminData ? adminData.email : 'Loading...' }}</p>
-              </div>
-              <button class="logout-btn">
-                <LogOut size="18" />
-              </button>
-            </div>
-            
-            <div class="profile-tabs">
-              <button 
-                class="tab-btn" 
-                :class="{ active: activeTab === 'profile' }" 
-                @click="setActiveTab('profile')"
-              >
-                <User size="18" />
-                Profile
-              </button>
-              <button 
-                class="tab-btn" 
-                :class="{ active: activeTab === 'setting' }" 
-                @click="setActiveTab('setting')"
-              >
-                <Settings size="18" />
-                Setting
-              </button>
-            </div>
-            
-            <div class="tab-content" v-if="activeTab === 'profile'">
-              <button class="menu-item" @click="navigateToEditProfile">
-                <Edit size="18" />
-                Edit Profile
-              </button>
-              <button class="menu-item">
-                <UserCheck size="18" />
-                View Profile
-              </button>
-              <button class="menu-item">
-                <Shield size="18" />
-                Security
-              </button>
-              <button class="menu-item">
-                <LogOut size="18" />
-                Logout
-              </button>
-            </div>
-            
-            <div class="tab-content" v-if="activeTab === 'setting'">
-              <button class="menu-item">
-                <HelpCircle size="18" />
-                Support
-              </button>
-              <button class="menu-item">
-                <UserCog size="18" />
-                Account Settings
-              </button>
-              <button class="menu-item">
-                <Bell size="18" />
-                Notifications
-              </button>
-              <button class="menu-item">
-                <Eye size="18" />
-                Appearance
-              </button>
-            </div>
           </div>
         </div>
       </header>
@@ -190,17 +117,32 @@
         </div>
         
         <div class="dashboard-grid">
-          <!-- Seller Overview -->
-          <SellerOverview />
+          <!-- First Row -->
+          <div class="grid-section">
+            <!-- Seller Overview -->
+            <SellerOverview />
+            
+            <!-- Product Categories -->
+            <ProductCategories />
+          </div>
           
-          <!-- Product Categories -->
-          <ProductCategories />
+          <!-- Second Row -->
+          <div class="grid-section">
+            <!-- Forecasting Overview -->
+            <ForecastingOverview />
+            
+            <!-- Oriental Mindoro Map -->
+            <OrientalMindoroMap />
+          </div>
           
-          <!-- Price Monitoring -->
-          <PriceMonitoring />
-          
-          <!-- Forecasting -->
-          <HarvestForecasting />
+          <!-- Third Row -->
+          <div class="grid-section">
+            <!-- Top Sellers Chart (under Forecasting) -->
+            <TopSellersChart />
+            
+            <!-- Price Monitoring (under Oriental Mindoro Map) -->
+            <PriceMonitoringOverview />
+          </div>
         </div>
         
         <!-- Recent Activity -->
@@ -219,16 +161,8 @@ import {
   Info, 
   Calendar,
   ChevronDown,
-  User,
-  UserCheck,
-  UserCog,
+  UserCircle,
   UserPlus,
-  Settings,
-  Edit,
-  Eye,
-  Shield,
-  LogOut,
-  HelpCircle,
   TrendingUp,
   Store,
   Users,
@@ -237,9 +171,11 @@ import {
 import AdminSidebar from '@/components/AdminSidebar.vue';
 import SellerOverview from '@/components/admindashboard/SellerOverview.vue';
 import ProductCategories from '@/components/admindashboard/ProductCategories.vue';
-import PriceMonitoring from '@/components/admindashboard/PriceMonitoring.vue';
+import PriceMonitoringOverview from '@/components/admindashboard/PriceMonitoringOverview.vue';
 import RecentActivity from '@/components/admindashboard/RecentActivity.vue';
-import HarvestForecasting from '@/components/admindashboard/OrientalMindoroMap.vue';
+import ForecastingOverview from '@/components/admindashboard/ForecastingOverview.vue';
+import OrientalMindoroMap from '@/components/admindashboard/OrientalMindoroMap.vue';
+import TopSellersChart from '@/components/admindashboard/TopSellersChart.vue';
 import { db } from '@/firebase/firebaseConfig';
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
@@ -263,10 +199,6 @@ const fetchAdminData = async () => {
     console.error("Error fetching admin data:", error);
   }
 };
-
-const showProfileMenu = ref(false);
-const activeTab = ref('profile');
-const profileRef = ref(null);
 
 const currentDate = computed(() => {
   const date = new Date();
@@ -304,28 +236,11 @@ const fetchData = async () => {
   }
 };
 
-const toggleProfileMenu = () => {
-  showProfileMenu.value = !showProfileMenu.value;
-};
-
-const setActiveTab = (tab) => {
-  activeTab.value = tab;
-};
-
 const navigateToEditProfile = () => {
   router.push('/admin/edit-profile');
 };
 
-const handleClickOutside = (event) => {
-  if (profileRef.value && !profileRef.value.contains(event.target)) {
-    showProfileMenu.value = false;
-  }
-};
-
 onMounted(async () => {
-  if (profileRef.value) {
-    document.addEventListener('click', handleClickOutside);
-  }
   await fetchAdminData();
   await fetchData();
 });
@@ -382,8 +297,15 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 15px;
-  position: relative;
   cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 10px;
+  transition: all 0.2s ease;
+}
+
+.user-profile:hover {
+  background-color: #f3f4f6;
+  transform: translateY(-1px);
 }
 
 .notification-icon {
@@ -426,18 +348,6 @@ onMounted(async () => {
   color: #6b7280;
 }
 
-.profile-avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background-color: #f3f4f6;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #6b7280;
-  margin-right: 12px;
-}
-
 .profile-icon {
   color: #6b7280;
 }
@@ -458,115 +368,6 @@ onMounted(async () => {
   font-size: 0.8rem;
   color: #6b7280;
   margin: 0;
-}
-
-.profile-dropdown {
-  position: absolute;
-  top: 60px;
-  right: 0;
-  width: 280px;
-  background-color: #fff;
-  border-radius: 10px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-  z-index: 100;
-  overflow: hidden;
-}
-
-.profile-header {
-  display: flex;
-  align-items: center;
-  padding: 15px;
-  border-bottom: 1px solid #f3f4f6;
-  position: relative;
-}
-
-.profile-header h3 {
-  font-size: 0.95rem;
-  font-weight: 600;
-  margin: 0;
-  color: #111827;
-}
-
-.profile-header p {
-  font-size: 0.8rem;
-  color: #6b7280;
-  margin: 0;
-}
-
-.logout-btn {
-  position: absolute;
-  right: 15px;
-  top: 15px;
-  background: none;
-  border: none;
-  color: #ef4444;
-  cursor: pointer;
-  padding: 5px;
-  border-radius: 50%;
-}
-
-.logout-btn:hover {
-  background-color: #fee2e2;
-}
-
-.profile-tabs {
-  display: flex;
-  border-bottom: 1px solid #f3f4f6;
-}
-
-.tab-btn {
-  flex: 1;
-  padding: 12px;
-  background: none;
-  border: none;
-  font-size: 0.9rem;
-  color: #6b7280;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  position: relative;
-}
-
-.tab-btn.active {
-  color: #3498db;
-  font-weight: 500;
-}
-
-.tab-btn.active::after {
-  content: '';
-  position: absolute;
-  bottom: -1px;
-  left: 0;
-  width: 100%;
-  height: 2px;
-  background-color: #3498db;
-}
-
-.tab-content {
-  padding: 10px;
-}
-
-.menu-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 10px 15px;
-  background: none;
-  border: none;
-  text-align: left;
-  font-size: 0.9rem;
-  color: #4b5563;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.menu-item:hover {
-  background-color: #f9fafb;
-  color: #3498db;
 }
 
 .dashboard-content {
@@ -694,6 +495,12 @@ onMounted(async () => {
 }
 
 .dashboard-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.grid-section {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 20px;
@@ -704,7 +511,7 @@ onMounted(async () => {
     grid-template-columns: repeat(2, 1fr);
   }
   
-  .dashboard-grid {
+  .grid-section {
     grid-template-columns: 1fr;
   }
 }

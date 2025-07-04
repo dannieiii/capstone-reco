@@ -38,10 +38,6 @@
             </div>
           </div>
           <div class="filter-actions">
-            <button class="filter-btn">
-              <i class="fas fa-filter"></i>
-              Filter
-            </button>
             <div class="export-dropdown">
               <button class="export-btn">
                 <i class="fas fa-download"></i>
@@ -104,9 +100,11 @@
                 </div>
               </td>
               <td>
-                <span :class="['status-badge', customer.isVerified ? 'verified' : 'pending']">
-                  {{ customer.isVerified ? 'Verified' : 'Not Verified' }}
-                </span>
+                <div class="status-container">
+                  <span :class="['status-badge', customer.isVerified ? 'verified' : 'pending']">
+                    {{ customer.isVerified ? 'Verified' : 'Not Verified' }}
+                  </span>
+                </div>
               </td>
               <td>
                 <div class="action-buttons">
@@ -167,6 +165,136 @@
         </div>
       </div>
     </div>
+
+    <!-- Customer Details Modal -->
+    <div v-if="showModal" class="modal-overlay" @click="closeModal">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Customer Details</h3>
+          <button class="modal-close" @click="closeModal">&times;</button>
+        </div>
+        <div class="modal-body" v-if="selectedCustomer">
+          <!-- Customer Profile Header -->
+          <div class="customer-profile-header">
+            <div class="profile-avatar-large" :style="{ backgroundColor: getAvatarColor(selectedCustomer.username) }">
+              {{ getInitials(selectedCustomer.firstName, selectedCustomer.lastName) }}
+            </div>
+            <div class="profile-main-info">
+              <h2>{{ selectedCustomer.firstName }} {{ selectedCustomer.lastName }}</h2>
+              <p class="username-display">@{{ selectedCustomer.username }}</p>
+              <div class="verification-status">
+                <span :class="['status-badge-large', selectedCustomer.isVerified ? 'verified' : 'pending']">
+                  <i :class="selectedCustomer.isVerified ? 'fas fa-check-circle' : 'fas fa-clock'"></i>
+                  {{ selectedCustomer.isVerified ? 'Verified Customer' : 'Pending Verification' }}
+                </span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Contact Information Section -->
+          <div class="info-section">
+            <div class="section-header">
+              <i class="fas fa-address-book"></i>
+              <h4>Contact Information</h4>
+            </div>
+            <div class="info-grid">
+              <div class="info-item">
+                <div class="info-icon">
+                  <i class="fas fa-envelope"></i>
+                </div>
+                <div class="info-content">
+                  <label>Email Address</label>
+                  <span>{{ selectedCustomer.email || 'Not provided' }}</span>
+                </div>
+              </div>
+              <div class="info-item">
+                <div class="info-icon">
+                  <i class="fas fa-phone"></i>
+                </div>
+                <div class="info-content">
+                  <label>Phone Number</label>
+                  <span>{{ selectedCustomer.contactNumber || 'Not provided' }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Location Information Section -->
+          <div class="info-section">
+            <div class="section-header">
+              <i class="fas fa-map-marker-alt"></i>
+              <h4>Primary Address</h4>
+            </div>
+            <div class="address-display">
+              <div class="address-main">
+                <i class="fas fa-home"></i>
+                <span>{{ selectedCustomer.address || 'No address provided' }}</span>
+              </div>
+              <div class="address-details" v-if="selectedCustomer.barangay || selectedCustomer.municipality || selectedCustomer.province">
+                <div class="address-part" v-if="selectedCustomer.barangay">
+                  <small>Barangay:</small>
+                  <span>{{ selectedCustomer.barangay }}</span>
+                </div>
+                <div class="address-part" v-if="selectedCustomer.municipality">
+                  <small>Municipality:</small>
+                  <span>{{ selectedCustomer.municipality }}</span>
+                </div>
+                <div class="address-part" v-if="selectedCustomer.province">
+                  <small>Province:</small>
+                  <span>{{ selectedCustomer.province }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Delivery Addresses Section -->
+          <div v-if="selectedCustomer.addresses && selectedCustomer.addresses.length > 0" class="info-section">
+            <div class="section-header">
+              <i class="fas fa-shipping-fast"></i>
+              <h4>Delivery Addresses</h4>
+              <span class="address-count">{{ selectedCustomer.addresses.length }} saved</span>
+            </div>
+            <div class="delivery-addresses">
+              <div v-for="(address, index) in selectedCustomer.addresses" :key="index" class="delivery-address-card">
+                <div class="address-card-header">
+                  <div class="address-name">
+                    <i class="fas fa-map-pin"></i>
+                    <strong>{{ address.name || `Address ${index + 1}` }}</strong>
+                  </div>
+                </div>
+                <div class="address-card-body">
+                  <div class="address-line">
+                    <i class="fas fa-location-arrow"></i>
+                    <span>{{ address.address }}</span>
+                  </div>
+                  <div class="address-location">
+                    <i class="fas fa-building"></i>
+                    <span>{{ address.barangay }}, {{ address.municipality }}, {{ address.province }}</span>
+                  </div>
+                  <div v-if="address.locationNotes" class="address-notes">
+                    <i class="fas fa-sticky-note"></i>
+                    <span>{{ address.locationNotes }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- No Delivery Addresses Message -->
+          <div v-else class="info-section">
+            <div class="section-header">
+              <i class="fas fa-shipping-fast"></i>
+              <h4>Delivery Addresses</h4>
+            </div>
+            <div class="no-addresses">
+              <i class="fas fa-map-marked-alt"></i>
+              <p>No delivery addresses saved</p>
+              <small>Customer hasn't added any delivery addresses yet</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -174,13 +302,15 @@
 import { ref, computed, onMounted } from 'vue';
 import AdminSidebar from '@/components/AdminSidebar.vue';
 import { db } from '@/firebase/firebaseConfig';
-import { collection, getDocs, doc, deleteDoc } from "firebase/firestore";
+import { collection, getDocs, doc, deleteDoc, query, where } from "firebase/firestore";
 import { Eye, Trash2 } from 'lucide-vue-next';
 
 const allCustomers = ref([]);
 const searchQuery = ref('');
 const currentPage = ref(1);
 const itemsPerPage = 10;
+const showModal = ref(false);
+const selectedCustomer = ref(null);
 
 // Computed properties
 const filteredCustomers = computed(() => {
@@ -233,16 +363,21 @@ const verifiedCustomers = computed(() => allCustomers.value.filter(c => c.isVeri
 const newCustomers = computed(() => {
   const oneMonthAgo = new Date();
   oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-  return allCustomers.value.filter(c => new Date(c.createdAt) > oneMonthAgo).length;
+  return allCustomers.value.filter(c => new Date(c.lastUpdated || c.createdAt) > oneMonthAgo).length;
 });
 
 // Methods
 const fetchCustomers = async () => {
   try {
-    const querySnapshot = await getDocs(collection(db, "users"));
-    allCustomers.value = querySnapshot.docs
-      .map(doc => ({ id: doc.id, ...doc.data() }))
-      .filter(user => user.role === "customer");
+    const usersQuery = query(
+      collection(db, "users"),
+      where("role", "==", "customer")
+    );
+    const querySnapshot = await getDocs(usersQuery);
+    allCustomers.value = querySnapshot.docs.map(doc => ({ 
+      id: doc.id, 
+      ...doc.data() 
+    }));
   } catch (error) {
     console.error("Error fetching customers:", error);
   }
@@ -259,8 +394,13 @@ const goToPage = (page) => {
 };
 
 const viewMoreInfo = (customer) => {
-  console.log("View more info for:", customer);
-  // Add your view logic here
+  selectedCustomer.value = customer;
+  showModal.value = true;
+};
+
+const closeModal = () => {
+  showModal.value = false;
+  selectedCustomer.value = null;
 };
 
 const deleteCustomer = async (customer) => {
@@ -279,6 +419,21 @@ const deleteCustomer = async (customer) => {
       console.error("Error deleting customer:", error);
       alert("Failed to delete customer. Please try again.");
     }
+  }
+};
+
+const formatDate = (dateString) => {
+  if (!dateString) return 'Not available';
+  try {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch (error) {
+    return 'Invalid Date';
   }
 };
 
@@ -562,7 +717,7 @@ onMounted(fetchCustomers);
   gap: 10px;
 }
 
-.filter-btn, .export-btn {
+.export-btn {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -571,13 +726,15 @@ onMounted(fetchCustomers);
   font-size: 0.9rem;
   cursor: pointer;
   border: none;
-  background-color: #f3f4f6;
-  color: #4b5563;
+  background-color: #1f4e23;
+  color: white;
   transition: all 0.2s;
 }
 
-.filter-btn:hover, .export-btn:hover {
-  background-color: #e5e7eb;
+.export-btn:hover {
+  background-color: #0f2419;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(31, 78, 35, 0.3);
 }
 
 .export-dropdown {
@@ -704,12 +861,24 @@ onMounted(fetchCustomers);
   color: #2e5c31;
 }
 
+.status-container {
+  display: flex;
+  align-items: center;
+}
+
 .status-badge {
-  display: inline-block;
-  padding: 4px 8px;
-  border-radius: 9999px;
-  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.875rem;
   font-weight: 500;
+  text-align: center;
+  width: 120px;
+  height: 36px;
+  line-height: 1.2;
+  box-sizing: border-box;
 }
 
 .status-badge.verified {
@@ -778,6 +947,398 @@ onMounted(fetchCustomers);
   color: #9ca3af;
 }
 
+/* Enhanced Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.3s ease-out;
+  backdrop-filter: blur(4px);
+}
+
+.modal-content {
+  background-color: white;
+  border-radius: 16px;
+  max-width: 700px;
+  width: 95%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  animation: scaleIn 0.3s ease-out;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24px 32px;
+  border-bottom: 1px solid #e5e7eb;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-radius: 16px 16px 0 0;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 28px;
+  cursor: pointer;
+  padding: 8px;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: #6b7280;
+  transition: all 0.2s;
+}
+
+.modal-close:hover {
+  background-color: #f3f4f6;
+  color: #374151;
+  transform: scale(1.1);
+}
+
+.modal-body {
+  padding: 32px;
+}
+
+/* Customer Profile Header */
+.customer-profile-header {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 32px;
+  padding: 24px;
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border-radius: 12px;
+  border: 1px solid #bae6fd;
+}
+
+.profile-avatar-large {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background-color: #2e5c31;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1.75rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.profile-main-info h2 {
+  margin: 0 0 8px 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.username-display {
+  margin: 0 0 16px 0;
+  color: #6b7280;
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.verification-status {
+  display: flex;
+  align-items: center;
+}
+
+.status-badge-large {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.status-badge-large.verified {
+  background-color: #d1fae5;
+  color: #059669;
+  border: 1px solid #a7f3d0;
+}
+
+.status-badge-large.pending {
+  background-color: #fef3c7;
+  color: #d97706;
+  border: 1px solid #fde68a;
+}
+
+/* Information Sections */
+.info-section {
+  margin-bottom: 32px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  overflow: hidden;
+  background-color: #fafafa;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 24px;
+  background-color: #f8fafc;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.section-header i {
+  color: #2e5c31;
+  font-size: 1.125rem;
+}
+
+.section-header h4 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #1f2937;
+  flex-grow: 1;
+}
+
+.address-count {
+  background-color: #2e5c31;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  padding: 24px;
+}
+
+.info-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 16px;
+  background-color: white;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.info-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background-color: #f0f9ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.info-icon i {
+  color: #2e5c31;
+  font-size: 1rem;
+}
+
+.info-content {
+  flex-grow: 1;
+}
+
+.info-content label {
+  display: block;
+  font-weight: 600;
+  color: #374151;
+  font-size: 0.875rem;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.info-content span {
+  color: #1f2937;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+/* Address Display */
+.address-display {
+  padding: 24px;
+}
+
+.address-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background-color: white;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  margin-bottom: 16px;
+}
+
+.address-main i {
+  color: #2e5c31;
+  font-size: 1.125rem;
+}
+
+.address-main span {
+  font-size: 1rem;
+  color: #1f2937;
+  font-weight: 500;
+}
+
+.address-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.address-part {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  background-color: white;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+}
+
+.address-part small {
+  color: #6b7280;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.address-part span {
+  color: #1f2937;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+/* Delivery Addresses */
+.delivery-addresses {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.delivery-address-card {
+  background-color: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.2s;
+}
+
+.delivery-address-card:hover {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  transform: translateY(-1px);
+}
+
+.address-card-header {
+  padding: 16px 20px;
+  background-color: #f8fafc;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.address-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.address-name i {
+  color: #2e5c31;
+  font-size: 1rem;
+}
+
+.address-name strong {
+  color: #1f2937;
+  font-size: 1rem;
+}
+
+.address-card-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.address-line,
+.address-location,
+.address-notes {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 0.875rem;
+}
+
+.address-line i,
+.address-location i,
+.address-notes i {
+  color: #6b7280;
+  font-size: 0.875rem;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.address-line span {
+  color: #1f2937;
+  font-weight: 500;
+}
+
+.address-location span,
+.address-notes span {
+  color: #6b7280;
+}
+
+/* No Addresses Message */
+.no-addresses {
+  padding: 40px 24px;
+  text-align: center;
+  color: #6b7280;
+}
+
+.no-addresses i {
+  font-size: 3rem;
+  color: #d1d5db;
+  margin-bottom: 16px;
+}
+
+.no-addresses p {
+  margin: 0 0 8px 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.no-addresses small {
+  font-size: 0.875rem;
+  color: #9ca3af;
+}
+
 /* Pagination Styles */
 .pagination-container {
   display: flex;
@@ -835,6 +1396,27 @@ onMounted(fetchCustomers);
   font-weight: 500;
 }
 
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
 /* Responsive styles */
 @media (max-width: 768px) {
   .main-content {
@@ -875,5 +1457,49 @@ onMounted(fetchCustomers);
     flex-wrap: wrap;
     justify-content: center;
   }
+
+  .modal-content {
+    width: 95%;
+    margin: 10px;
+    max-height: 95vh;
+  }
+
+  .modal-header {
+    padding: 20px 24px;
+  }
+
+  .modal-body {
+    padding: 24px 20px;
+  }
+
+  .customer-profile-header {
+    flex-direction: column;
+    text-align: center;
+    gap: 16px;
+  }
+
+  .profile-avatar-large {
+    width: 70px;
+    height: 70px;
+    font-size: 1.5rem;
+  }
+
+  .profile-main-info h2 {
+    font-size: 1.5rem;
+  }
+
+  .address-details {
+    grid-template-columns: 1fr;
+  }
+
+  .info-grid {
+    padding: 20px;
+  }
+
+  .delivery-addresses {
+    padding: 20px;
+  }
 }
+
+/* Remove the Account Information section CSS */
 </style>

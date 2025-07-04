@@ -159,7 +159,7 @@
         
         <div class="chart-card category-chart">
           <div class="chart-header">
-            <h2>Category Distribution</h2>
+            <h2>Category Sales Distribution</h2>
           </div>
           <div class="chart-wrapper category-chart-wrapper">
             <canvas ref="categoryChart"></canvas>
@@ -177,7 +177,13 @@
         <div class="top-products">
           <div v-for="(product, index) in topProducts" :key="index" class="product-card">
             <div class="product-image">
-              <img :src="getProductImage(product)" alt="Product image">
+              <img 
+                :src="getProductImage(product)" 
+                :alt="product.productName || 'Product image'"
+                @error="handleImageError"
+                @load="handleImageLoad"
+                loading="lazy"
+              >
               <span v-if="product.ribbon" class="product-ribbon">{{ product.ribbon }}</span>
             </div>
             <div class="product-details">
@@ -206,13 +212,47 @@
       <div class="section-container">
         <div class="section-header">
           <h2>Inventory Management</h2>
-          <button class="add-product-btn" @click="navigateToAddProduct">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-            Add Product
-          </button>
+          <div class="header-actions">
+            <div class="export-dropdown">
+              <button class="export-btn" @click="toggleExportMenu">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                Export
+              </button>
+              <div class="export-menu" v-if="showExportMenu">
+                <button class="export-option" @click="previewExport('csv')">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                    <polyline points="10 9 9 9 8 9"></polyline>
+                  </svg>
+                  Export as CSV
+                </button>
+                <button class="export-option" @click="previewExport('pdf')">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                    <polyline points="10 9 9 9 8 9"></polyline>
+                  </svg>
+                  Export as PDF
+                </button>
+              </div>
+            </div>
+            <button class="add-product-btn" @click="navigateToAddProduct">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              Add Product
+            </button>
+          </div>
         </div>
         
         <div class="inventory-filters">
@@ -272,7 +312,13 @@
               <tr v-for="product in paginatedProducts" :key="product.id">
                 <td class="product-cell">
                   <div class="product-image-small">
-                    <img :src="getProductImage(product)" alt="Product thumbnail">
+                    <img 
+                      :src="getProductImage(product)" 
+                      :alt="product.productName || 'Product thumbnail'"
+                      @error="handleImageError"
+                      @load="handleImageLoad"
+                      loading="lazy"
+                    >
                   </div>
                   <span>{{ product.productName }}</span>
                 </td>
@@ -389,6 +435,79 @@
       </div>
     </div>
     
+    <!-- Export Preview Modal -->
+    <div v-if="showExportPreview" class="modal-overlay" @click="closeExportPreview">
+      <div class="modal-content export-preview-modal" @click.stop>
+        <div class="modal-header">
+          <h3>Export Preview - {{ exportFormat.toUpperCase() }}</h3>
+          <button class="close-btn" @click="closeExportPreview">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+        
+        <div class="modal-body">
+          <div class="export-info">
+            <p><strong>Total Records:</strong> {{ filteredProducts.length }}</p>
+            <p><strong>Export Date:</strong> {{ new Date().toLocaleDateString() }}</p>
+            <p><strong>Format:</strong> {{ exportFormat.toUpperCase() }}</p>
+          </div>
+          
+          <div class="preview-content">
+            <div v-if="exportFormat === 'csv'" class="csv-preview">
+              <h4>CSV Preview (First 5 rows):</h4>
+              <pre>{{ csvPreview }}</pre>
+            </div>
+            
+            <div v-if="exportFormat === 'pdf'" class="pdf-preview">
+              <h4>PDF Preview:</h4>
+              <div class="pdf-preview-content">
+                <div class="pdf-header">
+                  <h2>Inventory Report</h2>
+                  <p>Generated on: {{ new Date().toLocaleDateString() }}</p>
+                </div>
+                <table class="preview-table">
+                  <thead>
+                    <tr>
+                      <th>Product Name</th>
+                      <th>Category</th>
+                      <th>Status</th>
+                      <th>Total Stock</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="product in filteredProducts.slice(0, 5)" :key="product.id">
+                      <td>{{ product.productName }}</td>
+                      <td>{{ product.category }}</td>
+                      <td>{{ product.status }}</td>
+                      <td>{{ getTotalStock(product) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <p v-if="filteredProducts.length > 5" class="preview-note">
+                  ... and {{ filteredProducts.length - 5 }} more records
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="modal-footer">
+          <button class="cancel-btn" @click="closeExportPreview">Cancel</button>
+          <button class="confirm-btn" @click="confirmExport">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            Download {{ exportFormat.toUpperCase() }}
+          </button>
+        </div>
+      </div>
+    </div>
+    
     <!-- Inventory Modal -->
     <InventoryModal
       :isVisible="showInventoryModal"
@@ -433,7 +552,7 @@ let categoryChartInstance = null;
 // Products data
 const products = ref([]);
 const topProducts = ref([]);
-const orders = ref([]);
+const salesData = ref([]);
 
 // Track if charts should be initialized
 const chartsInitialized = ref(false);
@@ -451,6 +570,12 @@ const filters = ref({
   stockLevel: '',
   search: ''
 });
+
+// Export functionality
+const showExportMenu = ref(false);
+const showExportPreview = ref(false);
+const exportFormat = ref('');
+const csvPreview = ref('');
 
 // Unit display mapping
 const unitDisplayMap = {
@@ -471,42 +596,101 @@ const unitDisplayMap = {
 };
 
 // Chart filtering and export
-const chartTimeRange = ref('week');
+const chartTimeRange = ref('month');
 const showChartExportMenu = ref(false);
 
 // Modal state
 const showInventoryModal = ref(false);
 const selectedProduct = ref(null);
 
+// Create a placeholder image data URI
+const createPlaceholderImage = () => {
+  return `data:image/svg+xml;base64,${btoa(`
+    <svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
+      <rect width="200" height="200" fill="#f3f4f6"/>
+      <rect x="60" y="60" width="80" height="80" fill="#d1d5db" rx="8"/>
+      <circle cx="85" cy="85" r="8" fill="#9ca3af"/>
+      <path d="M70 110 L85 95 L100 110 L130 80 L130 130 L70 130 Z" fill="#9ca3af"/>
+      <text x="100" y="160" text-anchor="middle" fill="#6b7280" font-family="Arial, sans-serif" font-size="12">No Image</text>
+    </svg>
+  `)}`;
+};
+
 // Helper function to get unit display name
 const getUnitDisplay = (unit) => {
   return unitDisplayMap[unit] || unit || 'Unit';
 };
 
-// Helper function to get product image
+// Enhanced helper function to get product image with proper fallback
 const getProductImage = (product) => {
-  // Check for image field first
-  if (product.image && product.image.trim() !== '') {
-    return product.image;
+  if (!product) {
+    return createPlaceholderImage();
+  }
+
+  // Priority order for image fields
+  const imageFields = [
+    'image',
+    'productImage', 
+    'images',
+    'thumbnail',
+    'photo'
+  ];
+
+  for (const field of imageFields) {
+    const imageValue = product[field];
+    
+    if (imageValue) {
+      // Handle array of images
+      if (Array.isArray(imageValue) && imageValue.length > 0) {
+        const firstImage = imageValue[0];
+        if (typeof firstImage === 'string' && firstImage.trim() !== '' && isValidImageUrl(firstImage.trim())) {
+          return firstImage.trim();
+        }
+      }
+      
+      // Handle single image string
+      if (typeof imageValue === 'string' && imageValue.trim() !== '' && isValidImageUrl(imageValue.trim())) {
+        return imageValue.trim();
+      }
+    }
   }
   
-  // Check for images array
-  if (product.images && Array.isArray(product.images) && product.images.length > 0) {
-    return product.images[0];
+  // Return data URI placeholder if no valid image found
+  return createPlaceholderImage();
+};
+
+// Helper function to validate image URL
+const isValidImageUrl = (url) => {
+  try {
+    // Check if it's a data URI
+    if (url.startsWith('data:image/')) {
+      return true;
+    }
+    
+    // Check if it's a valid HTTP/HTTPS URL
+    const urlObj = new URL(url);
+    return urlObj.protocol === 'http:' || urlObj.protocol === 'https:';
+  } catch {
+    return false;
   }
-  
-  // Check for productImage field
-  if (product.productImage && product.productImage.trim() !== '') {
-    return product.productImage;
-  }
-  
-  // Return placeholder
-  return '/placeholder.svg?height=200&width=200';
+};
+
+// Improved image error and load handlers
+const handleImageError = (event) => {
+  console.warn('Image failed to load:', event.target.src);
+  // Set to placeholder data URI instead of trying to load another potentially broken URL
+  event.target.src = createPlaceholderImage();
+  // Prevent infinite error loops
+  event.target.onerror = null;
+};
+
+const handleImageLoad = (event) => {
+  console.log('Image loaded successfully:', event.target.src);
 };
 
 // Chart time filtering
 const updateChartData = () => {
-  if (!chartsInitialized.value || orders.value.length === 0) return;
+  if (!chartsInitialized.value || salesData.value.length === 0) return;
   
   const now = new Date();
   let startDate = new Date();
@@ -526,31 +710,31 @@ const updateChartData = () => {
       break;
   }
   
-  // Filter orders by date range
-  const filteredOrders = orders.value.filter(order => {
-    let orderDate;
-    if (order.createdAt && typeof order.createdAt.toDate === 'function') {
-      orderDate = order.createdAt.toDate();
-    } else if (order.timestamp && typeof order.timestamp.toDate === 'function') {
-      orderDate = order.timestamp.toDate();
+  // Filter sales by date range
+  const filteredSales = salesData.value.filter(sale => {
+    let saleDate;
+    if (sale.timestamp && typeof sale.timestamp.toDate === 'function') {
+      saleDate = sale.timestamp.toDate();
+    } else if (sale.createdAt && typeof sale.createdAt.toDate === 'function') {
+      saleDate = sale.createdAt.toDate();
     } else {
-      orderDate = new Date();
+      saleDate = new Date();
     }
-    return orderDate >= startDate;
+    return saleDate >= startDate;
   });
   
   // Calculate category sales for filtered data
   const categorySales = {};
-  filteredOrders.forEach(order => {
-    const category = order.category || 'Other';
+  filteredSales.forEach(sale => {
+    const category = sale.category || 'Other';
     if (!categorySales[category]) {
       categorySales[category] = 0;
     }
-    const itemPrice = order.itemPrice || (order.unitPrice * order.quantity) || order.totalPrice || 0;
-    categorySales[category] += itemPrice;
+    const salePrice = sale.totalPrice || (sale.price * sale.quantity) || 0;
+    categorySales[category] += salePrice;
   });
   
-  updateChartsWithOrderData(filteredOrders, categorySales);
+  updateChartsWithSalesData(filteredSales, categorySales);
 };
 
 // Chart export functionality
@@ -583,7 +767,6 @@ const exportChartAsPNG = () => {
 const exportChartAsPDF = () => {
   if (!salesChartInstance) return;
   
-  // Create a new window for PDF content
   const printWindow = window.open('', '_blank');
   
   if (!printWindow) {
@@ -691,8 +874,202 @@ const exportChartAsPDF = () => {
   printWindow.document.close();
 };
 
+// Inventory export functionality
+const toggleExportMenu = (event) => {
+  if (event) event.stopPropagation();
+  showExportMenu.value = !showExportMenu.value;
+};
+
+const previewExport = (format) => {
+  showExportMenu.value = false;
+  exportFormat.value = format;
+  
+  if (format === 'csv') {
+    generateCSVPreview();
+  }
+  
+  showExportPreview.value = true;
+};
+
+const generateCSVPreview = () => {
+  const headers = ['Product Name', 'Category', 'Status', 'Total Stock', 'Available Units'];
+  const rows = [headers.join(',')];
+  
+  filteredProducts.value.slice(0, 5).forEach(product => {
+    const row = [
+      `"${product.productName}"`,
+      `"${product.category}"`,
+      `"${product.status}"`,
+      getTotalStock(product),
+      `"${product.availableUnits?.join(', ') || 'N/A'}"`
+    ];
+    rows.push(row.join(','));
+  });
+  
+  if (filteredProducts.value.length > 5) {
+    rows.push(`... and ${filteredProducts.value.length - 5} more records`);
+  }
+  
+  csvPreview.value = rows.join('\n');
+};
+
+const closeExportPreview = () => {
+  showExportPreview.value = false;
+  exportFormat.value = '';
+  csvPreview.value = '';
+};
+
+const confirmExport = () => {
+  if (exportFormat.value === 'csv') {
+    exportToCSV();
+  } else if (exportFormat.value === 'pdf') {
+    exportToPDF();
+  }
+  closeExportPreview();
+};
+
+const exportToCSV = () => {
+  const headers = ['Product Name', 'Category', 'Status', 'Total Stock', 'Available Units', 'Stock Per Kilo', 'Stock Per Sack', 'Stock Per Tali', 'Stock Per Kaing', 'Stock Per Bundle', 'Stock Per Tray', 'Stock Per Piece'];
+  const rows = [headers.join(',')];
+  
+  filteredProducts.value.forEach(product => {
+    const row = [
+      `"${product.productName}"`,
+      `"${product.category}"`,
+      `"${product.status}"`,
+      getTotalStock(product),
+      `"${product.availableUnits?.join(', ') || 'N/A'}"`,
+      product.stockPerKilo || 0,
+      product.stockPerSack || 0,
+      product.stockPerTali || 0,
+      product.stockPerKaing || 0,
+      product.stockPerBundle || 0,
+      product.stockPerTray || 0,
+      product.stockPerPiece || 0
+    ];
+    rows.push(row.join(','));
+  });
+  
+  const csvContent = rows.join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  link.setAttribute('href', url);
+  link.setAttribute('download', `inventory-report-${new Date().toISOString().slice(0, 10)}.csv`);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
+const exportToPDF = () => {
+  const printWindow = window.open('', '_blank');
+  
+  if (!printWindow) {
+    alert('Please allow pop-ups to export as PDF');
+    return;
+  }
+  
+  const tableRows = filteredProducts.value.map(product => `
+    <tr>
+      <td>${product.productName}</td>
+      <td>${product.category}</td>
+      <td>${product.status}</td>
+      <td>${getTotalStock(product)}</td>
+      <td>${product.availableUnits?.join(', ') || 'N/A'}</td>
+    </tr>
+  `).join('');
+  
+  const pdfContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Inventory Report</title>
+      <style>
+        body { 
+          font-family: Arial, sans-serif; 
+          margin: 20px; 
+        }
+        h1 { 
+          color: #2e5c31; 
+          text-align: center;
+          margin-bottom: 20px; 
+        }
+        .report-info {
+          text-align: center;
+          margin-bottom: 30px;
+          color: #666;
+        }
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-bottom: 20px;
+        }
+        th, td {
+          border: 1px solid #ddd;
+          padding: 8px;
+          text-align: left;
+          font-size: 0.8rem;
+        }
+        th {
+          background-color: #f2f2f2;
+          font-weight: bold;
+        }
+        .export-info { 
+          margin-top: 30px; 
+          font-size: 12px; 
+          color: #666; 
+          text-align: center;
+        }
+      </style>
+    </head>
+    <body>
+      <h1>Inventory Report</h1>
+      <div class="report-info">
+        <p>Generated on: ${new Date().toLocaleDateString()}</p>
+        <p>Total Products: ${filteredProducts.value.length}</p>
+      </div>
+      
+      <table>
+        <thead>
+          <tr>
+            <th>Product Name</th>
+            <th>Category</th>
+            <th>Status</th>
+            <th>Total Stock</th>
+            <th>Available Units</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+        </tbody>
+      </table>
+      
+      <div class="export-info">
+        <p>FarmXpress Analytics Dashboard</p>
+      </div>
+      
+      <script>
+        window.onload = function() { 
+          setTimeout(function() {
+            window.print(); 
+          }, 500);
+        };
+      <\/script>
+    </body>
+    </html>
+  `;
+  
+  printWindow.document.open();
+  printWindow.document.write(pdfContent);
+  printWindow.document.close();
+};
+
 // Close export menu when clicking outside
-const closeChartExportMenu = (event) => {
+const closeExportMenu = (event) => {
+  if (showExportMenu.value && !event.target.closest('.export-dropdown')) {
+    showExportMenu.value = false;
+  }
   if (showChartExportMenu.value && !event.target.closest('.chart-export-dropdown')) {
     showChartExportMenu.value = false;
   }
@@ -798,58 +1175,50 @@ const getStatusClass = (status) => {
   }
 };
 
-// Fetch orders from Firebase - filtered by sellerId
-const fetchOrders = async () => {
+// Fetch sales data from Firebase - filtered by sellerId
+const fetchSalesData = async () => {
   try {
     if (!currentSellerId.value) return;
     
-    const ordersQuery = query(
-      collection(db, "orders"),
+    const salesQuery = query(
+      collection(db, "sales"),
       where("sellerId", "==", currentSellerId.value)
     );
     
-    const ordersSnapshot = await getDocs(ordersQuery);
-    const ordersList = [];
+    const salesSnapshot = await getDocs(salesQuery);
+    const salesList = [];
     
     let totalSalesValue = 0;
     let totalProfitValue = 0;
     let totalOrdersCount = 0;
     const categorySales = {};
     
-    ordersSnapshot.forEach((doc) => {
-      const orderData = doc.data();
-      ordersList.push({
+    salesSnapshot.forEach((doc) => {
+      const saleData = doc.data();
+      salesList.push({
         id: doc.id,
-        ...orderData
+        ...saleData
       });
       
-      // Calculate total sales using proper unit price
-      const unitPrice = getOrderUnitPrice(orderData);
-      const quantity = orderData.quantity || orderData.weight || 0;
-      const itemPrice = orderData.itemPrice || (unitPrice * quantity) || orderData.totalPrice || 0;
-      totalSalesValue += itemPrice;
+      // Calculate total sales
+      const salePrice = saleData.totalPrice || (saleData.price * saleData.quantity) || 0;
+      totalSalesValue += salePrice;
       
-      // Calculate profit using cost data if available
-      let profit = 0;
-      if (orderData.tax && orderData.deliveryFee) {
-        // New structure with detailed breakdown
-        profit = itemPrice - (itemPrice * 0.7); // Assume 30% cost margin if no cost data
-      } else {
-        profit = itemPrice * 0.3; // Default 30% profit margin
-      }
+      // Calculate profit (assuming 30% profit margin if no cost data)
+      const profit = salePrice * 0.3;
       totalProfitValue += profit;
       
       totalOrdersCount++;
       
-      // Track sales by category using product category
-      const category = orderData.category || 'Other';
+      // Track sales by category
+      const category = saleData.category || 'Other';
       if (!categorySales[category]) {
         categorySales[category] = 0;
       }
-      categorySales[category] += itemPrice;
+      categorySales[category] += salePrice;
     });
     
-    orders.value = ordersList;
+    salesData.value = salesList;
     totalSales.value = totalSalesValue;
     totalOrders.value = totalOrdersCount;
     
@@ -859,10 +1228,10 @@ const fetchOrders = async () => {
     }
     
     // Update charts with real data
-    updateChartsWithOrderData(ordersList, categorySales);
+    updateChartsWithSalesData(salesList, categorySales);
     
   } catch (error) {
-    console.error("Error fetching orders:", error);
+    console.error("Error fetching sales data:", error);
   }
 };
 
@@ -897,60 +1266,67 @@ const fetchProducts = async () => {
     products.value = productsList;
     totalInventory.value = totalInventoryValue;
     
-    // Calculate top products based on sales
-    calculateTopProducts();
-    
   } catch (error) {
     console.error("Error fetching products:", error);
   }
 };
 
-// Calculate top selling products based on orders
+// Calculate top selling products based on sales
 const calculateTopProducts = () => {
   const productSales = {};
   
-  orders.value.forEach(order => {
-    const productName = order.productName;
+  salesData.value.forEach(sale => {
+    const productName = sale.productName;
     if (!productSales[productName]) {
       productSales[productName] = {
         productName: productName,
-        category: order.category || 'Other',
-        unitPrice: getOrderUnitPrice(order),
-        unit: order.unit || 'piece',
+        category: sale.category || 'Other',
+        unitPrice: sale.price || 0,
+        unit: sale.unit || 'piece',
         sold: 0,
         profit: 0,
-        image: order.productImage || '',
-        productImage: order.productImage || ''
+        image: sale.productImage || sale.image || '',
+        productImage: sale.productImage || sale.image || '',
+        images: sale.images || []
       };
     }
     
     // Add quantity sold
-    productSales[productName].sold += order.quantity || order.weight || 0;
+    productSales[productName].sold += sale.quantity || 0;
     
     // Add profit (simplified calculation)
-    const itemPrice = order.itemPrice || (getOrderUnitPrice(order) * (order.quantity || order.weight || 0)) || 0;
-    productSales[productName].profit += itemPrice * 0.3; // Assume 30% profit margin
+    const salePrice = sale.totalPrice || (sale.price * sale.quantity) || 0;
+    productSales[productName].profit += salePrice * 0.3; // Assume 30% profit margin
+  });
+  
+  // Enhance with actual product data for better image handling
+  Object.values(productSales).forEach(productSale => {
+    const actualProduct = products.value.find(p => 
+      p.productName === productSale.productName || 
+      p.name === productSale.productName
+    );
+    
+    if (actualProduct) {
+      // Use actual product data for images and other details
+      productSale.image = actualProduct.image || actualProduct.productImage || productSale.image;
+      productSale.productImage = actualProduct.productImage || actualProduct.image || productSale.productImage;
+      productSale.images = actualProduct.images || productSale.images;
+      productSale.category = actualProduct.category || productSale.category;
+      productSale.unit = actualProduct.unit || productSale.unit;
+      
+      // Add more product details if available
+      productSale.description = actualProduct.description || '';
+      productSale.productId = actualProduct.id || '';
+    }
   });
   
   // Convert to array and sort by quantity sold
-  topProducts.value = Object.values(productSales)
+  const topProductsArray = Object.values(productSales)
     .sort((a, b) => b.sold - a.sold)
     .slice(0, 4);
-};
-
-// Helper function to get unit price from order data
-const getOrderUnitPrice = (order) => {
-  // Priority: unitPrice -> pricePerKg -> calculated from total
-  if (order.unitPrice && order.unitPrice > 0) {
-    return order.unitPrice;
-  }
-  if (order.pricePerKg && order.pricePerKg > 0) {
-    return order.pricePerKg;
-  }
-  if (order.totalPrice && (order.quantity || order.weight) && (order.quantity || order.weight) > 0) {
-    return order.totalPrice / (order.quantity || order.weight);
-  }
-  return 0;
+    
+  topProducts.value = topProductsArray;
+  console.log('Top products calculated:', topProductsArray.length, 'products');
 };
 
 // Initialize sales chart with real data
@@ -1032,7 +1408,8 @@ const initCategoryChart = (labels, data) => {
     '#4a8f4d',
     '#6ab76e',
     '#8fd991',
-    '#b3e6b5'
+    '#b3e6b5',
+    '#d4f4d6'
   ];
   
   categoryChartInstance = new Chart(ctx, {
@@ -1041,7 +1418,7 @@ const initCategoryChart = (labels, data) => {
       labels: labels,
       datasets: [{
         data: data,
-        backgroundColor: backgroundColors,
+        backgroundColor: backgroundColors.slice(0, labels.length),
         borderWidth: 1
       }]
     },
@@ -1059,7 +1436,9 @@ const initCategoryChart = (labels, data) => {
         tooltip: {
           callbacks: {
             label: function(context) {
-              return `${context.label}: ₱${formatNumber(context.raw)}`;
+              const total = context.dataset.data.reduce((a, b) => a + b, 0);
+              const percentage = ((context.raw / total) * 100).toFixed(1);
+              return `${context.label}: ₱${formatNumber(context.raw)} (${percentage}%)`;
             }
           }
         }
@@ -1068,8 +1447,8 @@ const initCategoryChart = (labels, data) => {
   });
 };
 
-// Update charts with order data
-const updateChartsWithOrderData = (orders, categorySales) => {
+// Update charts with sales data
+const updateChartsWithSalesData = (sales, categorySales) => {
   if (!chartsInitialized.value) return;
   
   // Prepare data based on selected time range
@@ -1081,7 +1460,7 @@ const updateChartsWithOrderData = (orders, categorySales) => {
   
   // Generate appropriate labels and data structure based on time range
   if (chartTimeRange.value === 'week') {
-    // For week view: show last 7 days with actual dates
+    // For week view: show last 7 days
     for (let i = 6; i >= 0; i--) {
       const date = new Date();
       date.setDate(now.getDate() - i);
@@ -1091,25 +1470,23 @@ const updateChartsWithOrderData = (orders, categorySales) => {
     }
     
     // Populate data for each day
-    orders.forEach(order => {
-      let orderDate;
-      if (order.createdAt && typeof order.createdAt.toDate === 'function') {
-        orderDate = order.createdAt.toDate();
-      } else if (order.timestamp && typeof order.timestamp.toDate === 'function') {
-        orderDate = order.timestamp.toDate();
+    sales.forEach(sale => {
+      let saleDate;
+      if (sale.timestamp && typeof sale.timestamp.toDate === 'function') {
+        saleDate = sale.timestamp.toDate();
+      } else if (sale.createdAt && typeof sale.createdAt.toDate === 'function') {
+        saleDate = sale.createdAt.toDate();
       } else {
-        orderDate = new Date();
+        saleDate = new Date();
       }
       
-      // Check if order is within the last 7 days
-      const daysDiff = Math.floor((now - orderDate) / (1000 * 60 * 60 * 24));
+      // Check if sale is within the last 7 days
+      const daysDiff = Math.floor((now - saleDate) / (1000 * 60 * 60 * 24));
       if (daysDiff >= 0 && daysDiff < 7) {
         const index = 6 - daysDiff; // Reverse index (newest date at the end)
-        const unitPrice = getOrderUnitPrice(order);
-        const quantity = order.quantity || order.weight || 0;
-        const itemPrice = order.itemPrice || (unitPrice * quantity) || order.totalPrice || 0;
-        revenueData[index] += itemPrice;
-        profitData[index] += itemPrice * 0.3; // Assume 30% profit margin
+        const salePrice = sale.totalPrice || (sale.price * sale.quantity) || 0;
+        revenueData[index] += salePrice;
+        profitData[index] += salePrice * 0.3; // Assume 30% profit margin
       }
     });
   } else if (chartTimeRange.value === 'month') {
@@ -1120,33 +1497,31 @@ const updateChartsWithOrderData = (orders, categorySales) => {
       const weekEnd = new Date();
       weekEnd.setDate(now.getDate() - (i * 7));
       
-      labels.push(`${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`);
+      labels.push(`Week ${4 - i}`);
       revenueData.push(0);
       profitData.push(0);
     }
     
     // Populate data for each week
-    orders.forEach(order => {
-      let orderDate;
-      if (order.createdAt && typeof order.createdAt.toDate === 'function') {
-        orderDate = order.createdAt.toDate();
-      } else if (order.timestamp && typeof order.timestamp.toDate === 'function') {
-        orderDate = order.timestamp.toDate();
+    sales.forEach(sale => {
+      let saleDate;
+      if (sale.timestamp && typeof sale.timestamp.toDate === 'function') {
+        saleDate = sale.timestamp.toDate();
+      } else if (sale.createdAt && typeof sale.createdAt.toDate === 'function') {
+        saleDate = sale.createdAt.toDate();
       } else {
-        orderDate = new Date();
+        saleDate = new Date();
       }
       
-      // Check which week the order belongs to
-      const daysDiff = Math.floor((now - orderDate) / (1000 * 60 * 60 * 24));
+      // Check which week the sale belongs to
+      const daysDiff = Math.floor((now - saleDate) / (1000 * 60 * 60 * 24));
       if (daysDiff >= 0 && daysDiff < 28) {
         const weekIndex = Math.floor(daysDiff / 7);
         if (weekIndex < 4) {
           const index = 3 - weekIndex; // Reverse index (newest week at the end)
-          const unitPrice = getOrderUnitPrice(order);
-          const quantity = order.quantity || order.weight || 0;
-          const itemPrice = order.itemPrice || (unitPrice * quantity) || order.totalPrice || 0;
-          revenueData[index] += itemPrice;
-          profitData[index] += itemPrice * 0.3;
+          const salePrice = sale.totalPrice || (sale.price * sale.quantity) || 0;
+          revenueData[index] += salePrice;
+          profitData[index] += salePrice * 0.3;
         }
       }
     });
@@ -1161,27 +1536,25 @@ const updateChartsWithOrderData = (orders, categorySales) => {
     }
     
     // Populate data for each month
-    orders.forEach(order => {
-      let orderDate;
-      if (order.createdAt && typeof order.createdAt.toDate === 'function') {
-        orderDate = order.createdAt.toDate();
-      } else if (order.timestamp && typeof order.timestamp.toDate === 'function') {
-        orderDate = new Date();
+    sales.forEach(sale => {
+      let saleDate;
+      if (sale.timestamp && typeof sale.timestamp.toDate === 'function') {
+        saleDate = sale.timestamp.toDate();
+      } else if (sale.createdAt && typeof sale.createdAt.toDate === 'function') {
+        saleDate = sale.createdAt.toDate();
       } else {
-        orderDate = new Date();
+        saleDate = new Date();
       }
       
-      // Check which month the order belongs to
-      const monthDiff = (now.getMonth() - orderDate.getMonth()) + 
-                        (now.getFullYear() - orderDate.getFullYear()) * 12;
+      // Check which month the sale belongs to
+      const monthDiff = (now.getMonth() - saleDate.getMonth()) + 
+                        (now.getFullYear() - saleDate.getFullYear()) * 12;
       
       if (monthDiff >= 0 && monthDiff < 3) {
         const index = 2 - monthDiff; // Reverse index (newest month at the end)
-        const unitPrice = getOrderUnitPrice(order);
-        const quantity = order.quantity || order.weight || 0;
-        const itemPrice = order.itemPrice || (unitPrice * quantity) || order.totalPrice || 0;
-        revenueData[index] += itemPrice;
-        profitData[index] += itemPrice * 0.3;
+        const salePrice = sale.totalPrice || (sale.price * sale.quantity) || 0;
+        revenueData[index] += salePrice;
+        profitData[index] += salePrice * 0.3;
       }
     });
   } else {
@@ -1194,24 +1567,22 @@ const updateChartsWithOrderData = (orders, categorySales) => {
     const currentYear = now.getFullYear();
     
     // Populate data for each month
-    orders.forEach(order => {
-      let orderDate;
-      if (order.createdAt && typeof order.createdAt.toDate === 'function') {
-        orderDate = order.createdAt.toDate();
-      } else if (order.timestamp && typeof order.timestamp.toDate === 'function') {
-        orderDate = order.timestamp.toDate();
+    sales.forEach(sale => {
+      let saleDate;
+      if (sale.timestamp && typeof sale.timestamp.toDate === 'function') {
+        saleDate = sale.timestamp.toDate();
+      } else if (sale.createdAt && typeof sale.createdAt.toDate === 'function') {
+        saleDate = sale.createdAt.toDate();
       } else {
-        orderDate = new Date();
+        saleDate = new Date();
       }
       
-      // Only include orders from current year
-      if (orderDate.getFullYear() === currentYear) {
-        const month = orderDate.getMonth();
-        const unitPrice = getOrderUnitPrice(order);
-        const quantity = order.quantity || order.weight || 0;
-        const itemPrice = order.itemPrice || (unitPrice * quantity) || order.totalPrice || 0;
-        revenueData[month] += itemPrice;
-        profitData[month] += itemPrice * 0.3;
+      // Only include sales from current year
+      if (saleDate.getFullYear() === currentYear) {
+        const month = saleDate.getMonth();
+        const salePrice = sale.totalPrice || (sale.price * sale.quantity) || 0;
+        revenueData[month] += salePrice;
+        profitData[month] += salePrice * 0.3;
       }
     });
   }
@@ -1227,14 +1598,44 @@ const updateChartsWithOrderData = (orders, categorySales) => {
 };
 
 // Update dashboard data based on time range
-const updateDashboardData = () => {
-  fetchOrders();
-  fetchProducts();
+const updateDashboardData = async () => {
+  try {
+    // Fetch both sales and products data
+    await Promise.all([
+      fetchSalesData(),
+      fetchProducts()
+    ]);
+    
+    // Calculate top products after both data sets are loaded
+    calculateTopProducts();
+    
+    // If no top products from sales, show some products from inventory
+    if (topProducts.value.length === 0 && products.value.length > 0) {
+      console.log('updateDashboardData: No sales data, showing top products from inventory');
+      topProducts.value = products.value
+        .slice(0, 4)
+        .map(product => ({
+          productName: product.productName || product.name,
+          category: product.category || 'Other',
+          unitPrice: product.price || 0,
+          unit: product.unit || 'piece',
+          sold: 0,
+          profit: 0,
+          image: product.image || product.productImage || '',
+          productImage: product.productImage || product.image || '',
+          images: product.images || [],
+          description: product.description || '',
+          productId: product.id || ''
+        }));
+    }
+  } catch (error) {
+    console.error("Error updating dashboard data:", error);
+  }
 };
 
 // Navigation functions
 const navigateToProducts = () => {
-  router.push('/farm-products');
+  router.push('/products');
 };
 
 const navigateToAddProduct = () => {
@@ -1266,60 +1667,48 @@ const updateProductData = (updatedProduct) => {
   }
 };
 
-// Watch for changes in orders data and update charts
-watch(orders, (newOrders) => {
-  if (newOrders.length > 0 && chartsInitialized.value) {
+// Watch for changes in sales data and update charts
+watch(salesData, (newSales) => {
+  if (newSales.length > 0 && chartsInitialized.value) {
     const categorySales = {};
     
-    newOrders.forEach(order => {
-      const category = order.category || 'Other';
+    newSales.forEach(sale => {
+      const category = sale.category || 'Other';
       if (!categorySales[category]) {
         categorySales[category] = 0;
       }
-      const unitPrice = getOrderUnitPrice(order);
-      const quantity = order.quantity || order.weight || 0;
-      const itemPrice = order.itemPrice || (unitPrice * quantity) || order.totalPrice || 0;
-      categorySales[category] += itemPrice;
+      const salePrice = sale.totalPrice || (sale.price * sale.quantity) || 0;
+      categorySales[category] += salePrice;
     });
     
-    updateChartsWithOrderData(newOrders, categorySales);
+    updateChartsWithSalesData(newSales, categorySales);
   }
 }, { deep: true });
 
 // Initialize charts when component is mounted
 onMounted(() => {
   // Get current user/seller ID
-  auth.onAuthStateChanged((user) => {
+  auth.onAuthStateChanged(async (user) => {
     if (user) {
       currentSellerId.value = user.uid;
-      setTimeout(() => {
-        chartsInitialized.value = true;
-        initSalesChart([], [], []);
-        initCategoryChart([], []);
-        updateDashboardData();
-      }, 100);
+      chartsInitialized.value = true;
+      await initSalesChart([], [], []);
+      await initCategoryChart([], []);
+      updateDashboardData();
     }
   });
   
   // Add event listeners
   document.addEventListener('click', closeExportMenu);
-  document.addEventListener('click', closeChartExportMenu);
 });
 
 onUnmounted(() => {
   document.removeEventListener('click', closeExportMenu);
-  document.removeEventListener('click', closeChartExportMenu);
 });
 
 defineOptions({
   name: 'SellerAnalytics'
 });
-
-const closeExportMenu = (event) => {
-  if (showChartExportMenu.value && !event.target.closest('.chart-export-dropdown')) {
-    showChartExportMenu.value = false;
-  }
-};
 </script>
 
 <style scoped>
@@ -1514,6 +1903,12 @@ const closeExportMenu = (event) => {
   margin: 0;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .view-all-btn {
   background-color: transparent;
   color: #2e5c31;
@@ -1530,6 +1925,230 @@ const closeExportMenu = (event) => {
   gap: 8px;
   background-color: #2e5c31;
   color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+/* Export functionality */
+.export-dropdown {
+  position: relative;
+}
+
+.export-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background-color: #f3f4f6;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.export-btn:hover {
+  background-color: #e5e7eb;
+}
+
+.export-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 5px;
+  background-color: white;
+  border-radius: 6px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  z-index: 10;
+  min-width: 160px;
+  overflow: hidden;
+}
+
+.export-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: #4b5563;
+  transition: background-color 0.2s;
+}
+
+.export-option:hover {
+  background-color: #f9fafb;
+}
+
+/* Export Preview Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.export-preview-modal {
+  width: 90%;
+  max-width: 800px;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.modal-header h3 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #6b7280;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.close-btn:hover {
+  background-color: #f3f4f6;
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+.export-info {
+  background-color: #f9fafb;
+  border-radius: 6px;
+  padding: 15px;
+  margin-bottom: 20px;
+}
+
+.export-info p {
+  margin: 5px 0;
+  font-size: 0.9rem;
+  color: #4b5563;
+}
+
+.preview-content h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #111827;
+  margin: 0 0 10px 0;
+}
+
+.csv-preview pre {
+  background-color: #f3f4f6;
+  border-radius: 4px;
+  padding: 15px;
+  font-size: 0.8rem;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  color: #374151;
+}
+
+.pdf-preview-content {
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 20px;
+  background-color: #fafafa;
+}
+
+.pdf-header {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.pdf-header h2 {
+  color: #2e5c31;
+  margin: 0 0 10px 0;
+}
+
+.pdf-header p {
+  color: #6b7280;
+  margin: 0;
+}
+
+.preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 15px;
+}
+
+.preview-table th,
+.preview-table td {
+  border: 1px solid #d1d5db;
+  padding: 8px;
+  text-align: left;
+  font-size: 0.8rem;
+}
+
+.preview-table th {
+  background-color: #f3f4f6;
+  font-weight: 600;
+}
+
+.preview-note {
+  font-style: italic;
+  color: #6b7280;
+  text-align: center;
+  margin: 0;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 20px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.cancel-btn {
+  background-color: transparent;
+  color: #6b7280;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.confirm-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background-color: #2e5c31;
+  color: white;
   border: none;
   border-radius: 6px;
   padding: 8px 16px;
@@ -1560,6 +2179,11 @@ const closeExportMenu = (event) => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transition: opacity 0.3s ease;
+}
+
+.product-image img:hover {
+  opacity: 0.9;
 }
 
 .product-ribbon {
@@ -1636,7 +2260,7 @@ const closeExportMenu = (event) => {
   border: 1px solid #d1d5db;
   border-radius: 6px;
   font-size: 0.9rem;
-  min-width: 150px;
+  min-width: 120px;
 }
 
 .search-filter {
@@ -1648,8 +2272,8 @@ const closeExportMenu = (event) => {
   border: 1px solid #d1d5db;
   border-radius: 6px;
   font-size: 0.9rem;
-  width: 100%;
-  height: 40px; /* Match height with other filter elements */
+  width: 80%;
+  height: 25px;
 }
 
 /* Inventory Table */
@@ -1668,7 +2292,7 @@ const closeExportMenu = (event) => {
   padding: 12px 15px;
   text-align: left;
   border-bottom: 1px solid #e5e7eb;
-  vertical-align: middle; /* Ensure proper alignment */
+  vertical-align: middle;
 }
 
 .inventory-table th {
@@ -1682,7 +2306,7 @@ const closeExportMenu = (event) => {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 60px; /* Ensure consistent row height */
+  min-height: 60px;
 }
 
 .product-image-small {
@@ -1697,6 +2321,11 @@ const closeExportMenu = (event) => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transition: opacity 0.3s ease;
+}
+
+.product-image-small img:hover {
+  opacity: 0.9;
 }
 
 .available-units {
@@ -1727,12 +2356,6 @@ const closeExportMenu = (event) => {
   margin-bottom: 4px;
 }
 
-.stock-label {
-  font-size: 0.7rem;
-  color: #6b7280;
-  min-width: 40px;
-}
-
 .stock-badge {
   display: inline-block;
   padding: 4px 10px;
@@ -1741,12 +2364,47 @@ const closeExportMenu = (event) => {
   font-weight: 500;
 }
 
+.stock-badge.out-of-stock {
+  background-color: #fee2e2;
+  color: #dc2626;
+}
+
+.stock-badge.low-stock {
+  background-color: #fef3c7;
+  color: #d97706;
+}
+
+.stock-badge.normal-stock {
+  background-color: #dbeafe;
+  color: #3b82f6;
+}
+
+.stock-badge.high-stock {
+  background-color: #d1fae5;
+  color: #059669;
+}
+
 .status-badge {
   display: inline-block;
   padding: 6px 12px;
   border-radius: 6px;
   font-size: 0.9rem;
   font-weight: 500;
+}
+
+.status-badge.status-active {
+  background-color: #d1fae5;
+  color: #059669;
+}
+
+.status-badge.status-inactive {
+  background-color: #fef3c7;
+  color: #d97706;
+}
+
+.status-badge.status-scheduled {
+  background-color: #dbeafe;
+  color: #3b82f6;
 }
 
 .actions-cell {
@@ -1848,127 +2506,6 @@ const closeExportMenu = (event) => {
   cursor: pointer;
 }
 
-/* Responsive adjustments */
-@media (max-width: 1200px) {
-  .charts-container {
-    grid-template-columns: 1fr;
-  }
-  
-  .main-chart-wrapper {
-    height: 300px;
-  }
-  
-  .category-chart-wrapper {
-    height: 200px;
-  }
-}
-
-@media (max-width: 768px) {
-  .main-content {
-    margin-left: 0;
-  }
-  
-  .charts-container {
-    grid-template-columns: 1fr;
-  }
-  
-  .top-products {
-    grid-template-columns: 1fr;
-  }
-  
-  .main-chart-wrapper {
-    height: 250px;
-  }
-  
-  .category-chart-wrapper {
-    height: 180px;
-  }
-}
-
-/* Dark mode styles */
-:global(.dark) .main-content {
-  background-color: #111827;
-}
-
-:global(.dark) .page-title h1 {
-  color: #f9fafb;
-}
-
-:global(.dark) .page-title p {
-  color: #9ca3af;
-}
-
-:global(.dark) .date-filter select {
-  background-color: #1f2937;
-  border-color: #374151;
-  color: #e5e7eb;
-}
-
-:global(.dark) .summary-card,
-:global(.dark) .chart-card,
-:global(.dark) .section-container {
-  background-color: #1f2937;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-}
-
-:global(.dark) .card-content h3,
-:global(.dark) .legend-item {
-  color: #9ca3af;
-}
-
-:global(.dark) .card-value,
-:global(.dark) .chart-header h2,
-:global(.dark) .section-header h2,
-:global(.dark) .product-details h3,
-:global(.dark) .stat-value,
-:global(.dark) .alert-content h3 {
-  color: #f9fafb;
-}
-
-:global(.dark) .product-card {
-  border-color: #374151;
-}
-
-:global(.dark) .product-category,
-:global(.dark) .stat-label,
-:global(.dark) .filter-group label,
-:global(.dark) .alert-content p {
-  color: #9ca3af;
-}
-
-:global(.dark) .filter-group select,
-:global(.dark) .search-filter input {
-  background-color: #374151;
-  border-color: #4b5563;
-  color: #e5e7eb;
-}
-
-:global(.dark) .inventory-table th {
-  background-color: #374151;
-  color: #d1d5db;
-}
-
-:global(.dark) .inventory-table td {
-  border-color: #4b5563;
-}
-
-:global(.dark) .pagination button {
-  background-color: #374151;
-  border-color: #4b5563;
-  color: #e5e7eb;
-}
-
-:global(.dark) .view-all-btn {
-  border-color: #4a8f4d;
-  color: #4a8f4d;
-}
-
-:global(.dark) .restock-btn {
-  background-color: #374151;
-  border-color: #4a8f4d;
-  color: #4a8f4d;
-}
-
 /* Chart Controls */
 .chart-controls {
   display: flex;
@@ -2046,36 +2583,44 @@ const closeExportMenu = (event) => {
   background-color: #f9fafb;
 }
 
-/* Dark mode styles for chart controls */
-:global(.dark) .chart-time-filter {
-  background-color: #374151;
-  border-color: #4b5563;
-  color: #e5e7eb;
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+  .charts-container {
+    grid-template-columns: 1fr;
+  }
+  
+  .main-chart-wrapper {
+    height: 300px;
+  }
+  
+  .category-chart-wrapper {
+    height: 200px;
+  }
 }
 
-:global(.dark) .chart-export-btn {
-  background-color: #3b7a3f;
-}
-
-:global(.dark) .chart-export-btn:hover {
-  background-color: #2e5c31;
-}
-
-:global(.dark) .chart-export-menu {
-  background-color: #1f2937;
-  border: 1px solid #4b5563;
-}
-
-:global(.dark) .chart-export-option {
-  color: #e5e7eb;
-}
-
-:global(.dark) .chart-export-option:hover {
-  background-color: #374151;
-}
-
-/* Responsive adjustments for chart controls */
 @media (max-width: 768px) {
+  .main-content {
+    margin-left: 0;
+    padding: 15px;
+    padding-top: 80px;
+  }
+  
+  .charts-container {
+    grid-template-columns: 1fr;
+  }
+  
+  .top-products {
+    grid-template-columns: 1fr;
+  }
+  
+  .main-chart-wrapper {
+    height: 250px;
+  }
+  
+  .category-chart-wrapper {
+    height: 180px;
+  }
+  
   .chart-controls {
     flex-direction: column;
     align-items: flex-start;
@@ -2087,8 +2632,9 @@ const closeExportMenu = (event) => {
     justify-content: space-between;
   }
   
-  .chart-time-filter {
-    min-width: 100px;
+  .header-actions {
+    flex-direction: column;
+    gap: 8px;
   }
 }
 </style>

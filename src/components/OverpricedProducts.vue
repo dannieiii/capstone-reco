@@ -3,16 +3,8 @@
     <div class="overpriced-header">
       <h2>Overpriced Products Management</h2>
       <div class="bulk-actions">
-        <button class="bulk-btn" @click="sendBulkWarnings" :disabled="selectedOverpriced.length === 0">
-          <i class="fas fa-bullhorn"></i> Send Bulk Warnings ({{ selectedOverpriced.length }})
-        </button>
-        <button class="bulk-btn" @click="exportOverpricedReport">
-          <i class="fas fa-download"></i> Export Report
-        </button>
-        <button class="bulk-btn deactivate-btn" @click="bulkDeactivateProducts" :disabled="selectedForDeactivation.length === 0">
-          <i class="fas fa-ban"></i> Deactivate Products ({{ selectedForDeactivation.length }})
-        </button>
-      </div>
+  <!-- Only keep export button, remove bulk warning and deactivate buttons -->
+</div>
     </div>
 
     <!-- Compact Filters and Settings Row -->
@@ -95,19 +87,48 @@
       <div class="table-header">
         <h3>Overpriced Products ({{ filteredOverpricedProducts.length }})</h3>
         <div class="table-actions">
+          <!-- Search Bar -->
+          <div class="search-container">
+            <i class="fas fa-search search-icon"></i>
+            <input 
+              type="text" 
+              v-model="searchQuery" 
+              placeholder="Search products, sellers..." 
+              class="search-input"
+              @input="handleSearch"
+            >
+            <button v-if="searchQuery" @click="clearSearch" class="clear-search">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+          
           <button class="refresh-btn" @click="refreshData" :disabled="isRefreshing">
             <i class="fas fa-sync-alt" :class="{ 'fa-spin': isRefreshing }"></i>
             {{ isRefreshing ? 'Refreshing...' : 'Refresh' }}
           </button>
+          
+          <!-- Export Dropdown -->
+          <div class="export-dropdown" ref="exportDropdown">
+            <button class="bulk-btn export-toggle" @click="toggleExportDropdown">
+              <i class="fas fa-download"></i> Export Report
+              <i class="fas fa-chevron-down"></i>
+            </button>
+            <div v-if="showExportDropdown" class="export-menu">
+              <button @click="previewExport('csv')" class="export-option">
+                <i class="fas fa-file-csv"></i> Export as CSV
+              </button>
+              <button @click="previewExport('pdf')" class="export-option">
+                <i class="fas fa-file-pdf"></i> Export as PDF
+              </button>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="table-container">
-        <table>
+      
+      <div class="table-wrapper">
+        <table class="products-table">
           <thead>
             <tr>
-              <th>
-                <input type="checkbox" @change="toggleSelectAll" :checked="allSelected">
-              </th>
               <th>Product</th>
               <th>Seller</th>
               <th>Seller Price</th>
@@ -122,10 +143,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="product in filteredOverpricedProducts" :key="product.id" :class="getProductRowClass(product)">
-              <td>
-                <input type="checkbox" v-model="selectedOverpriced" :value="product.id">
-              </td>
+            <tr v-for="product in paginatedProducts" :key="product.id" :class="getProductRowClass(product)">
               <td>
                 <div class="product-cell">
                   <div class="product-image" :style="{ backgroundImage: `url(${getImageUrl(product.image)})` }"></div>
@@ -149,12 +167,20 @@
               </td>
               <td>
                 <div class="price-display">
-                  <span class="current-price text-danger">₱{{ formatPrice(product.currentPrice?.price || product.price) }}</span>
+                  <span class="current-price text-danger">
+                    ₱{{ formatPrice(product.currentPrice?.price || product.price || 0) }}
+                  </span>
+                  <small v-if="product.currentPrice?.unitLabel" class="unit-label">
+                    {{ product.currentPrice.unitLabel }}
+                  </small>
                 </div>
               </td>
               <td>
                 <div class="reference-price">
-                  <span class="max-price">₱{{ product.daReference?.maxPrice || 'N/A' }}</span>
+                  <span class="max-price">₱{{ formatPrice(product.daReference?.maxPrice || 0) }}</span>
+                  <small v-if="product.daReference?.unit" class="unit-label">
+                    {{ product.daReference.unit }}
+                  </small>
                 </div>
               </td>
               <td>
@@ -233,6 +259,85 @@
             </tr>
           </tbody>
         </table>
+      </div>
+      
+      <!-- Simple Pagination -->
+      <div class="simple-pagination">
+        <div class="pagination-info">
+          Showing {{ startIndex + 1 }}-{{ endIndex }} of {{ filteredOverpricedProducts.length }} products
+        </div>
+        <div class="pagination-nav">
+          <button 
+            @click="previousPage" 
+            :disabled="currentPage === 1"
+            class="pagination-btn"
+          >
+            <i class="fas fa-chevron-left"></i> Previous
+          </button>
+          <span class="page-indicator">Page {{ currentPage }} of {{ totalPages }}</span>
+          <button 
+            @click="nextPage" 
+            :disabled="currentPage === totalPages"
+            class="pagination-btn"
+          >
+            Next <i class="fas fa-chevron-right"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Export Preview Modal -->
+    <div v-if="showExportPreview" class="modal-overlay" @click="closeExportPreview">
+      <div class="modal-content export-preview-modal" @click.stop>
+        <div class="modal-header">
+          <h2>Export Preview - {{ exportFormat.toUpperCase() }}</h2>
+          <button class="close-btn" @click="closeExportPreview">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="export-summary">
+            <div class="summary-item">
+              <strong>Total Records:</strong> {{ exportPreviewData.length }}
+            </div>
+            <div class="summary-item">
+              <strong>Export Format:</strong> {{ exportFormat.toUpperCase() }}
+            </div>
+            <div class="summary-item">
+              <strong>Generated:</strong> {{ new Date().toLocaleString() }}
+            </div>
+          </div>
+          
+          <div class="preview-container">
+            <h4>Data Preview (First 5 records):</h4>
+            <div class="preview-table-container">
+              <table class="preview-table">
+                <thead>
+                  <tr>
+                    <th v-for="header in exportHeaders" :key="header">{{ header }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(row, index) in exportPreviewData.slice(0, 5)" :key="index">
+                    <td v-for="header in exportHeaders" :key="header">
+                      {{ row[header] }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div v-if="exportPreviewData.length > 5" class="preview-note">
+              ... and {{ exportPreviewData.length - 5 }} more records
+            </div>
+          </div>
+          
+          <div class="modal-actions">
+            <button class="secondary-btn" @click="closeExportPreview">Cancel</button>
+            <button class="primary-btn" @click="confirmExport">
+              <i class="fas fa-download"></i> Download {{ exportFormat.toUpperCase() }}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -360,9 +465,19 @@ const emit = defineEmits(['send-warning', 'view-seller', 'product-deactivated', 
 const selectedWarningLevel = ref('');
 const selectedNotificationStatus = ref('');
 const selectedDaysSinceWarning = ref('');
-const selectedOverpriced = ref([]);
-const selectedForDeactivation = ref([]);
 const isRefreshing = ref(false);
+
+// Search and pagination
+const searchQuery = ref('');
+const currentPage = ref(1);
+const itemsPerPage = 10; // Fixed to 10
+
+// Export functionality
+const showExportDropdown = ref(false);
+const showExportPreview = ref(false);
+const exportFormat = ref('csv');
+const exportPreviewData = ref([]);
+const exportHeaders = ref([]);
 
 // Enhanced Auto-notification settings
 const autoNotificationsEnabled = ref(true);
@@ -390,8 +505,36 @@ const lastSystemCheck = ref(new Date());
 // Auto-notification interval
 let autoNotificationInterval = null;
 
+// Search functionality
+const searchFilteredProducts = computed(() => {
+  let result = productsWithWarningLevels.value;
+  
+  if (searchQuery.value.trim()) {
+    const query = searchQuery.value.toLowerCase().trim();
+    result = result.filter(product => {
+      const productName = product.productName?.toLowerCase() || '';
+      const sellerName = getSellerName(product.sellerId).toLowerCase();
+      const category = product.category?.toLowerCase() || '';
+      const status = product.status?.toLowerCase() || '';
+      
+      return productName.includes(query) || 
+             sellerName.includes(query) || 
+             category.includes(query) || 
+             status.includes(query);
+    });
+  }
+  
+  return result;
+});
+
 const filteredOverpricedProducts = computed(() => {
-  let result = [...productsWithWarningLevels.value];
+  // Ensure we have valid products with proper structure, including inactive ones
+  let result = searchFilteredProducts.value.filter(product => 
+    product && 
+    product.id && 
+    product.productName &&
+    (product.hasOverpricedUnits || product.deviation > 0)
+  );
   
   if (selectedWarningLevel.value) {
     result = result.filter(product => product.warningLevel === selectedWarningLevel.value);
@@ -428,28 +571,262 @@ const filteredOverpricedProducts = computed(() => {
   return result;
 });
 
-const allSelected = computed(() => {
-  return filteredOverpricedProducts.value.length > 0 && 
-         selectedOverpriced.value.length === filteredOverpricedProducts.value.length;
+// Simple pagination
+const totalPages = computed(() => {
+  return Math.ceil(filteredOverpricedProducts.value.length / itemsPerPage);
+});
+
+const startIndex = computed(() => {
+  return (currentPage.value - 1) * itemsPerPage;
+});
+
+const endIndex = computed(() => {
+  return Math.min(startIndex.value + itemsPerPage, filteredOverpricedProducts.value.length);
+});
+
+const paginatedProducts = computed(() => {
+  return filteredOverpricedProducts.value.slice(startIndex.value, endIndex.value);
 });
 
 const productsWithWarningLevels = computed(() => {
   return props.overpricedProducts.map(product => {
-    let warningLevel = 'mild'; // Default to mild instead of empty
-    if (product.deviation >= 50) {
+    // Ensure we have valid deviation data
+    let deviation = 0;
+    let excessAmount = 0;
+    let currentPrice = null;
+    let daReference = null;
+    
+    // Extract pricing information from units if available
+    if (product.units && Array.isArray(product.units)) {
+      const overpricedUnit = product.units.find(unit => unit.isOverpriced);
+      if (overpricedUnit) {
+        deviation = overpricedUnit.deviation || 0;
+        excessAmount = overpricedUnit.excessAmount || 0;
+        currentPrice = {
+          price: overpricedUnit.price,
+          unitLabel: overpricedUnit.type
+        };
+        daReference = overpricedUnit.daReference;
+      }
+    } else {
+      // Fallback to product-level data
+      deviation = product.deviation || product.overallDeviation || 0;
+      excessAmount = product.excessAmount || 0;
+      currentPrice = product.currentPrice || { price: product.price || 0, unitLabel: 'N/A' };
+      daReference = product.daReference;
+    }
+    
+    let warningLevel = 'mild';
+    const absDeviation = Math.abs(deviation);
+    if (absDeviation >= 50) {
       warningLevel = 'severe';
-    } else if (product.deviation >= 25) {
+    } else if (absDeviation >= 25) {
       warningLevel = 'moderate';
-    } else if (product.deviation >= 10) {
+    } else if (absDeviation >= 10) {
       warningLevel = 'mild';
     }
     
     return {
       ...product,
-      warningLevel
+      warningLevel,
+      deviation: parseFloat(deviation),
+      excessAmount: parseFloat(excessAmount),
+      currentPrice,
+      daReference,
+      hasOverpricedUnits: deviation > 0
+    };
+  }).filter(product => product.deviation > 0); // Only show products with actual deviations
+});
+
+// Search methods
+const handleSearch = () => {
+  currentPage.value = 1; // Reset to first page when searching
+};
+
+const clearSearch = () => {
+  searchQuery.value = '';
+  currentPage.value = 1;
+};
+
+// Simple pagination methods
+const nextPage = () => {
+  if (currentPage.value < totalPages.value) {
+    currentPage.value++;
+  }
+};
+
+const previousPage = () => {
+  if (currentPage.value > 1) {
+    currentPage.value--;
+  }
+};
+
+// Export methods
+const toggleExportDropdown = () => {
+  showExportDropdown.value = !showExportDropdown.value;
+};
+
+const previewExport = (format) => {
+  exportFormat.value = format;
+  generateExportPreview();
+  showExportDropdown.value = false;
+  showExportPreview.value = true;
+};
+
+const generateExportPreview = () => {
+  const data = filteredOverpricedProducts.value.map(product => {
+    const warningCount = getProductWarningHistory(product.id).length;
+    const lastWarning = getLastWarningDate(product.id);
+    
+    return {
+      'Product Name': product.productName,
+      'Category': product.category || 'N/A',
+      'Seller': getSellerName(product.sellerId),
+      'Seller ID': product.sellerId,
+      'Current Price': formatPrice(product.currentPrice?.price || product.price),
+      'D.A. Max Price': product.daReference?.maxPrice || 'N/A',
+      'Excess Amount': formatPrice(product.excessAmount),
+      'Deviation %': formatDeviation(product.deviation),
+      'Warning Level': getWarningLevelText(product.warningLevel),
+      'Warning Count': warningCount,
+      'Last Warning Date': lastWarning ? formatDate(lastWarning) : 'Never',
+      'Days Since Last Warning': lastWarning ? Math.floor((new Date() - lastWarning) / (1000 * 60 * 60 * 24)) : 'N/A',
+      'Status': product.status || 'active',
+      'Next Action': getNextActionText(product),
+      'Auto Status': getAutoStatusText(product),
+      'Pending Auto Warning': shouldSendAutoWarning(product) ? 'Yes' : 'No',
+      'Pending Auto Deactivation': shouldAutoDeactivate(product) ? 'Yes' : 'No'
     };
   });
-});
+  
+  exportPreviewData.value = data;
+  exportHeaders.value = Object.keys(data[0] || {});
+};
+
+const closeExportPreview = () => {
+  showExportPreview.value = false;
+  exportPreviewData.value = [];
+  exportHeaders.value = [];
+};
+
+const confirmExport = () => {
+  if (exportFormat.value === 'csv') {
+    downloadCSV();
+  } else if (exportFormat.value === 'pdf') {
+    downloadPDF();
+  }
+  closeExportPreview();
+};
+
+const downloadCSV = () => {
+  try {
+    const csvData = exportPreviewData.value.map(row => ({
+      ...row,
+      'Export Date': new Date().toISOString().split('T')[0],
+      'Export Time': new Date().toLocaleTimeString()
+    }));
+    
+    const headers = Object.keys(csvData[0] || {});
+    const csvContent = [
+      headers.join(','),
+      ...csvData.map(row => 
+        headers.map(header => {
+          const value = row[header];
+          return typeof value === 'string' && (value.includes(',') || value.includes('"')) 
+            ? `"${value.replace(/"/g, '""')}"` 
+            : value;
+        }).join(',')
+      )
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    
+    if (link.download !== undefined) {
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `overpriced-products-report-${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+    
+    alert(`CSV export completed! Downloaded ${csvData.length} records.`);
+    
+  } catch (error) {
+    console.error('CSV export error:', error);
+    alert('Failed to export CSV. Please try again.');
+  }
+};
+
+const downloadPDF = () => {
+  try {
+    // Create a simple HTML table for PDF generation
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Overpriced Products Report</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; }
+          h1 { color: #2e5c31; text-align: center; }
+          .report-info { margin-bottom: 20px; text-align: center; color: #666; }
+          table { width: 100%; border-collapse: collapse; font-size: 10px; }
+          th, td { border: 1px solid #ddd; padding: 4px; text-align: left; }
+          th { background-color: #f5f5f5; font-weight: bold; }
+          .warning-severe { color: #dc2626; }
+          .warning-moderate { color: #ea580c; }
+          .warning-mild { color: #92400e; }
+        </style>
+      </head>
+      <body>
+        <h1>Overpriced Products Report</h1>
+        <div class="report-info">
+          <p>Generated on: ${new Date().toLocaleString()}</p>
+          <p>Total Records: ${exportPreviewData.value.length}</p>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              ${exportHeaders.value.map(header => `<th>${header}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${exportPreviewData.value.map(row => `
+              <tr>
+                ${exportHeaders.value.map(header => `<td>${row[header]}</td>`).join('')}
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </body>
+      </html>
+    `;
+    
+    const blob = new Blob([htmlContent], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    
+    // Open in new window for printing/saving as PDF
+    const printWindow = window.open(url, '_blank');
+    printWindow.onload = () => {
+      printWindow.print();
+    };
+    
+    alert('PDF preview opened in new window. Use your browser\'s print function to save as PDF.');
+    
+  } catch (error) {
+    console.error('PDF export error:', error);
+    alert('Failed to generate PDF. Please try again.');
+  }
+};
+
+// Close dropdown when clicking outside
+const handleClickOutside = (event) => {
+  if (showExportDropdown.value && !event.target.closest('.export-dropdown')) {
+    showExportDropdown.value = false;
+  }
+};
 
 // Enhanced methods for automatic system
 const shouldSendAutoWarning = (product) => {
@@ -590,71 +967,9 @@ const refreshData = async () => {
   }
 };
 
-// Enhanced export functionality
+// Enhanced export functionality (keeping original method for backward compatibility)
 const exportOverpricedReport = () => {
-  try {
-    const csvData = filteredOverpricedProducts.value.map(product => {
-      const warningCount = getProductWarningHistory(product.id).length;
-      const lastWarning = getLastWarningDate(product.id);
-      
-      return {
-        'Product Name': product.productName,
-        'Category': product.category || 'N/A',
-        'Seller': getSellerName(product.sellerId),
-        'Seller ID': product.sellerId,
-        'Current Price': formatPrice(product.currentPrice?.price || product.price),
-        'D.A. Max Price': product.daReference?.maxPrice || 'N/A',
-        'Excess Amount': formatPrice(product.excessAmount),
-        'Deviation %': formatDeviation(product.deviation),
-        'Warning Level': getWarningLevelText(product.warningLevel),
-        'Warning Count': warningCount,
-        'Last Warning Date': lastWarning ? formatDate(lastWarning) : 'Never',
-        'Days Since Last Warning': lastWarning ? Math.floor((new Date() - lastWarning) / (1000 * 60 * 60 * 24)) : 'N/A',
-        'Status': product.status || 'active',
-        'Next Action': getNextActionText(product),
-        'Auto Status': getAutoStatusText(product),
-        'Pending Auto Warning': shouldSendAutoWarning(product) ? 'Yes' : 'No',
-        'Pending Auto Deactivation': shouldAutoDeactivate(product) ? 'Yes' : 'No',
-        'Export Date': new Date().toISOString().split('T')[0],
-        'Export Time': new Date().toLocaleTimeString()
-      };
-    });
-    
-    // Convert to CSV
-    const headers = Object.keys(csvData[0] || {});
-    const csvContent = [
-      headers.join(','),
-      ...csvData.map(row => 
-        headers.map(header => {
-          const value = row[header];
-          // Escape commas and quotes in values
-          return typeof value === 'string' && (value.includes(',') || value.includes('"')) 
-            ? `"${value.replace(/"/g, '""')}"` 
-            : value;
-        }).join(',')
-      )
-    ].join('\n');
-    
-    // Create and download file
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    
-    if (link.download !== undefined) {
-      const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', `overpriced-products-report-${new Date().toISOString().split('T')[0]}.csv`);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    }
-    
-    alert(`Export completed! Downloaded ${csvData.length} records.`);
-    
-  } catch (error) {
-    console.error('Export error:', error);
-    alert('Failed to export report. Please try again.');
-  }
+  previewExport('csv');
 };
 
 // Enhanced warning notification with automation flag
@@ -841,24 +1156,7 @@ const getWarningLevelIcon = (level) => {
 
 // Methods
 const applyOverpricedFilters = () => {
-  selectedOverpriced.value = [];
-  selectedForDeactivation.value = [];
-};
-
-const toggleSelectAll = () => {
-  if (allSelected.value) {
-    selectedOverpriced.value = [];
-  } else {
-    selectedOverpriced.value = filteredOverpricedProducts.value.map(p => p.id);
-  }
-  updateDeactivationSelection();
-};
-
-const updateDeactivationSelection = () => {
-  selectedForDeactivation.value = selectedOverpriced.value.filter(productId => {
-    const product = props.overpricedProducts.find(p => p.id === productId);
-    return canDeactivateProduct(product);
-  });
+  currentPage.value = 1; // Reset to first page when filtering
 };
 
 const canSendWarning = (product) => {
@@ -935,31 +1233,6 @@ const getNextActionDate = (product) => {
   const nextAction = new Date(lastWarningDate);
   nextAction.setDate(nextAction.getDate() + daysBetweenWarnings.value);
   return nextAction.toISOString();
-};
-
-const sendBulkWarnings = async () => {
-  if (selectedOverpriced.value.length === 0) return;
-  
-  const confirmed = confirm(`Send warnings to ${selectedOverpriced.value.length} sellers?`);
-  if (!confirmed) return;
-  
-  try {
-    const promises = selectedOverpriced.value.map(productId => {
-      const product = props.overpricedProducts.find(p => p.id === productId);
-      if (product && canSendWarning(product)) {
-        return sendWarningNotification(product, false); // false = manual
-      }
-    });
-    
-    await Promise.all(promises.filter(Boolean));
-    selectedOverpriced.value = [];
-    alert('Bulk warnings sent successfully!');
-    await refreshData();
-    
-  } catch (error) {
-    console.error('Error sending bulk warnings:', error);
-    alert('Failed to send bulk warnings. Please try again.');
-  }
 };
 
 const sendIndividualWarning = (product) => {
@@ -1039,28 +1312,6 @@ const reactivateProduct = async (product) => {
   } catch (error) {
     console.error('Error reactivating product:', error);
     alert('Failed to reactivate product. Please try again.');
-  }
-};
-
-const bulkDeactivateProducts = async () => {
-  if (selectedForDeactivation.value.length === 0) return;
-  
-  const confirmed = confirm(`Are you sure you want to deactivate ${selectedForDeactivation.value.length} products?`);
-  if (!confirmed) return;
-  
-  try {
-    const promises = selectedForDeactivation.value.map(productId => 
-      deactivateProductById(productId, 'manual')
-    );
-    
-    await Promise.all(promises);
-    selectedOverpriced.value = [];
-    selectedForDeactivation.value = [];
-    alert('Products deactivated successfully!');
-    await refreshData();
-  } catch (error) {
-    console.error('Error deactivating products:', error);
-    alert('Failed to deactivate products. Please try again.');
   }
 };
 
@@ -1305,6 +1556,9 @@ onMounted(async () => {
   
   // Setup automatic system
   setupAutoNotificationChecking();
+  
+  // Add click outside listener for export dropdown
+  document.addEventListener('click', handleClickOutside);
 });
 
 // Cleanup on unmount
@@ -1312,6 +1566,7 @@ onUnmounted(() => {
   if (autoNotificationInterval) {
     clearInterval(autoNotificationInterval);
   }
+  document.removeEventListener('click', handleClickOutside);
 });
 </script>
 
@@ -1323,8 +1578,8 @@ onUnmounted(() => {
   gap: 12px;
   padding: 12px;
   max-width: 100%;
-  height: 100vh;
-  overflow-y: auto;
+  min-height: 100vh; /* Change from height to min-height */
+  overflow-y: visible; /* Change from auto to visible */
 }
 
 .overpriced-header {
@@ -1501,10 +1756,9 @@ onUnmounted(() => {
   padding: 12px;
   border-radius: 8px;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
-  flex: 1;
-  min-height: 0;
   display: flex;
   flex-direction: column;
+  height: auto; /* Remove fixed height constraints */
 }
 
 .table-header {
@@ -1512,6 +1766,8 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .table-header h3 {
@@ -1522,7 +1778,114 @@ onUnmounted(() => {
 
 .table-actions {
   display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Search Bar Styles */
+.search-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-icon {
+  position: absolute;
+  left: 8px;
+  color: #666;
+  font-size: 0.75rem;
+  z-index: 1;
+}
+
+.search-input {
+  padding: 6px 12px 6px 28px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  font-size: 0.75rem;
+  width: 200px;
+  transition: all 0.2s;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #2e5c31;
+  box-shadow: 0 0 0 2px rgba(46, 92, 49, 0.1);
+}
+
+.clear-search {
+  position: absolute;
+  right: 4px;
+  background: none;
+  border: none;
+  color: #999;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 2px;
+  font-size: 0.625rem;
+}
+
+.clear-search:hover {
+  color: #666;
+  background: #f0f0f0;
+}
+
+/* Export Dropdown Styles */
+.export-dropdown {
+  position: relative;
+}
+
+.export-toggle {
+  background: #2e5c31;
+  color: white;
+  display: flex;
+  align-items: center;
   gap: 6px;
+}
+
+.export-toggle:hover {
+  background: #1f4322;
+}
+
+.export-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  min-width: 160px;
+  margin-top: 2px;
+}
+
+.export-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 0.75rem;
+  color: #333;
+  transition: background-color 0.2s;
+}
+
+.export-option:hover {
+  background: #f5f5f5;
+}
+
+.export-option:first-child {
+  border-radius: 4px 4px 0 0;
+}
+
+.export-option:last-child {
+  border-radius: 0 0 4px 4px;
 }
 
 .refresh-btn {
@@ -1545,37 +1908,66 @@ onUnmounted(() => {
   cursor: not-allowed;
 }
 
-.table-container {
-  overflow: auto;
-  flex: 1;
-  min-height: 0;
+/* Table Wrapper - No scroll bars, fixed layout */
+.table-wrapper {
+  width: 100%;
+  overflow: visible; /* Remove hidden overflow */
+  margin-bottom: 16px; /* Add space before pagination */
 }
 
-table {
+.products-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 1200px;
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
+  table-layout: fixed;
+  margin-bottom: 0; /* Remove any bottom margin */
 }
 
-th, td {
-  padding: 6px 8px;
+.products-table th,
+.products-table td {
+  padding: 12px 8px; /* Taller row height */
   text-align: left;
   border-bottom: 1px solid #eee;
   vertical-align: top;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-th {
+/* Column widths */
+.products-table th:nth-child(1),
+.products-table td:nth-child(1) { width: 18%; } /* Product */
+.products-table th:nth-child(2),
+.products-table td:nth-child(2) { width: 12%; } /* Seller */
+.products-table th:nth-child(3),
+.products-table td:nth-child(3) { width: 8%; } /* Seller Price */
+.products-table th:nth-child(4),
+.products-table td:nth-child(4) { width: 8%; } /* D.A. Max Price */
+.products-table th:nth-child(5),
+.products-table td:nth-child(5) { width: 10%; } /* Excess Amount */
+.products-table th:nth-child(6),
+.products-table td:nth-child(6) { width: 8%; } /* Warning Level */
+.products-table th:nth-child(7),
+.products-table td:nth-child(7) { width: 8%; } /* Warning Status */
+.products-table th:nth-child(8),
+.products-table td:nth-child(8) { width: 9%; } /* Last Warning */
+.products-table th:nth-child(9),
+.products-table td:nth-child(9) { width: 8%; } /* Next Action */
+.products-table th:nth-child(10),
+.products-table td:nth-child(10) { width: 8%; } /* Auto Status */
+.products-table th:nth-child(11),
+.products-table td:nth-child(11) { width: 8%; } /* Actions - reduced width */
+
+.products-table th {
   background: #f5f5f5;
   color: #2e5c31;
   font-weight: 600;
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   position: sticky;
   top: 0;
   z-index: 10;
 }
 
-tr:hover {
+.products-table tr:hover {
   background: #f9f9f9;
 }
 
@@ -1600,13 +1992,12 @@ tr:hover {
 .product-cell {
   display: flex;
   align-items: center;
-  gap: 6px;
-  min-width: 140px;
+  gap: 8px;
 }
 
 .product-image {
-  width: 28px;
-  height: 28px;
+  width: 32px; /* Slightly bigger */
+  height: 32px;
   border-radius: 4px;
   background-size: cover;
   background-position: center;
@@ -1622,22 +2013,25 @@ tr:hover {
 .product-name {
   font-weight: 500;
   color: #333;
-  line-height: 1.2;
-  font-size: 0.75rem;
+  line-height: 1.3;
+  font-size: 0.8125rem; /* Slightly bigger font */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .product-meta {
   display: flex;
-  gap: 2px;
-  margin-top: 2px;
+  gap: 3px;
+  margin-top: 3px;
   flex-wrap: wrap;
 }
 
 .variety-badge,
 .unit-badge,
 .status-badge {
-  font-size: 0.5625rem;
-  padding: 1px 3px;
+  font-size: 0.625rem;
+  padding: 2px 4px;
   border-radius: 6px;
   font-weight: 500;
 }
@@ -1660,22 +2054,24 @@ tr:hover {
 .seller-info {
   display: flex;
   flex-direction: column;
-  min-width: 80px;
 }
 
 .seller-name {
   font-weight: 500;
   color: #333;
-  line-height: 1.2;
-  font-size: 0.75rem;
+  line-height: 1.3;
+  font-size: 0.8125rem; /* Slightly bigger font */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .seller-stats {
-  margin-top: 1px;
+  margin-top: 2px;
 }
 
 .overpriced-count {
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
   color: #ef4444;
   font-weight: 500;
 }
@@ -1683,13 +2079,12 @@ tr:hover {
 .price-display {
   display: flex;
   flex-direction: column;
-  min-width: 60px;
 }
 
 .current-price {
   font-weight: 600;
   color: #333;
-  font-size: 0.75rem;
+  font-size: 0.8125rem; /* Slightly bigger font */
 }
 
 .text-danger {
@@ -1699,19 +2094,17 @@ tr:hover {
 .reference-price {
   display: flex;
   flex-direction: column;
-  min-width: 60px;
 }
 
 .max-price {
   font-weight: 500;
   color: #059669;
-  font-size: 0.75rem;
+  font-size: 0.8125rem; /* Slightly bigger font */
 }
 
 .excess-amount {
   font-weight: 600;
-  min-width: 80px;
-  font-size: 0.75rem;
+  font-size: 0.8125rem; /* Slightly bigger font */
 }
 
 .excess-mild {
@@ -1729,12 +2122,11 @@ tr:hover {
 .warning-level {
   display: flex;
   align-items: center;
-  gap: 3px;
-  padding: 2px 4px;
+  gap: 4px;
+  padding: 3px 6px;
   border-radius: 4px;
-  font-size: 0.625rem;
+  font-size: 0.625rem; /* Made smaller */
   font-weight: 500;
-  min-width: 60px;
 }
 
 .warning-mild {
@@ -1755,12 +2147,11 @@ tr:hover {
 .warning-status {
   display: flex;
   align-items: center;
-  gap: 3px;
-  padding: 2px 4px;
+  gap: 4px;
+  padding: 3px 6px;
   border-radius: 4px;
-  font-size: 0.625rem;
+  font-size: 0.625rem; /* Made smaller */
   font-weight: 500;
-  min-width: 60px;
 }
 
 .status-none {
@@ -1781,44 +2172,41 @@ tr:hover {
 .last-warning {
   display: flex;
   flex-direction: column;
-  min-width: 80px;
-  font-size: 0.75rem;
+  font-size: 0.8125rem; /* Slightly bigger font */
 }
 
 .warning-count {
   color: #666;
-  font-size: 0.625rem;
-  margin-top: 1px;
+  font-size: 0.6875rem;
+  margin-top: 2px;
 }
 
 .no-warning {
   color: #999;
   font-style: italic;
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
 }
 
 .next-action {
   display: flex;
   flex-direction: column;
-  font-size: 0.625rem;
-  min-width: 80px;
+  font-size: 0.6875rem;
 }
 
 .next-date {
   color: #666;
-  font-size: 0.5625rem;
-  margin-top: 1px;
+  font-size: 0.625rem;
+  margin-top: 2px;
 }
 
 .auto-status {
   display: flex;
   align-items: center;
-  gap: 3px;
-  padding: 2px 4px;
+  gap: 4px;
+  padding: 3px 6px;
   border-radius: 4px;
-  font-size: 0.5625rem;
+  font-size: 0.625rem;
   font-weight: 500;
-  min-width: 60px;
 }
 
 .auto-status-normal {
@@ -1846,11 +2234,10 @@ tr:hover {
   gap: 2px;
   flex-wrap: wrap;
   justify-content: flex-start;
-  min-width: 100px;
 }
 
 .action-btn {
-  width: 20px;
+  width: 20px; /* Compact size */
   height: 20px;
   border-radius: 3px;
   border: none;
@@ -1887,6 +2274,130 @@ tr:hover {
 .history-btn:hover {
   background: #f3e8ff;
   color: #7c3aed;
+}
+
+/* Simple Pagination Styles */
+.simple-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 0;
+  border-top: 1px solid #eee;
+  margin-top: 0; /* Remove extra margin */
+  flex-shrink: 0; /* Prevent shrinking */
+}
+
+.pagination-info {
+  color: #666;
+  font-size: 0.875rem;
+}
+
+.pagination-nav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.pagination-btn {
+  padding: 8px 16px;
+  border: 1px solid #ddd;
+  background: white;
+  color: #666;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.pagination-btn:hover:not(:disabled) {
+  background: #f5f5f5;
+  border-color: #2e5c31;
+  color: #2e5c31;
+}
+
+.pagination-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.page-indicator {
+  font-size: 0.875rem;
+  color: #666;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Export Preview Modal Styles */
+.export-preview-modal {
+  max-width: 90vw;
+  width: 800px;
+}
+
+.export-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 12px;
+  background: #f9f9f9;
+  border-radius: 6px;
+}
+
+.summary-item {
+  font-size: 0.875rem;
+}
+
+.preview-container h4 {
+  margin: 0 0 12px 0;
+  color: #2e5c31;
+  font-size: 1rem;
+}
+
+.preview-table-container {
+  overflow-x: auto;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  margin-bottom: 12px;
+}
+
+.preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+  min-width: 600px;
+}
+
+.preview-table th,
+.preview-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #eee;
+  text-align: left;
+}
+
+.preview-table th {
+  background: #f5f5f5;
+  font-weight: 600;
+  color: #2e5c31;
+  position: sticky;
+  top: 0;
+}
+
+.preview-table td {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-note {
+  text-align: center;
+  color: #666;
+  font-style: italic;
+  font-size: 0.875rem;
 }
 
 /* Modal styles */
@@ -2150,6 +2661,15 @@ tr:hover {
   .settings-content {
     grid-template-columns: repeat(2, 1fr);
   }
+  
+  .table-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .search-input {
+    width: 100%;
+  }
 }
 
 @media (max-width: 768px) {
@@ -2190,28 +2710,23 @@ tr:hover {
   
   .table-header {
     flex-direction: column;
-    gap: 6px;
+    gap: 8px;
     align-items: stretch;
   }
   
-  .table-container {
-    overflow-x: scroll;
+  .table-actions {
+    flex-direction: column;
+    gap: 6px;
   }
   
-  table {
-    min-width: 800px;
+  .simple-pagination {
+    flex-direction: column;
+    gap: 8px;
   }
   
-  th, td {
-    padding: 4px 3px;
-  }
-  
-  .product-cell {
-    min-width: 100px;
-  }
-  
-  .action-buttons {
-    min-width: 80px;
+  .pagination-nav {
+    flex-direction: column;
+    gap: 8px;
   }
   
   .modal-content {
@@ -2227,6 +2742,10 @@ tr:hover {
   .warning-details {
     flex-direction: column;
     gap: 4px;
+  }
+  
+  .export-summary {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -2255,5 +2774,16 @@ tr:hover {
   .warning-message textarea {
     min-height: 80px;
   }
+  
+  .pagination-nav {
+    flex-wrap: wrap;
+  }
+}
+
+.unit-label {
+  display: block;
+  color: #666;
+  font-size: 0.6875rem;
+  margin-top: 2px;
 }
 </style>

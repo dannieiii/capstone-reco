@@ -5,16 +5,13 @@
       <div class="header-section">
         <div>
           <h1 class="page-title">Product Categories</h1>
-          <p class="page-description">Manage and organize your farm product categories. </p>
+          <p class="page-description">Manage and organize your farm product categories.</p>
         </div>
         <div class="action-buttons">
           <button class="primary-btn" @click="navigateToAddCategory">
             <i class="fas fa-plus"></i> Add New Category
           </button>
-          <button class="secondary-btn">
-            <i class="fas fa-filter"></i> Filter
-          </button>
-          <button class="secondary-btn">
+          <button class="secondary-btn" @click="exportCategories">
             <i class="fas fa-download"></i> Export
           </button>
         </div>
@@ -87,30 +84,111 @@
         <div class="modal-container">
           <h3>Confirm Delete</h3>
           <p>Are you sure you want to delete the category "{{ categoryToDelete?.categoryName || categoryToDelete?.category }}"?</p>
-          <p class="warning-text">This action cannot be undone.</p>
+          <p class="warning-text">This action cannot be undone and will affect all products in this category.</p>
           <div class="modal-actions">
             <button class="cancel-btn" @click="showDeleteModal = false">Cancel</button>
-            <button class="delete-btn" @click="deleteCategory">Delete</button>
+            <button class="delete-btn" @click="deleteCategory" :disabled="isDeleting">
+              <i v-if="isDeleting" class="fas fa-spinner fa-spin"></i>
+              <span v-else>Delete</span>
+            </button>
           </div>
         </div>
       </div>
+
+      <!-- Add/Edit Category Modal -->
+      <div v-if="showCategoryModal" class="modal-overlay">
+        <div class="modal-container">
+          <h3>{{ isEditingCategory ? 'Edit Category' : 'Add New Category' }}</h3>
+          <form @submit.prevent="saveCategory">
+            <div class="form-group">
+              <label for="categoryName">Category Name *</label>
+              <input 
+                type="text" 
+                id="categoryName" 
+                v-model="currentCategory.categoryName" 
+                required
+                placeholder="Enter category name"
+              />
+            </div>
+            <div class="form-group">
+              <label for="description">Description</label>
+              <textarea 
+                id="description" 
+                v-model="currentCategory.description" 
+                placeholder="Enter category description"
+                rows="3"
+              ></textarea>
+            </div>
+            <div class="form-group">
+              <label for="imageUrl">Image URL</label>
+              <input 
+                type="url" 
+                id="imageUrl" 
+                v-model="currentCategory.image" 
+                placeholder="Enter image URL"
+              />
+            </div>
+            <div class="modal-actions">
+              <button type="button" class="cancel-btn" @click="closeCategoryModal">Cancel</button>
+              <button type="submit" class="save-btn" :disabled="isSaving">
+                <i v-if="isSaving" class="fas fa-spinner fa-spin"></i>
+                <span v-else>{{ isEditingCategory ? 'Update' : 'Save' }}</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Notification Element -->
+    <div v-if="notification.show" class="notification" :class="notification.type">
+      {{ notification.message }}
+      <button class="notification-close" @click="closeNotification">&times;</button>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import AdminSidebar from '@/components/AdminSidebar.vue';
 import { db } from '@/firebase/firebaseConfig';
-import { collection, onSnapshot, doc, deleteDoc } from 'firebase/firestore';
+import { 
+  collection, 
+  onSnapshot, 
+  doc, 
+  deleteDoc, 
+  addDoc, 
+  updateDoc, 
+  getDocs,
+  query,
+  where,
+  serverTimestamp
+} from 'firebase/firestore';
 
 const router = useRouter();
 const categories = ref([]);
 const loading = ref(true);
 const error = ref(null);
 const showDeleteModal = ref(false);
+const showCategoryModal = ref(false);
 const categoryToDelete = ref(null);
+const isDeleting = ref(false);
+const isSaving = ref(false);
+const isEditingCategory = ref(false);
+const unsubscribe = ref(null);
+const notification = ref({
+  show: false,
+  message: '',
+  type: 'success'
+});
+
+const currentCategory = ref({
+  categoryName: '',
+  description: '',
+  image: '',
+  productCount: 0
+});
 
 // Computed properties for stats
 const activeCategories = computed(() => {
@@ -126,7 +204,24 @@ const handleImageError = (event) => {
   event.target.src = '/placeholder.svg?height=150&width=250';
 };
 
-// Fetch categories from Firestore
+// Show notification
+const showNotification = (message, type = 'success') => {
+  notification.value = {
+    show: true,
+    message,
+    type
+  };
+  
+  setTimeout(() => {
+    notification.value.show = false;
+  }, 3000);
+};
+
+const closeNotification = () => {
+  notification.value.show = false;
+};
+
+// Fetch categories from Firestore with product count
 const fetchCategories = () => {
   const categoryCollection = collection(db, 'categories');
   
@@ -137,47 +232,126 @@ const fetchCategories = () => {
   
   try {
     // Listen for real-time updates
-    const unsubscribe = onSnapshot(categoryCollection, (snapshot) => {
+    unsubscribe.value = onSnapshot(categoryCollection, async (snapshot) => {
       console.log(`Received ${snapshot.docs.length} categories from Firestore`);
       
-      categories.value = snapshot.docs.map(doc => {
-        const data = doc.data();
-        console.log('Category data:', { id: doc.id, ...data });
-        return {
-          id: doc.id,
-          ...data
-        };
-      });
+      const categoriesData = await Promise.all(
+        snapshot.docs.map(async (categoryDoc) => {
+          const data = categoryDoc.data();
+          
+          // Count products in this category
+          try {
+            const productsQuery = query(
+              collection(db, 'products'), 
+              where('category', '==', data.categoryName || data.category)
+            );
+            const productsSnapshot = await getDocs(productsQuery);
+            const productCount = productsSnapshot.size;
+            
+            return {
+              id: categoryDoc.id,
+              ...data,
+              productCount
+            };
+          } catch (err) {
+            console.error('Error counting products for category:', data.categoryName || data.category, err);
+            return {
+              id: categoryDoc.id,
+              ...data,
+              productCount: 0
+            };
+          }
+        })
+      );
       
+      categories.value = categoriesData;
       loading.value = false;
     }, (err) => {
       console.error("Error fetching categories:", err);
       error.value = "Failed to load categories. Please try again.";
       loading.value = false;
     });
-    
-    // Return unsubscribe function to clean up the listener when component unmounts
-    return unsubscribe;
   } catch (err) {
     console.error("Error setting up categories listener:", err);
     error.value = "Failed to connect to the database. Please try again.";
     loading.value = false;
-    return () => {};
   }
 };
 
 // Navigation functions
 const navigateToAddCategory = () => {
-  console.log('Navigating to add category page');
-  router.push('/add-category');
+  isEditingCategory.value = false;
+  currentCategory.value = {
+    categoryName: '',
+    description: '',
+    image: '',
+    productCount: 0
+  };
+  showCategoryModal.value = true;
 };
 
 const editCategory = (category) => {
-  router.push(`/add-category?id=${category.id}`);
+  isEditingCategory.value = true;
+  currentCategory.value = {
+    id: category.id,
+    categoryName: category.categoryName || category.category,
+    description: category.description || '',
+    image: category.image || '',
+    productCount: category.productCount || 0
+  };
+  showCategoryModal.value = true;
+};
+
+const closeCategoryModal = () => {
+  showCategoryModal.value = false;
+  currentCategory.value = {
+    categoryName: '',
+    description: '',
+    image: '',
+    productCount: 0
+  };
+};
+
+const saveCategory = async () => {
+  if (!currentCategory.value.categoryName.trim()) {
+    showNotification('Category name is required', 'error');
+    return;
+  }
+
+  isSaving.value = true;
+
+  try {
+    const categoryData = {
+      categoryName: currentCategory.value.categoryName.trim(),
+      category: currentCategory.value.categoryName.trim(), // For backward compatibility
+      description: currentCategory.value.description.trim(),
+      image: currentCategory.value.image.trim(),
+      updatedAt: serverTimestamp()
+    };
+
+    if (isEditingCategory.value && currentCategory.value.id) {
+      // Update existing category
+      await updateDoc(doc(db, 'categories', currentCategory.value.id), categoryData);
+      showNotification('Category updated successfully');
+    } else {
+      // Add new category
+      categoryData.createdAt = serverTimestamp();
+      categoryData.isActive = true;
+      await addDoc(collection(db, 'categories'), categoryData);
+      showNotification('Category added successfully');
+    }
+
+    closeCategoryModal();
+  } catch (error) {
+    console.error('Error saving category:', error);
+    showNotification('Failed to save category', 'error');
+  } finally {
+    isSaving.value = false;
+  }
 };
 
 const viewCategoryProducts = (category) => {
-  router.push(`/category-products/${category.id}?name=${encodeURIComponent(category.categoryName || category.category)}`);
+  router.push(`/admin/category-products/${category.id}?name=${encodeURIComponent(category.categoryName || category.category)}`);
 };
 
 // Delete category functions
@@ -189,25 +363,57 @@ const confirmDeleteCategory = (category) => {
 const deleteCategory = async () => {
   if (!categoryToDelete.value) return;
   
+  isDeleting.value = true;
+  
   try {
     await deleteDoc(doc(db, "categories", categoryToDelete.value.id));
+    showNotification('Category deleted successfully');
     showDeleteModal.value = false;
     categoryToDelete.value = null;
   } catch (error) {
     console.error("Error deleting category:", error);
-    alert("Failed to delete category. Please try again.");
+    showNotification('Failed to delete category', 'error');
+  } finally {
+    isDeleting.value = false;
   }
+};
+
+// Export categories
+const exportCategories = () => {
+  const headers = ['Category Name', 'Description', 'Product Count', 'Status'];
+  const csvContent = [headers.join(',')];
+  
+  categories.value.forEach(category => {
+    const row = [
+      `"${category.categoryName || category.category}"`,
+      `"${category.description || ''}"`,
+      category.productCount || 0,
+      `"${category.isActive !== false ? 'Active' : 'Inactive'}"`
+    ];
+    csvContent.push(row.join(','));
+  });
+  
+  const blob = new Blob([csvContent.join('\n')], { type: 'text/csv' });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `categories_${new Date().toISOString().split('T')[0]}.csv`;
+  link.click();
+  window.URL.revokeObjectURL(url);
+  
+  showNotification('Categories exported successfully');
 };
 
 onMounted(() => {
   console.log('ProductCategories component mounted');
-  const unsubscribe = fetchCategories();
-  
-  // Clean up the listener when component unmounts
-  return () => {
+  fetchCategories();
+});
+
+onUnmounted(() => {
+  if (unsubscribe.value) {
     console.log('Cleaning up categories listener');
-    unsubscribe();
-  };
+    unsubscribe.value();
+  }
 });
 </script>
 
@@ -496,6 +702,34 @@ onMounted(() => {
   color: #2c3e50;
 }
 
+.form-group {
+  margin-bottom: 1.25rem;
+}
+
+.form-group label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 0.5rem;
+}
+
+.form-group input,
+.form-group textarea {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.875rem;
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+  outline: none;
+  border-color: #2e5c31;
+  box-shadow: 0 0 0 2px rgba(46, 92, 49, 0.1);
+}
+
 .warning-text {
   color: #e74c3c;
   font-weight: 500;
@@ -508,12 +742,15 @@ onMounted(() => {
   margin-top: 1.5rem;
 }
 
-.cancel-btn, .delete-btn {
+.cancel-btn, .delete-btn, .save-btn {
   padding: 0.75rem 1.25rem;
   border: none;
   border-radius: 6px;
   font-weight: 600;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .cancel-btn {
@@ -531,8 +768,69 @@ onMounted(() => {
   color: white;
 }
 
-.delete-btn:hover {
+.delete-btn:hover:not(:disabled) {
   background-color: #c0392b;
+}
+
+.save-btn {
+  background-color: #2e5c31;
+  color: white;
+}
+
+.save-btn:hover:not(:disabled) {
+  background-color: #1a3a1c;
+}
+
+.save-btn:disabled,
+.delete-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+/* Notification styles */
+.notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 15px 20px;
+  border-radius: 8px;
+  color: white;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 300px;
+  max-width: 500px;
+  animation: slideIn 0.3s ease-out;
+}
+
+.notification.success {
+  background-color: #2ecc71;
+}
+
+.notification.error {
+  background-color: #e74c3c;
+}
+
+.notification-close {
+  background: none;
+  border: none;
+  color: white;
+  cursor: pointer;
+  margin-left: 15px;
+  font-size: 1.2rem;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
 }
 
 /* Responsive styles */

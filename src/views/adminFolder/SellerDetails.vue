@@ -7,6 +7,16 @@
             <i class="fas fa-arrow-left"></i> Back to Sellers
           </button>
           <div class="action-buttons">
+            <button 
+              v-if="seller.registrationStatus === 'Pending'" 
+              class="accept-btn" 
+              @click="acceptSeller"
+              :disabled="isProcessing"
+            >
+              <i class="fas fa-check" v-if="!isProcessing"></i>
+              <i class="fas fa-spinner fa-spin" v-else></i>
+              {{ isProcessing ? 'Processing...' : 'Accept' }}
+            </button>
             <button class="edit-btn">
               <i class="fas fa-edit"></i>
             </button>
@@ -131,13 +141,6 @@
                   <i class="fas fa-eye"></i> View Document
                 </button>
               </div>
-              <!-- Test Valid ID item (you can remove this when you have real data) -->
-              <div class="document-item">
-                <h3>Valid ID</h3>
-                <button @click="viewDocument('validID', 'https://via.placeholder.com/800x600/2e5c31/ffffff?text=Valid+ID+Document')" class="document-button">
-                  <i class="fas fa-eye"></i> View Document
-                </button>
-              </div>
               <div class="document-item" v-if="seller.documents?.businessPermit && seller.documents.businessPermit.trim()">
                 <h3>Business Permit</h3>
                 <button @click="viewDocument('businessPermit', seller.documents.businessPermit)" class="document-button">
@@ -245,6 +248,7 @@
   import AdminSidebar from '@/components/AdminSidebar.vue';
   import { db } from '@/firebase/firebaseConfig';
   import { doc, getDoc, updateDoc } from "firebase/firestore";
+  import emailService from '@/services/emailService';
   
   const router = useRouter();
   const route = useRoute();
@@ -278,12 +282,13 @@
     notification.value.show = false;
   };
   const sellerId = route.params.id;
-    const seller = ref({});
+  const seller = ref({});
   const loading = ref(true);
   const error = ref(null);
   const showDocumentViewer = ref(false);
   const currentDocument = ref('');
   const documentTitle = ref('');
+  const isProcessing = ref(false);
   
   const fetchSellerDetails = async () => {
     loading.value = true;
@@ -374,6 +379,123 @@
     currentDocument.value = '';
     documentTitle.value = '';
   };
+
+  const acceptSeller = async () => {
+    if (isProcessing.value) return;
+    
+    try {
+      isProcessing.value = true;
+      
+      // Show processing notification
+      showNotification(
+        'Processing...',
+        `Accepting ${seller.value.personalInfo?.firstName || 'seller'}'s application...`,
+        'info',
+        3000
+      );
+
+      // Update the seller's status in the sellers collection
+      const sellerRef = doc(db, "sellers", sellerId);
+      const updateData = { 
+        registrationStatus: 'Accept',
+        status: 'Active',
+        isVerified: true,
+        verificationStatus: 'Verified',
+        updatedAt: new Date()
+      };
+
+      await updateDoc(sellerRef, updateData);
+
+      // Update the user's role and isSeller status in the users collection
+      if (seller.value.userId) {
+        const userRef = doc(db, "users", seller.value.userId);
+        await updateDoc(userRef, { 
+          role: "seller", 
+          isSeller: true,
+          isVerified: true
+        });
+      }
+
+      // Update the local state to reflect the new status
+      seller.value.registrationStatus = 'Accept';
+      seller.value.status = 'Active';
+      seller.value.isVerified = true;
+      seller.value.verificationStatus = 'Verified';
+
+      // Send email notification
+      try {
+        console.log('🔍 Preparing to send seller acceptance email...');
+        
+        const sellerData = {
+          email: seller.value.personalInfo?.email || '',
+          firstName: seller.value.personalInfo?.firstName || '',
+          lastName: seller.value.personalInfo?.lastName || '',
+          farmName: seller.value.farmDetails?.farmName || 'Your Farm'
+        };
+        
+        console.log('📧 Seller data for email:', sellerData);
+        
+        // Validate email before sending
+        if (!sellerData.email || sellerData.email === 'N/A') {
+          console.warn('❌ No valid email address found for seller');
+          showNotification(
+            'Email Warning',
+            'Seller accepted successfully but no email sent - no valid email address found.',
+            'warning',
+            6000
+          );
+          return;
+        }
+        
+        // Show sending notification
+        showNotification(
+          'Sending Email...',
+          'Sending acceptance email notification to seller...',
+          'info',
+          3000
+        );
+        
+        const emailResult = await emailService.sendSellerApprovalEmail(sellerData);
+        
+        if (emailResult && emailResult.success) {
+          console.log('✅ Acceptance email sent successfully:', emailResult);
+          showNotification(
+            'Success!',
+            `Seller approved and email sent successfully! ${sellerData.firstName} should receive an email notification at ${sellerData.email}.`,
+            'success',
+            8000
+          );
+        } else {
+          console.error('❌ Email failed:', emailResult?.error);
+          showNotification(
+            'Partial Success',
+            `Seller approved successfully but email failed to send. ${emailResult?.error?.message || 'Please check email configuration.'} Seller email: ${sellerData.email}`,
+            'warning',
+            10000
+          );
+        }
+      } catch (emailError) {
+        console.error("❌ Email service error:", emailError);
+        showNotification(
+          'Partial Success',
+          `Seller approved successfully but failed to send email notification. Error: ${emailError.message}`,
+          'warning',
+          8000
+        );
+      }
+
+    } catch (err) {
+      console.error("Error accepting seller:", err);
+      showNotification(
+        'Accept Failed',
+        'Failed to accept seller application. Please try again.',
+        'error',
+        6000
+      );
+    } finally {
+      isProcessing.value = false;
+    }
+  };
   
   const goBack = () => {
     router.push('/admin/sellers');
@@ -431,7 +553,7 @@
     gap: 1rem;
   }
   
-  .edit-btn, .status-btn {
+  .edit-btn, .status-btn, .accept-btn {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -456,6 +578,21 @@
   
   .edit-btn:hover {
     background-color: #1a3a1c;
+  }
+
+  .accept-btn {
+    background-color: #28a745;
+    color: white;
+  }
+
+  .accept-btn:hover:not(:disabled) {
+    background-color: #218838;
+  }
+
+  .accept-btn:disabled {
+    background-color: #6c757d;
+    cursor: not-allowed;
+    opacity: 0.7;
   }
   
   .status-btn {
@@ -736,9 +873,14 @@
       width: 100%;
     }
     
-    .edit-btn, .status-btn {
+    .edit-btn, .status-btn, .accept-btn {
       flex: 1;
       justify-content: center;
+    }
+
+    .edit-btn {
+      width: auto;
+      padding: 0.75rem 1.25rem;
     }
     
     .details-grid, .documents-grid {

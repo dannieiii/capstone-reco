@@ -158,7 +158,7 @@
                 @click="navigateToPath('/register-seller')"
               >
                 <Briefcase size="16" />
-                Become a Farmer/Supplier
+                Become a Farmer/Seller
               </button>
               
               <button 
@@ -223,22 +223,68 @@
         <h3>{{ userLocation }} <MapPin size="14" /></h3>
       </div>
       
+    <!-- Updated Categories Section -->
     <div class="categories">
       <div 
         class="category" 
-        v-for="category in categories" 
-        :key="category.id" 
-        @click="filterByCategory(category.category)"
-        :class="{ active: selectedCategory === category.category }"
+        v-for="(category, index) in displayedCategories" 
+        :key="category.id || `category-${index}`" 
+        @click="category.isMoreButton ? openCategoriesModal() : filterByCategory(category.category)"
+        :class="{ 
+          active: selectedCategory === category.category,
+          'more-button': category.isMoreButton 
+        }"
       >
         <div class="category-icon">
           <img 
+            v-if="!category.isMoreButton"
             :src="category.image || getCategoryFallbackImage(category.category)"
             :alt="category.category"
             @error="handleImageError($event, category)"
           >
+          <MoreHorizontal 
+            v-else 
+            size="24" 
+            class="more-icon"
+          />
         </div>
-        <span>{{ category.category }}</span>
+        <span>{{ category.isMoreButton ? 'More' : category.category }}</span>
+      </div>
+    </div>
+
+    <!-- Categories Modal -->
+    <div v-if="showCategoriesModal" class="modal-overlay" @click="closeCategoriesModal">
+      <div class="categories-modal" @click.stop>
+        <div class="modal-header">
+          <h3>All Categories ({{ remainingCategories.length }} more)</h3>
+          <button class="close-modal" @click="closeCategoriesModal">
+            <X size="20" />
+          </button>
+        </div>
+        <div class="modal-categories">
+          <div 
+            class="modal-category" 
+            v-for="category in remainingCategories" 
+            :key="category.id"
+            @click="selectCategoryFromModal(category)"
+            :class="{ active: selectedCategory === category.category }"
+          >
+            <div class="modal-category-icon">
+              <img 
+                :src="category.image || getCategoryFallbackImage(category.category)"
+                :alt="category.category"
+                @error="handleImageError($event, category)"
+              >
+            </div>
+            <span>{{ category.category }}</span>
+          </div>
+        </div>
+        <!-- Debug info - remove this in production -->
+        <div class="debug-info" style="padding: 10px; background: #f0f0f0; font-size: 12px;">
+          <p>Total categories: {{ categories.length }}</p>
+          <p>Displayed categories: {{ displayedCategories.length }}</p>
+          <p>Remaining categories: {{ remainingCategories.length }}</p>
+        </div>
       </div>
     </div>
     </div>
@@ -705,7 +751,8 @@ import {
   Package,
   Truck,
   Percent,
-  Calendar
+  Calendar,
+  MoreHorizontal
 } from 'lucide-vue-next';
 import { onMounted, onUnmounted, ref, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
@@ -738,12 +785,14 @@ export default {
     Package,
     Truck,
     Percent,
-    Calendar
+    Calendar,
+    MoreHorizontal
   },
   setup() {
     const router = useRouter();
     const showProfileMenu = ref(false);
     const showFilterMenu = ref(false);
+    const showCategoriesModal = ref(false);
     const profileRef = ref(null);
     const filterRef = ref(null);
     const filterDropdownRef = ref(null);
@@ -767,38 +816,117 @@ export default {
       'default': 'https://cdn-icons-png.flaticon.com/512/1147/1147805.png'
     };
 
-    // Fetch categories from Firestore
-   const fetchCategories = async () => {
-    try {
-      const querySnapshot = await getDocs(collection(db, 'categories'));
-      categories.value = querySnapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,  // Make sure this matches your :key binding
-          category: data.category, // Field name in Firestore
-          image: data.image || getCategoryFallbackImage(data.category)
-        };
-      });
-    } catch (error) {
-      console.error('Error fetching categories:', error);
-      categories.value = []; // Fallback empty array
-    }
-  };
+    // Computed property for displayed categories (max 8, with "More" button if needed)
+    const displayedCategories = computed(() => {
+      console.log('Computing displayedCategories, total categories:', categories.value.length);
+      const visibleCount = 7; // Show 7 categories + More button
+      
+      if (categories.value.length <= visibleCount) {
+        console.log('Showing all categories (≤7)');
+        return categories.value;
+      }
+      
+      const result = [...categories.value.slice(0, visibleCount), {
+        id: 'more-categories',
+        category: 'More',
+        isMoreButton: true
+      }];
+      
+      console.log('Showing 7 categories + More button');
+      return result;
+    });
+
+    const remainingCategories = computed(() => {
+      const visibleCount = 7;
+      const remaining = categories.value.slice(visibleCount);
+      console.log('Computing remainingCategories:', remaining.length, 'categories');
+      return remaining;
+    });
+
+    // Modal functions
+    const openCategoriesModal = () => {
+      console.log('Opening categories modal, remaining categories:', remainingCategories.value.length);
+      showCategoriesModal.value = true;
+      document.body.style.overflow = 'hidden';
+    };
+
+    const closeCategoriesModal = () => {
+      showCategoriesModal.value = false;
+      document.body.style.overflow = ''; // Restore scrolling
+    };
+
+    const selectCategoryFromModal = (category) => {
+      filterByCategory(category.category);
+      closeCategoriesModal();
+    };
+
+    // Fetch categories from Firestore with better error handling
+    const fetchCategories = async () => {
+      try {
+        console.log('Fetching categories from Firestore...');
+        const querySnapshot = await getDocs(collection(db, 'categories'));
+        
+        const fetchedCategories = querySnapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            category: data.name || data.category || 'Unknown Category',
+            image: data.image || getCategoryFallbackImage(data.name || data.category)
+          };
+        });
+        
+        console.log('Fetched categories:', fetchedCategories.length, fetchedCategories);
+        categories.value = fetchedCategories;
+        
+        // Add some test categories if none exist (for testing)
+        if (categories.value.length === 0) {
+          console.log('No categories found, adding test categories');
+          categories.value = [
+            { id: '1', category: 'Vegetables', image: getCategoryFallbackImage('Vegetables') },
+            { id: '2', category: 'Fruits', image: getCategoryFallbackImage('Fruits') },
+            { id: '3', category: 'Grains', image: getCategoryFallbackImage('Grains') },
+            { id: '4', category: 'Dairy', image: getCategoryFallbackImage('Dairy') },
+            { id: '5', category: 'Meat', image: getCategoryFallbackImage('Meat') },
+            { id: '6', category: 'Seafood', image: getCategoryFallbackImage('Seafood') },
+            { id: '7', category: 'Herbs', image: getCategoryFallbackImage('Herbs') },
+            { id: '8', category: 'Spices', image: getCategoryFallbackImage('Spices') },
+            { id: '9', category: 'Nuts', image: getCategoryFallbackImage('Nuts') },
+            { id: '10', category: 'Seeds', image: getCategoryFallbackImage('Seeds') },
+          ];
+        }
+        
+      } catch (error) {
+        console.error('Error fetching categories:', error);
+        // Fallback categories for testing
+        categories.value = [
+          { id: '1', category: 'Vegetables', image: getCategoryFallbackImage('Vegetables') },
+          { id: '2', category: 'Fruits', image: getCategoryFallbackImage('Fruits') },
+          { id: '3', category: 'Grains', image: getCategoryFallbackImage('Grains') },
+          { id: '4', category: 'Dairy', image: getCategoryFallbackImage('Dairy') },
+          { id: '5', category: 'Meat', image: getCategoryFallbackImage('Meat') },
+          { id: '6', category: 'Seafood', image: getCategoryFallbackImage('Seafood') },
+          { id: '7', category: 'Herbs', image: getCategoryFallbackImage('Herbs') },
+          { id: '8', category: 'Spices', image: getCategoryFallbackImage('Spices') },
+          { id: '9', category: 'Nuts', image: getCategoryFallbackImage('Nuts') },
+          { id: '10', category: 'Seeds', image: getCategoryFallbackImage('Seeds') },
+        ];
+      }
+    };
 
     // Handle image loading errors for categories
-   const handleImageError = (event, category) => {
-  event.target.src = getCategoryFallbackImage(category.category);
-};
+    const handleImageError = (event, category) => {
+      event.target.src = getCategoryFallbackImage(category.category);
+    };
 
-const getCategoryFallbackImage = (categoryName) => {
-  // Add your fallback image logic here
-  return 'https://cdn-icons-png.flaticon.com/512/1147/1147805.png'; // Example
-};
+    const getCategoryFallbackImage = (categoryName) => {
+      // Add your fallback image logic here
+      return 'https://cdn-icons-png.flaticon.com/512/1147/1147805.png'; // Example
+    };
 
-   const filterByCategory = (categoryName) => {
-  // Simple toggle logic - no need to modify categories array
-    selectedCategory.value = selectedCategory.value === categoryName ? '' : categoryName;
-  };
+    const filterByCategory = (categoryName) => {
+      // Simple toggle logic - no need to modify categories array
+      selectedCategory.value = selectedCategory.value === categoryName ? '' : categoryName;
+    };
 
 const filteredProducts = computed(() => {
   let result = [...products.value];
@@ -1027,6 +1155,8 @@ const filteredProducts = computed(() => {
 
     onUnmounted(() => {
       document.removeEventListener('click', handleClickOutside);
+      // Restore body scroll when component unmounts
+      document.body.style.overflow = '';
     });
 
     // Fetch trending products based on popularity
@@ -1169,16 +1299,22 @@ const fetchProducts = async () => {
       router,
       showProfileMenu,
       showFilterMenu,
+      showCategoriesModal,
       profileRef,
       filterRef,
       filterDropdownRef,
       toggleProfileMenu,
       toggleFilterMenu,
+      openCategoriesModal,
+      closeCategoriesModal,
+      selectCategoryFromModal,
       cartItems,
       isLoading,
       products,
       trendingProducts,
       categories,
+      displayedCategories,
+      remainingCategories,
       selectedCategory,
       filteredProducts,
       filterByCategory,
@@ -1409,6 +1545,8 @@ const fetchProducts = async () => {
           console.log('📝 No seller application found');
         }
       } catch (error) {
+        console.error('Error checking pending seller application:', error);
+        this.userHasPen
         console.error('Error checking pending seller application:', error);
         this.userHasPendingApplication = false;
       }
@@ -1951,15 +2089,17 @@ watch: {
   margin: 0;
 }
 
-/* Categories Styling */
+/* Updated Categories Styling - Fixed 4x2 Grid Layout */
 .categories {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(2, 1fr);
   gap: 8px;
   padding: 0;
   margin-top: 10px;
   width: 100%;
   box-sizing: border-box;
+  max-height: 140px; /* Fixed height to ensure 2 rows */
 }
 
 .category {
@@ -1968,7 +2108,7 @@ watch: {
   align-items: center;
   gap: 5px;
   cursor: pointer;
-  margin-bottom: 5px;
+  transition: all 0.2s ease;
 }
 
 .category-icon {
@@ -1989,11 +2129,25 @@ watch: {
   transform: scale(1.1);
 }
 
-
 .category.active .category-icon {
   border-color: #ffcc00;
   box-shadow: 0 4px 15px rgba(255, 204, 0, 0.4);
   transform: scale(1.1);
+}
+
+.category.more-button .category-icon {
+  background-color: rgba(255, 255, 255, 0.3);
+  border: 2px dashed rgba(255, 255, 255, 0.5);
+}
+
+.category.more-button:hover .category-icon {
+  background-color: rgba(255, 255, 255, 0.4);
+  border-color: rgba(255, 255, 255, 0.7);
+}
+
+.more-icon {
+  color: white;
+  opacity: 0.8;
 }
 
 .category-icon img {
@@ -2018,6 +2172,162 @@ watch: {
 .category.active span {
   color: #ffcc00;
   font-weight: 700;
+}
+
+/* Categories Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.categories-modal {
+  background-color: white;
+  border-radius: 20px 20px 0 0;
+  width: 100%;
+  max-width: 500px;
+  max-height: 70vh;
+  overflow: hidden;
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.modal-header {
+  padding: 20px;
+  border-bottom: 1px solid #eee;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: #f8f9fa;
+}
+
+.modal-header h3 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+  color: #333;
+}
+
+.close-modal {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #666;
+  padding: 5px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s ease;
+}
+
+.close-modal:hover {
+  background-color: #e9ecef;
+}
+
+.modal-categories {
+  padding: 20px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 15px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.modal-category {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 15px 10px;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+}
+
+.modal-category:hover {
+  background-color: #f8f9fa;
+  transform: translateY(-2px);
+}
+
+.modal-category.active {
+  background-color: #e9f7e9;
+  border: 2px solid #2e5c31;
+}
+
+.modal-category-icon {
+  width: 60px;
+  height: 60px;
+  background-color: #f8f9fa;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 2px solid #e9ecef;
+  transition: all 0.2s ease;
+}
+
+.modal-category:hover .modal-category-icon {
+  border-color: #2e5c31;
+  transform: scale(1.05);
+}
+
+.modal-category.active .modal-category-icon {
+  border-color: #2e5c31;
+  background-color: #e9f7e9;
+}
+
+.modal-category-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.modal-category span {
+  color: #333;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.modal-category.active span {
+  color: #2e5c31;
+  font-weight: 600;
+}
+
+/* Debug info styling */
+.debug-info {
+  background: #f0f0f0;
+  padding: 10px;
+  font-size: 12px;
+  color: #666;
+  border-top: 1px solid #ddd;
+}
+
+.debug-info p {
+  margin: 2px 0;
 }
 
 .content {
@@ -2626,6 +2936,10 @@ watch: {
   .price-inputs {
     flex-direction: column;
   }
+
+  .modal-categories {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 @media (min-width: 375px) {
@@ -2670,6 +2984,10 @@ watch: {
     width: 80px;
     height: 80px;
   }
+
+  .modal-categories {
+    grid-template-columns: repeat(4, 1fr);
+  }
 }
 
 @media (min-width: 640px) {
@@ -2692,6 +3010,16 @@ watch: {
   
   .filter-dropdown {
     width: 320px;
+  }
+
+  .categories-modal {
+    border-radius: 20px;
+    max-height: 80vh;
+    align-self: center;
+  }
+
+  .modal-overlay {
+    align-items: center;
   }
 }
 
@@ -2722,6 +3050,10 @@ watch: {
     width: 90px;
     height: 90px;
   }
+
+  .modal-categories {
+    grid-template-columns: repeat(5, 1fr);
+  }
 }
 
 @media (min-width: 1024px) {
@@ -2736,6 +3068,10 @@ watch: {
   .header {
     border-bottom-left-radius: 25px;
     border-bottom-right-radius: 25px;
+  }
+
+  .modal-categories {
+    grid-template-columns: repeat(6, 1fr);
   }
 }
 

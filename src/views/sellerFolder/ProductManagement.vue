@@ -998,15 +998,144 @@ onBeforeUnmount(() => {
     width: 100%;
     justify-content: space-between;
   }
+
+  .products-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
 }
 
 @media (max-width: 576px) {
   .products-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
   }
   
   .product-card {
     max-width: 100%;
+  }
+
+  /* Optimize mobile layout for 3 columns */
+  .product-image {
+    height: 120px;
+  }
+
+  .product-details {
+    padding: 10px;
+  }
+
+  .product-name {
+    font-size: 0.85rem;
+    line-height: 1.2;
+    margin-bottom: 8px;
+  }
+
+  .product-category {
+    font-size: 0.7rem;
+    margin-bottom: 4px;
+  }
+
+  .product-stats {
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .stat {
+    font-size: 0.7rem;
+  }
+
+  .product-price {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+
+  .current-price {
+    font-size: 0.9rem;
+  }
+
+  .profit {
+    font-size: 0.7rem;
+  }
+
+  .available-units {
+    margin-bottom: 8px;
+  }
+
+  .units-label {
+    font-size: 0.7rem;
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  .unit-tags {
+    gap: 4px;
+  }
+
+  .unit-tag {
+    font-size: 0.6rem;
+    padding: 2px 6px;
+  }
+
+  .stock-label,
+  .stock-value {
+    font-size: 0.7rem;
+  }
+
+  .main-stock-display {
+    gap: 6px;
+  }
+
+  .stock-value {
+    min-width: 40px;
+  }
+
+  .product-actions {
+    gap: 6px;
+  }
+
+  .edit-btn {
+    padding: 6px 8px;
+    font-size: 0.7rem;
+  }
+
+  .delete-btn {
+    width: 28px;
+    padding: 6px;
+  }
+
+  .product-badge {
+    font-size: 0.6rem;
+    padding: 2px 6px;
+  }
+
+  .product-status {
+    font-size: 0.6rem;
+    padding: 2px 6px;
+  }
+}
+
+/* Very small screens - maintain 3 columns but further optimize */
+@media (max-width: 480px) {
+  .products-grid {
+    gap: 6px;
+  }
+
+  .product-image {
+    height: 100px;
+  }
+
+  .product-details {
+    padding: 8px;
+  }
+
+  .product-name {
+    font-size: 0.8rem;
+  }
+
+  .current-price {
+    font-size: 0.85rem;
   }
 }
 

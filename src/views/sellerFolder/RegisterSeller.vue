@@ -1,7 +1,7 @@
 <template>
   <div class="supplier-form-page">
     <div class="header">
-      <button class="back-button" @click="$emit('navigate', 'HomePage')">
+      <button class="back-button" @click="goBackToHome">
         <ChevronLeft size="22" />
       </button>
       <h1>Become a Farmer/Supplier</h1>
@@ -179,18 +179,22 @@
           <div class="form-group">
             <label for="accountNumber">Account Number</label>
             <input 
-              type="text" 
+              type="tel" 
               id="accountNumber" 
               v-model="formData.paymentInfo.accountNumber" 
-              placeholder="Enter account number"
+              placeholder="09123456789 (11 digits only)"
+              maxlength="11"
+              pattern="[0-9]{11}"
+              @input="validateAccountNumber"
             >
+            <span v-if="accountNumberError" class="field-error">{{ accountNumberError }}</span>
           </div>
         </div>
         
         <!-- Verification Documents -->
         <div v-if="currentStep === 3" class="form-step">
           <h2>Verification Documents</h2>
-          <p class="step-description">Upload your verification documents. You can upload images (photos taken with your phone) or document files (scanned PDFs, Word documents, etc.) - whatever is most convenient for you.</p>
+          <p class="step-description">Upload your verification documents. You can take photos with your phone camera or upload document files - whatever is most convenient for you.</p>
           
           <div class="upload-help-note">
             <p><strong>💡 Upload Options:</strong></p>
@@ -199,134 +203,278 @@
               <li>📄 <strong>Upload files</strong> like PDFs, Word documents, or Excel spreadsheets</li>
               <li>🖼️ <strong>Scan or photo</strong> of physical documents works perfectly</li>
             </ul>
-          </div>            <div class="form-group">
+          </div>
+
+          <!-- Valid ID -->
+          <div class="form-group">
             <label for="validID">Valid ID</label>
-            <div class="file-upload" @click="triggerFileInput('validID')">
-              <input 
-                type="file" 
-                id="validID" 
-                class="file-input" 
-                ref="validIDInput"
-                accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,.doc,.docx,.xls,.xlsx,.txt"
-                @change="handleFileUpload($event, 'validID')"
-              >
-              <div class="file-upload-button">
-                <Upload size="18" />
-                <span>{{ formData.verificationDocs.validID ? 'Change Valid ID' : 'Upload Valid ID (Photo or File)' }}</span>
+            <div class="document-upload-container">
+              <div class="upload-options">
+                <button 
+                  type="button" 
+                  class="upload-option-btn"
+                  @click="openCameraForDocument('validID')"
+                  :disabled="cameraState.isOpen"
+                >
+                  <Camera :size="16" />
+                  Take Photo
+                </button>
+                <button 
+                  type="button" 
+                  class="upload-option-btn"
+                  @click="triggerFileInput('validID')"
+                >
+                  <Upload :size="16" />
+                  Upload File
+                </button>
               </div>
+              
+              <!-- Camera view for documents -->
+              <div v-if="cameraState.isOpen && cameraState.documentType === 'validID'" class="camera-view">
+                <video ref="videoRef" autoplay playsinline class="camera-feed"></video>
+                <div class="camera-controls">
+                  <button 
+                    type="button" 
+                    class="camera-btn capture-btn"
+                    @click="captureDocumentPhoto('validID')"
+                  >
+                    <Circle :size="24" />
+                  </button>
+                  <button 
+                    type="button" 
+                    class="camera-btn cancel-btn"
+                    @click="closeCamera"
+                  >
+                    <X :size="24" />
+                  </button>
+                </div>
+              </div>
+              
+              <!-- File preview -->
+              <div v-if="formData.verificationDocs.validID && !cameraState.isOpen" class="file-preview">
+                <img 
+                  v-if="isImageFile(formData.verificationDocs.validID)" 
+                  :src="getFilePreview('validID')" 
+                  alt="Valid ID preview" 
+                  class="document-preview-image"
+                />
+                <div v-else class="document-file-info">
+                  <FileText :size="20" />
+                  <span>{{ formData.verificationDocs.validID.name }}</span>
+                </div>
+                <button 
+                  type="button" 
+                  class="remove-file-btn"
+                  @click="removeDocument('validID')"
+                >
+                  <X :size="14" />
+                </button>
+              </div>
+              
+              <!-- Upload status -->
               <div v-if="uploadStatus.validID.uploading" class="upload-progress">
                 <div class="progress-bar">
                   <div class="progress-fill" :style="{ width: uploadStatus.validID.progress + '%' }"></div>
                 </div>
                 <span>{{ Math.round(uploadStatus.validID.progress) }}%</span>
               </div>
-              <span v-if="formData.verificationDocs.validID && !uploadStatus.validID.uploading" class="file-name">
-                {{ uploadStatus.validID.error ? '❌ Upload failed' : (uploadStatus.validID.url ? '✅ Uploaded' : '📄 Ready to upload') }}
-                {{ formData.verificationDocs.validID.name }}
-              </span>
-              <span v-if="uploadStatus.validID.error" class="file-error">
+              
+              <div v-if="uploadStatus.validID.error" class="file-error">
                 {{ uploadStatus.validID.error }}
-              </span>
-              <p class="file-help">Accepted formats: Images (JPG, PNG), Documents (PDF, DOC, DOCX), Spreadsheets (XLS, XLSX) - max 5MB</p>
-            </div>
-          </div>            <div class="form-group">
-            <label for="businessPermit">Business Permit</label>
-            <div class="file-upload" @click="triggerFileInput('businessPermit')">
+              </div>
+              
               <input 
                 type="file" 
-                id="businessPermit" 
-                class="file-input" 
-                ref="businessPermitInput"
+                ref="validIDInput" 
+                @change="handleFileUpload($event, 'validID')" 
                 accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,.doc,.docx,.xls,.xlsx,.txt"
-                @change="handleFileUpload($event, 'businessPermit')"
-              >
-              <div class="file-upload-button">
-                <Upload size="18" />
-                <span>{{ formData.verificationDocs.businessPermit ? 'Change Business Permit' : 'Upload Business Permit (Photo or File)' }}</span>
+                class="file-input"
+                capture="environment"
+              />
+              
+              <p class="file-help">Accepted formats: Images (JPG, PNG), Documents (PDF, DOC, DOCX), Spreadsheets (XLS, XLSX) - max 5MB</p>
+            </div>
+          </div>
+
+          <!-- Business Permit -->
+          <div class="form-group">
+            <label for="businessPermit">Business Permit</label>
+            <div class="document-upload-container">
+              <div class="upload-options">
+                <button 
+                  type="button" 
+                  class="upload-option-btn"
+                  @click="openCameraForDocument('businessPermit')"
+                  :disabled="cameraState.isOpen"
+                >
+                  <Camera :size="16" />
+                  Take Photo
+                </button>
+                <button 
+                  type="button" 
+                  class="upload-option-btn"
+                  @click="triggerFileInput('businessPermit')"
+                >
+                  <Upload :size="16" />
+                  Upload File
+                </button>
               </div>
+              
+              <!-- Camera view for documents -->
+              <div v-if="cameraState.isOpen && cameraState.documentType === 'businessPermit'" class="camera-view">
+                <video ref="videoRef" autoplay playsinline class="camera-feed"></video>
+                <div class="camera-controls">
+                  <button 
+                    type="button" 
+                    class="camera-btn capture-btn"
+                    @click="captureDocumentPhoto('businessPermit')"
+                  >
+                    <Circle :size="24" />
+                  </button>
+                  <button 
+                    type="button" 
+                    class="camera-btn cancel-btn"
+                    @click="closeCamera"
+                  >
+                    <X :size="24" />
+                  </button>
+                </div>
+              </div>
+              
+              <!-- File preview -->
+              <div v-if="formData.verificationDocs.businessPermit && !cameraState.isOpen" class="file-preview">
+                <img 
+                  v-if="isImageFile(formData.verificationDocs.businessPermit)" 
+                  :src="getFilePreview('businessPermit')" 
+                  alt="Business Permit preview" 
+                  class="document-preview-image"
+                />
+                <div v-else class="document-file-info">
+                  <FileText :size="20" />
+                  <span>{{ formData.verificationDocs.businessPermit.name }}</span>
+                </div>
+                <button 
+                  type="button" 
+                  class="remove-file-btn"
+                  @click="removeDocument('businessPermit')"
+                >
+                  <X :size="14" />
+                </button>
+              </div>
+              
+              <!-- Upload status -->
               <div v-if="uploadStatus.businessPermit.uploading" class="upload-progress">
                 <div class="progress-bar">
                   <div class="progress-fill" :style="{ width: uploadStatus.businessPermit.progress + '%' }"></div>
                 </div>
                 <span>{{ Math.round(uploadStatus.businessPermit.progress) }}%</span>
               </div>
-              <span v-if="formData.verificationDocs.businessPermit && !uploadStatus.businessPermit.uploading" class="file-name">
-                {{ uploadStatus.businessPermit.error ? '❌ Upload failed' : (uploadStatus.businessPermit.url ? '✅ Uploaded' : '📄 Ready to upload') }}
-                {{ formData.verificationDocs.businessPermit.name }}
-              </span>
-              <span v-if="uploadStatus.businessPermit.error" class="file-error">
+              
+              <div v-if="uploadStatus.businessPermit.error" class="file-error">
                 {{ uploadStatus.businessPermit.error }}
-              </span>
-              <p class="file-help">Accepted formats: Images (JPG, PNG), Documents (PDF, DOC, DOCX), Spreadsheets (XLS, XLSX) - max 5MB</p>
-            </div>
-          </div>            <div class="form-group">
-            <label for="farmCert">Farm Certification</label>
-            <div class="file-upload" @click="triggerFileInput('farmCert')">
+              </div>
+              
               <input 
                 type="file" 
-                id="farmCert" 
-                class="file-input" 
-                ref="farmCertInput"
+                ref="businessPermitInput" 
+                @change="handleFileUpload($event, 'businessPermit')" 
                 accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,.doc,.docx,.xls,.xlsx,.txt"
-                @change="handleFileUpload($event, 'farmCert')"
-              >
-              <div class="file-upload-button">
-                <Upload size="18" />
-                <span>{{ formData.verificationDocs.farmCert ? 'Change Farm Certification' : 'Upload Farm Certification (Photo or File)' }}</span>
+                class="file-input"
+                capture="environment"
+              />
+              
+              <p class="file-help">Accepted formats: Images (JPG, PNG), Documents (PDF, DOC, DOCX), Spreadsheets (XLS, XLSX) - max 5MB</p>
+            </div>
+          </div>
+
+          <!-- Farm Certification -->
+          <div class="form-group">
+            <label for="farmCert">Farm Certification</label>
+            <div class="document-upload-container">
+              <div class="upload-options">
+                <button 
+                  type="button" 
+                  class="upload-option-btn"
+                  @click="openCameraForDocument('farmCert')"
+                  :disabled="cameraState.isOpen"
+                >
+                  <Camera :size="16" />
+                  Take Photo
+                </button>
+                <button 
+                  type="button" 
+                  class="upload-option-btn"
+                  @click="triggerFileInput('farmCert')"
+                >
+                  <Upload :size="16" />
+                  Upload File
+                </button>
               </div>
+              
+              <!-- Camera view for documents -->
+              <div v-if="cameraState.isOpen && cameraState.documentType === 'farmCert'" class="camera-view">
+                <video ref="videoRef" autoplay playsinline class="camera-feed"></video>
+                <div class="camera-controls">
+                  <button 
+                    type="button" 
+                    class="camera-btn capture-btn"
+                    @click="captureDocumentPhoto('farmCert')"
+                  >
+                    <Circle :size="24" />
+                  </button>
+                  <button 
+                    type="button" 
+                    class="camera-btn cancel-btn"
+                    @click="closeCamera"
+                  >
+                    <X :size="24" />
+                  </button>
+                </div>
+              </div>
+              
+              <!-- File preview -->
+              <div v-if="formData.verificationDocs.farmCert && !cameraState.isOpen" class="file-preview">
+                <img 
+                  v-if="isImageFile(formData.verificationDocs.farmCert)" 
+                  :src="getFilePreview('farmCert')" 
+                  alt="Farm Certification preview" 
+                  class="document-preview-image"
+                />
+                <div v-else class="document-file-info">
+                  <FileText :size="20" />
+                  <span>{{ formData.verificationDocs.farmCert.name }}</span>
+                </div>
+                <button 
+                  type="button" 
+                  class="remove-file-btn"
+                  @click="removeDocument('farmCert')"
+                >
+                  <X :size="14" />
+                </button>
+              </div>
+              
+              <!-- Upload status -->
               <div v-if="uploadStatus.farmCert.uploading" class="upload-progress">
                 <div class="progress-bar">
                   <div class="progress-fill" :style="{ width: uploadStatus.farmCert.progress + '%' }"></div>
                 </div>
                 <span>{{ Math.round(uploadStatus.farmCert.progress) }}%</span>
               </div>
-              <span v-if="formData.verificationDocs.farmCert && !uploadStatus.farmCert.uploading" class="file-name">
-                {{ uploadStatus.farmCert.error ? '❌ Upload failed' : (uploadStatus.farmCert.url ? '✅ Uploaded' : '📄 Ready to upload') }}
-                {{ formData.verificationDocs.farmCert.name }}
-              </span>
-              <span v-if="uploadStatus.farmCert.error" class="file-error">
+              
+              <div v-if="uploadStatus.farmCert.error" class="file-error">
                 {{ uploadStatus.farmCert.error }}
-              </span>
-              <p class="file-help">Accepted formats: Images (JPG, PNG), Documents (PDF, DOC, DOCX), Spreadsheets (XLS, XLSX) - max 5MB</p>
-            </div>
-          </div>
-          
-          <!-- Debug Information (only shown when files are selected) -->
-          <div v-if="Object.values(formData.verificationDocs).some(file => file)" class="debug-panel">
-            <h4>🛠️ Upload Debug Information</h4>
-            <div class="debug-info">
-              <p><strong>Selected Files:</strong></p>
-              <ul>
-                <li v-if="formData.verificationDocs.validID">Valid ID: {{ formData.verificationDocs.validID.name }} ({{ (formData.verificationDocs.validID.size / 1024 / 1024).toFixed(2) }}MB)</li>
-                <li v-if="formData.verificationDocs.businessPermit">Business Permit: {{ formData.verificationDocs.businessPermit.name }} ({{ (formData.verificationDocs.businessPermit.size / 1024 / 1024).toFixed(2) }}MB)</li>
-                <li v-if="formData.verificationDocs.farmCert">Farm Cert: {{ formData.verificationDocs.farmCert.name }} ({{ (formData.verificationDocs.farmCert.size / 1024 / 1024).toFixed(2) }}MB)</li>
-              </ul>
-              
-              <p><strong>Upload Status:</strong></p>
-              <ul>
-                <li v-if="formData.verificationDocs.validID">Valid ID: 
-                  <span :class="uploadStatus.validID.uploading ? 'status-uploading' : (uploadStatus.validID.url ? 'status-complete' : 'status-pending')">
-                    {{ uploadStatus.validID.uploading ? 'Uploading...' : (uploadStatus.validID.url ? 'Complete ✅' : (uploadStatus.validID.error ? 'Failed ❌' : 'Ready 📄')) }}
-                  </span>
-                </li>
-                <li v-if="formData.verificationDocs.businessPermit">Business Permit: 
-                  <span :class="uploadStatus.businessPermit.uploading ? 'status-uploading' : (uploadStatus.businessPermit.url ? 'status-complete' : 'status-pending')">
-                    {{ uploadStatus.businessPermit.uploading ? 'Uploading...' : (uploadStatus.businessPermit.url ? 'Complete ✅' : (uploadStatus.businessPermit.error ? 'Failed ❌' : 'Ready 📄')) }}
-                  </span>
-                </li>
-                <li v-if="formData.verificationDocs.farmCert">Farm Cert: 
-                  <span :class="uploadStatus.farmCert.uploading ? 'status-uploading' : (uploadStatus.farmCert.url ? 'status-complete' : 'status-pending')">
-                    {{ uploadStatus.farmCert.uploading ? 'Uploading...' : (uploadStatus.farmCert.url ? 'Complete ✅' : (uploadStatus.farmCert.error ? 'Failed ❌' : 'Ready 📄')) }}
-                  </span>
-                </li>
-              </ul>
-              
-              <!-- Test buttons for each document type -->
-              <div class="test-buttons">
-                <button v-if="formData.verificationDocs.validID" @click="testUpload('validID')" class="test-btn" :disabled="uploadStatus.validID.uploading">🧪 Test Valid ID</button>
-                <button v-if="formData.verificationDocs.businessPermit" @click="testUpload('businessPermit')" class="test-btn" :disabled="uploadStatus.businessPermit.uploading">🧪 Test Business Permit</button>
-                <button v-if="formData.verificationDocs.farmCert" @click="testUpload('farmCert')" class="test-btn" :disabled="uploadStatus.farmCert.uploading">🧪 Test Farm Cert</button>
               </div>
+              
+              <input 
+                type="file" 
+                ref="farmCertInput" 
+                @change="handleFileUpload($event, 'farmCert')" 
+                accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,.doc,.docx,.xls,.xlsx,.txt"
+                class="file-input"
+                capture="environment"
+              />
+              
+              <p class="file-help">Accepted formats: Images (JPG, PNG), Documents (PDF, DOC, DOCX), Spreadsheets (XLS, XLSX) - max 5MB</p>
             </div>
           </div>
         </div>
@@ -513,11 +661,29 @@
   </div>
 </template>
 
+/**
+ * DOCUMENT UPLOAD STRATEGY:
+ * 
+ * Images (JPG, PNG, GIF, WEBP):
+ *   - Converted to base64 strings using FileReader
+ *   - Stored directly in Firestore as base64 data
+ *   - No Firebase Storage used for images
+ *   - Faster processing and no CORS issues
+ * 
+ * Files (PDF, DOC, DOCX, XLS, XLSX, TXT):
+ *   - Uploaded to Firebase Storage
+ *   - Download URLs stored in Firestore
+ *   - Supports larger file sizes and better organization
+ * 
+ * Both types are handled in uploadAllDocuments() method
+ * Similar approach to OrderStatusUpdate.vue
+ */
+
 <script>
 import { db, auth, storage } from "@/firebase/firebaseConfig";
 import { collection, addDoc, doc, getDoc, updateDoc } from "firebase/firestore";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
-import { ChevronLeft, ChevronRight, Upload, ChevronDown } from 'lucide-vue-next';
+import { ChevronLeft, ChevronRight, Upload, ChevronDown, Camera, X, FileText, Circle } from 'lucide-vue-next';
 
 export default {
   name: "SellerRegister",
@@ -525,7 +691,11 @@ export default {
     ChevronLeft,
     ChevronRight,
     Upload,
-    ChevronDown
+    ChevronDown,
+    Camera,
+    X,
+    FileText,
+    Circle
   },
   data() {
     return {
@@ -624,6 +794,23 @@ export default {
           url: null
         }
       },
+      
+      // Camera state for document capture
+      cameraState: {
+        isOpen: false,
+        documentType: null,
+        mediaStream: null
+      },
+      
+      // File preview URLs for images
+      filePreviews: {
+        validID: null,
+        businessPermit: null,
+        farmCert: null
+      },
+      
+      // Account number validation
+      accountNumberError: '',
       isSubmitting: false,
       uploadInProgress: false,
       savingToDatabase: false,
@@ -655,7 +842,30 @@ export default {
   async created() {
     await this.fetchUserData();
   },
+  
+  // Clean up camera when component is destroyed
+  beforeDestroy() {
+    this.closeCamera();
+  },
   methods: {
+    // Navigation methods
+    goBackToHome() {
+      // Navigate back to HomeView
+      this.$router.push('/').then(() => {
+        console.log("Successfully navigated back to HomeView");
+      }).catch(error => {
+        console.error("Navigation error:", error);
+        // Fallback - try alternative navigation methods
+        try {
+          this.$emit('navigate', 'HomePage');
+        } catch (emitError) {
+          console.error("Emit navigation error:", emitError);
+          // Last resort - reload to home page
+          window.location.href = '/';
+        }
+      });
+    },
+    
     toggleDeliveryDropdown() {
       this.isDeliveryDropdownOpen = !this.isDeliveryDropdownOpen;
       if (this.isDeliveryDropdownOpen) {
@@ -781,153 +991,167 @@ export default {
       
       this.formData.verificationDocs[key] = file;
       
+      // Create preview for image files
+      if (this.isImageFile(file)) {
+        this.createFilePreview(file, key);
+      }
+      
       // Show success feedback for file selection
       this.showNotification('File Selected', `${file.name} is ready to upload`, 'success', 2000);
       
       // Test storage connection when file is selected
       this.testStorageConnection();
     },
-      triggerFileInput(key) {
+    
+    triggerFileInput(key) {
       this.$refs[`${key}Input`].click();
-    },    async uploadFile(file, docType) {
-      if (!file) return null;
+    },
+    
+    // Camera methods for document capture
+    async openCameraForDocument(documentType) {
+      try {
+        this.cameraState.isOpen = true;
+        this.cameraState.documentType = documentType;
+        
+        const constraints = { 
+          video: { 
+            facingMode: 'environment', // Prefer rear camera
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          } 
+        };
+        
+        this.cameraState.mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+        
+        // Wait for next tick to ensure video element is rendered
+        await this.$nextTick();
+        
+        if (this.$refs.videoRef) {
+          this.$refs.videoRef.srcObject = this.cameraState.mediaStream;
+        }
+        
+        this.showNotification('Camera Ready', 'Position your document clearly in the frame and tap capture', 'info', 3000);
+        
+      } catch (error) {
+        console.error('Error accessing camera:', error);
+        this.showNotification('Camera Access Failed', 'Could not access the camera. Please check permissions and try again.', 'error');
+        this.closeCamera();
+      }
+    },
+    
+    closeCamera() {
+      if (this.cameraState.mediaStream) {
+        this.cameraState.mediaStream.getTracks().forEach(track => track.stop());
+        this.cameraState.mediaStream = null;
+      }
+      this.cameraState.isOpen = false;
+      this.cameraState.documentType = null;
+    },
+    
+    captureDocumentPhoto(documentType) {
+      if (!this.$refs.videoRef) return;
+      
+      const canvas = document.createElement('canvas');
+      canvas.width = this.$refs.videoRef.videoWidth;
+      canvas.height = this.$refs.videoRef.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(this.$refs.videoRef, 0, 0, canvas.width, canvas.height);
+      
+      // Convert canvas to Blob and create File
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        
+        const file = new File([blob], `${documentType}-photo.jpg`, { type: 'image/jpeg' });
+        this.formData.verificationDocs[documentType] = file;
+        
+        // Create preview
+        this.createFilePreview(file, documentType);
+        
+        this.closeCamera();
+        
+        this.showNotification('Photo Captured!', `${documentType} photo captured successfully`, 'success', 2000);
+      }, 'image/jpeg', 0.9);
+    },
+    
+    // File utility methods
+    isImageFile(file) {
+      if (!file) return false;
+      return file.type.startsWith('image/');
+    },
+    
+    // Convert image to base64 string (similar to OrderStatusUpdate.vue)
+    async saveImageToBase64(file) {
+      if (!file || !this.isImageFile(file)) return null;
       
       try {
-        // Reset status
-        this.uploadStatus[docType] = {
-          progress: 0,
-          error: null,
-          uploading: true,
-          url: null
-        };
-
-        // Validate file - Support multiple document formats
-        const maxSize = 5 * 1024 * 1024; // 5MB
-        const allowedTypes = [
-          'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
-          'application/pdf',
-          'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-          'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          'text/plain'
-        ];
-        
-        if (file.size > maxSize) {
-          throw new Error('File size must be less than 5MB');
-        }
-        
-        if (!allowedTypes.includes(file.type)) {
-          throw new Error('Only image files, documents (PDF, DOC, DOCX), spreadsheets (XLS, XLSX), and text files are allowed');
-        }
-
-        // Create storage reference with better organization
-        const user = auth.currentUser;
-        if (!user) {
-          throw new Error('User not authenticated');
-        }
-        
-        const timestamp = Date.now();
-        const fileExtension = file.name.split('.').pop();
-        const sanitizedFileName = `${docType}_${timestamp}.${fileExtension}`;
-        
-        // Simpler storage path
-        const storageRef = ref(storage, `seller-documents/${user.uid}/${sanitizedFileName}`);
-        
-        console.log(`Starting upload for ${docType}:`, {
-          fileName: file.name,
-          fileSize: file.size,
-          fileType: file.type,
-          storagePath: `seller-documents/${user.uid}/${sanitizedFileName}`
+        console.log('Converting image to base64...');
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            resolve(e.target.result);
+          };
+          reader.onerror = (e) => {
+            console.error('Error reading file:', e);
+            reject(new Error('Failed to read image file'));
+          };
+          reader.readAsDataURL(file);
         });
-
-        // Start upload with progress tracking
-        const uploadTask = uploadBytesResumable(storageRef, file);
-
-        // Create upload promise with better error handling
-        const uploadPromise = new Promise((resolve, reject) => {
-          // Set reasonable timeout for upload (30 seconds)
-          const timeoutId = setTimeout(() => {
-            uploadTask.cancel();
-            reject(new Error('Upload timeout - please check your connection and try again'));
-          }, 30000); // 30 second timeout
-
-          uploadTask.on('state_changed',
-            (snapshot) => {
-              // Update progress
-              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-              this.uploadStatus[docType].progress = Math.round(progress);
-              console.log(`Upload progress for ${docType}: ${Math.round(progress)}%`);
-            },
-            (error) => {
-              // Upload failed
-              clearTimeout(timeoutId);
-              console.error(`Upload error for ${docType}:`, error);
-              
-              let errorMessage = 'Upload failed';
-              
-              // Handle specific Firebase Storage errors
-              switch (error.code) {
-                case 'storage/unauthorized':
-                  errorMessage = 'Upload unauthorized - please log in again';
-                  break;
-                case 'storage/canceled':
-                  errorMessage = 'Upload was cancelled';
-                  break;
-                case 'storage/quota-exceeded':
-                  errorMessage = 'Storage quota exceeded';
-                  break;
-                case 'storage/invalid-format':
-                  errorMessage = 'Invalid file format';
-                  break;
-                case 'storage/unknown':
-                  if (error.message.includes('CORS')) {
-                    errorMessage = 'Upload blocked by browser security - try refreshing and uploading again';
-                  } else {
-                    errorMessage = 'Connection error - please check your internet and try again';
-                  }
-                  break;
-                default:
-                  errorMessage = error.message || 'Upload failed due to connection issues';
-              }
-              
-              this.uploadStatus[docType].error = errorMessage;
-              this.uploadStatus[docType].uploading = false;
-              
-              // Show error notification
-              this.showNotification('Upload Failed', `${docType}: ${errorMessage}`, 'error', 4000);
-              
-              reject(new Error(errorMessage));
-            },
-            async () => {
-              // Upload completed successfully
-              clearTimeout(timeoutId);
-              try {
-                const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-                this.uploadStatus[docType].url = downloadURL;
-                this.uploadStatus[docType].uploading = false;
-                this.uploadStatus[docType].progress = 100;
-                console.log(`Upload successful for ${docType}: ${downloadURL}`);
-                
-                // Show success notification
-                this.showNotification('Upload Successful', `${docType} uploaded successfully!`, 'success', 3000);
-                
-                resolve(downloadURL);
-              } catch (error) {
-                console.error(`Error getting download URL for ${docType}:`, error);
-                this.uploadStatus[docType].error = 'Upload completed but failed to get file URL';
-                this.uploadStatus[docType].uploading = false;
-                reject(new Error('Upload completed but failed to get file URL'));
-              }
-            }
-          );
-        });
-
-        return await uploadPromise;
       } catch (error) {
-        console.error(`Upload failed for ${docType}:`, error);
-        this.uploadStatus[docType].error = error.message;
-        this.uploadStatus[docType].uploading = false;
-        this.uploadStatus[docType].progress = 0;
-        throw error;
+        console.error("Error processing image:", error);
+        throw new Error('Failed to process image');
+      }
+    },
+    
+    createFilePreview(file, key) {
+      if (!this.isImageFile(file)) return;
+      
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        this.filePreviews[key] = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    },
+    
+    getFilePreview(key) {
+      return this.filePreviews[key];
+    },
+    
+    removeDocument(key) {
+      this.formData.verificationDocs[key] = null;
+      this.filePreviews[key] = null;
+      this.uploadStatus[key] = {
+        progress: 0,
+        error: null,
+        uploading: false,
+        url: null
+      };
+      
+      // Clear file input
+      const inputRef = this.$refs[`${key}Input`];
+      if (inputRef) {
+        inputRef.value = '';
+      }
+    },
+    
+    // Account number validation
+    validateAccountNumber() {
+      const accountNumber = this.formData.paymentInfo.accountNumber;
+      
+      // Remove any non-digit characters
+      const cleanNumber = accountNumber.replace(/\D/g, '');
+      this.formData.paymentInfo.accountNumber = cleanNumber;
+      
+      // Validate length
+      if (cleanNumber.length === 0) {
+        this.accountNumberError = '';
+      } else if (cleanNumber.length < 11) {
+        this.accountNumberError = 'Account number must be exactly 11 digits';
+      } else if (cleanNumber.length === 11) {
+        this.accountNumberError = '';
+      } else {
+        // Trim to 11 digits if longer
+        this.formData.paymentInfo.accountNumber = cleanNumber.slice(0, 11);
+        this.accountNumberError = '';
       }
     },    async uploadAllDocuments() {
       const results = {
@@ -952,58 +1176,58 @@ export default {
       });
       
       try {
-        // Use Promise.allSettled to upload all files in parallel with individual timeouts
-        const uploadPromises = uploadOrder.map(async (docType) => {
+        // Process each document type
+        for (const docType of uploadOrder) {
           const file = this.formData.verificationDocs[docType];
-          if (!file) {
-            return { docType, result: { success: false, url: '', error: null } };
-          }
+          if (!file) continue;
           
           try {
-            // Individual file timeout (8 seconds per file for faster feedback)
-            const singleUploadTimeout = new Promise((_, reject) => {
-              setTimeout(() => reject(new Error('Individual file upload timeout')), 8000);
-            });
+            // Check if it's an image or a file
+            if (this.isImageFile(file)) {
+              console.log(`Processing ${docType} as image (base64)...`);
+              // For images: convert to base64 and save directly
+              const base64String = await this.saveImageToBase64(file);
+              results[docType] = {
+                success: true,
+                url: base64String, // This will be the base64 string
+                error: null,
+                type: 'image'
+              };
+              console.log(`✅ Image ${docType} processed successfully as base64`);
+            } else {
+              console.log(`Processing ${docType} as file (Firebase Storage)...`);
+              // For files: upload to Firebase Storage
+              const uploadResult = await this.uploadFileToStorage(file, docType);
+              results[docType] = {
+                success: true,
+                url: uploadResult.url,
+                error: null,
+                type: 'file'
+              };
+              console.log(`✅ File ${docType} uploaded successfully to Firebase Storage`);
+            }
             
-            const uploadResult = await Promise.race([
-              this.fastUpload(file, docType),
-              singleUploadTimeout
-            ]);
-            
-            console.log(`✅ Upload successful for ${docType}`);
-            return { docType, result: uploadResult };
+            // Update UI status
+            this.uploadStatus[docType].progress = 100;
+            this.uploadStatus[docType].uploading = false;
+            this.uploadStatus[docType].url = results[docType].url;
             
           } catch (error) {
-            console.error(`❌ Failed to upload ${docType}:`, error.message);
+            console.error(`❌ Failed to process ${docType}:`, error.message);
             
-            // Update UI status immediately
-            this.uploadStatus[docType].error = error.message || 'Upload failed';
+            // Update UI status
+            this.uploadStatus[docType].error = error.message || 'Processing failed';
             this.uploadStatus[docType].uploading = false;
             this.uploadStatus[docType].progress = 0;
             
-            return { 
-              docType, 
-              result: { 
-                success: false, 
-                url: '', 
-                error: error.message || 'Upload failed due to connection issues' 
-              } 
+            results[docType] = { 
+              success: false, 
+              url: '', 
+              error: error.message || 'Processing failed',
+              type: this.isImageFile(this.formData.verificationDocs[docType]) ? 'image' : 'file'
             };
           }
-        });
-        
-        // Wait for all uploads with overall timeout
-        const allResults = await Promise.race([
-          Promise.allSettled(uploadPromises),
-          uploadTimeout
-        ]);
-        
-        // Process results
-        allResults.forEach(({ value }) => {
-          if (value && value.docType) {
-            results[value.docType] = value.result;
-          }
-        });
+        }
         
       } catch (error) {
         console.error("Overall upload process failed:", error.message);
@@ -1013,7 +1237,8 @@ export default {
             results[docType] = {
               success: false,
               url: '',
-              error: 'Upload timeout or connection issue'
+              error: 'Upload timeout or connection issue',
+              type: this.isImageFile(this.formData.verificationDocs[docType]) ? 'image' : 'file'
             };
             this.uploadStatus[docType].error = 'Upload timeout';
             this.uploadStatus[docType].uploading = false;
@@ -1025,19 +1250,23 @@ export default {
       // Log final results
       const successCount = Object.values(results).filter(r => r.success).length;
       const errorCount = Object.values(results).filter(r => r.error).length;
+      const imageCount = Object.values(results).filter(r => r.type === 'image' && r.success).length;
+      const fileCount = Object.values(results).filter(r => r.type === 'file' && r.success).length;
       
-      console.log(`Upload process completed: ${successCount} successful, ${errorCount} failed`);
+      console.log(`Upload process completed: ${successCount} successful (${imageCount} images as base64, ${fileCount} files to storage), ${errorCount} failed`);
       console.log('Final upload results:', results);
       
       return results;
     },
 
-    // Add a fast, simplified upload method for better performance
-    async fastUpload(file, docType) {
-      if (!file) return { success: false, url: '', error: null };
+    // New method to upload files (non-images) to Firebase Storage
+    async uploadFileToStorage(file, docType) {
+      if (!file || this.isImageFile(file)) {
+        throw new Error('This method is only for non-image files');
+      }
       
       try {
-        console.log(`Starting fastUpload for ${docType}:`, {
+        console.log(`Starting file upload to Firebase Storage for ${docType}:`, {
           fileName: file.name,
           fileSize: file.size,
           fileType: file.type
@@ -1057,7 +1286,7 @@ export default {
           throw new Error('File too large (max 5MB)');
         }
 
-        // Create storage reference with simplified path
+        // Create storage reference
         const user = auth.currentUser;
         if (!user) {
           throw new Error('User not authenticated');
@@ -1066,92 +1295,76 @@ export default {
         const timestamp = Date.now();
         const fileExtension = file.name.split('.').pop();
         const sanitizedFileName = `${docType}_${timestamp}.${fileExtension}`;
+        const storageRef = ref(storage, `seller-documents/${user.uid}/${sanitizedFileName}`);
+
+        console.log(`Uploading file to path: seller-documents/${user.uid}/${sanitizedFileName}`);
+
+        // Upload file with progress tracking
+        const uploadTask = uploadBytesResumable(storageRef, file);
         
-        // Use a simpler storage path that's more likely to work
-        const storageRef = ref(storage, `seller-docs/${user.uid}/${sanitizedFileName}`);
-
-        console.log(`Uploading to path: seller-docs/${user.uid}/${sanitizedFileName}`);
-
-        // Try a more direct upload approach
-        try {
-          // First try simple upload without progress tracking
-          const snapshot = await uploadBytesResumable(storageRef, file);
-          this.uploadStatus[docType].progress = 100;
-          
-          const downloadURL = await getDownloadURL(snapshot.ref);
-          
-          this.uploadStatus[docType].url = downloadURL;
-          this.uploadStatus[docType].uploading = false;
-          this.uploadStatus[docType].progress = 100;
-          
-          console.log(`FastUpload successful for ${docType}: ${downloadURL}`);
-          this.showNotification('Upload Complete', `${docType} uploaded successfully`, 'success', 3000);
-          
-          return { success: true, url: downloadURL, error: null };
-          
-        } catch (uploadError) {
-          console.error(`Upload error for ${docType}:`, uploadError);
-          throw uploadError;
-        }
+        return new Promise((resolve, reject) => {
+          uploadTask.on('state_changed',
+            (snapshot) => {
+              // Update progress
+              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+              this.uploadStatus[docType].progress = Math.round(progress);
+              console.log(`Upload progress for ${docType}: ${Math.round(progress)}%`);
+            },
+            (error) => {
+              console.error(`Upload error for ${docType}:`, error);
+              this.uploadStatus[docType].error = error.message;
+              this.uploadStatus[docType].uploading = false;
+              reject(error);
+            },
+            async () => {
+              try {
+                const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+                this.uploadStatus[docType].url = downloadURL;
+                this.uploadStatus[docType].uploading = false;
+                this.uploadStatus[docType].progress = 100;
+                
+                console.log(`File upload successful for ${docType}: ${downloadURL}`);
+                this.showNotification('File Upload Complete', `${docType} uploaded successfully`, 'success', 3000);
+                
+                resolve({ url: downloadURL });
+              } catch (error) {
+                console.error(`Error getting download URL for ${docType}:`, error);
+                this.uploadStatus[docType].error = 'Upload completed but failed to get file URL';
+                this.uploadStatus[docType].uploading = false;
+                reject(new Error('Upload completed but failed to get file URL'));
+              }
+            }
+          );
+        });
         
       } catch (error) {
-        console.error(`FastUpload failed for ${docType}:`, error);
+        console.error(`File upload failed for ${docType}:`, error);
         
         this.uploadStatus[docType].error = error.message;
         this.uploadStatus[docType].uploading = false;
         this.uploadStatus[docType].progress = 0;
         
-        this.showNotification('Upload Failed', `${docType}: ${error.message}`, 'error', 4000);
+        this.showNotification('File Upload Failed', `${docType}: ${error.message}`, 'error', 4000);
         
-        return { success: false, url: '', error: error.message };
+        throw error;
       }
     },
 
-    async retryUpload(file, docType, maxAttempts) {
-      let attempts = 0;
-      let lastError = null;
-      
-      while (attempts < maxAttempts) {
-        attempts++;
-        try {
-          console.log(`🔄 Upload attempt ${attempts}/${maxAttempts} for ${docType}`);
-          const url = await this.uploadFile(file, docType);
-          console.log(`✅ Upload successful on attempt ${attempts} for ${docType}`);
-          return {
-            success: true,
-            url: url,
-            attempts: attempts
-          };
-        } catch (error) {
-          lastError = error;
-          console.warn(`❌ Upload attempt ${attempts} failed for ${docType}:`, error.message);
-          
-          // For certain errors, don't retry as it won't help
-          if (error.message.includes('CORS') || 
-              error.message.includes('cross-origin') ||
-              error.message.includes('unauthorized') ||
-              error.message.includes('invalid-format')) {
-            console.log(`🚫 Non-retryable error detected for ${docType}, stopping retries`);
-            break;
-          }
-          
-          // Progressive delay between retries
-          if (attempts < maxAttempts) {
-            const delay = Math.min(1000 * attempts, 3000); // Max 3 second delay
-            console.log(`⏱️ Waiting ${delay}ms before retry...`);
-            await new Promise(resolve => setTimeout(resolve, delay));
-          }
-        }
-      }
-      
-      // If we get here, all attempts failed
-      const errorMessage = lastError?.message || 'Upload failed after multiple attempts';
-      throw new Error(`Failed after ${attempts} attempts: ${errorMessage}`);
-    },    showSubmissionResult(uploadResults) {
+    // Add a fast, simplified upload method for better performance (LEGACY - keeping for backwards compatibility)
+    async fastUpload(file, docType) {
+      // This method is now replaced by the new uploadAllDocuments method
+      // which handles images and files separately
+      console.warn('fastUpload method is deprecated. Use uploadAllDocuments instead.');
+      return { success: false, url: '', error: 'Method deprecated' };
+    },
+
+    showSubmissionResult(uploadResults) {
       // Count successful uploads
       const totalFilesSelected = Object.values(this.formData.verificationDocs).filter(file => file).length;
       const successfulUploads = Object.values(uploadResults).filter(r => r?.success).length;
       const failedUploads = Object.values(uploadResults).filter(r => r?.error).length;
+      const imageUploads = Object.values(uploadResults).filter(r => r?.success && r?.type === 'image').length;
+      const fileUploads = Object.values(uploadResults).filter(r => r?.success && r?.type === 'file').length;
       
       let title = "🎉 Application Submitted Successfully!";
       let message = "Your seller application has been submitted and is now under review.";
@@ -1162,8 +1375,19 @@ export default {
         message += "<br><br>📝 <strong>Documents:</strong> None uploaded - you can add them later from your dashboard.";
       } else if (successfulUploads === totalFilesSelected) {
         message += `<br><br>✅ <strong>Documents:</strong> All ${successfulUploads} document(s) uploaded successfully.`;
+        if (imageUploads > 0 && fileUploads > 0) {
+          message += `<br>&nbsp;&nbsp;&nbsp;&nbsp;• ${imageUploads} image(s) processed and saved`;
+          message += `<br>&nbsp;&nbsp;&nbsp;&nbsp;• ${fileUploads} file(s) uploaded to storage`;
+        } else if (imageUploads > 0) {
+          message += `<br>&nbsp;&nbsp;&nbsp;&nbsp;• ${imageUploads} image(s) processed and saved`;
+        } else if (fileUploads > 0) {
+          message += `<br>&nbsp;&nbsp;&nbsp;&nbsp;• ${fileUploads} file(s) uploaded to storage`;
+        }
       } else if (successfulUploads > 0) {
         message += `<br><br>⚠️ <strong>Documents:</strong> ${successfulUploads} of ${totalFilesSelected} uploaded. Upload the rest later.`;
+        if (imageUploads > 0 || fileUploads > 0) {
+          message += `<br>&nbsp;&nbsp;&nbsp;&nbsp;• ${imageUploads} image(s) processed, ${fileUploads} file(s) uploaded`;
+        }
       } else if (failedUploads > 0) {
         message += `<br><br>❌ <strong>Documents:</strong> Upload failed due to connection issues. Try again from your dashboard.`;
       }
@@ -1246,11 +1470,27 @@ export default {
             deliveryMethods: this.formData.deliveryInfo.deliveryMethods || []
           },
           
-          // Documents (map) - simple string URLs only
+          // Documents (map) - handle both base64 images and file URLs
           documents: {
             businessPermit: uploadResults.businessPermit?.url || "",
             farmCert: uploadResults.farmCert?.url || "",
             validID: uploadResults.validID?.url || ""
+          },
+          
+          // Document metadata to track storage type
+          documentMetadata: {
+            businessPermit: {
+              type: uploadResults.businessPermit?.type || null,
+              isBase64: uploadResults.businessPermit?.type === 'image' || false
+            },
+            farmCert: {
+              type: uploadResults.farmCert?.type || null,
+              isBase64: uploadResults.farmCert?.type === 'image' || false
+            },
+            validID: {
+              type: uploadResults.validID?.type || null,
+              isBase64: uploadResults.validID?.type === 'image' || false
+            }
           },
           
           // Farm details (map) - moved isOnline and isVerified to root level
@@ -1441,87 +1681,69 @@ export default {
       // Check if any uploads failed
       const failedUploads = Object.entries(uploadResults)
         .filter(([key, result]) => this.formData.verificationDocs[key] && (!result.success || result.error))
-        .map(([key]) => key);
+        .map(([key, result]) => ({ key, result }));
 
       if (failedUploads.length > 0) {
-        const failedNames = failedUploads.map(key => {
-          switch(key) {
-            case 'validID': return 'Valid ID';
-            case 'businessPermit': return 'Business Permit';
-            case 'farmCert': return 'Farm Certification';
-            default: return key;
-          }
+        const failedDetails = failedUploads.map(({ key, result }) => {
+          const docName = key === 'validID' ? 'Valid ID' : 
+                         key === 'businessPermit' ? 'Business Permit' : 
+                         key === 'farmCert' ? 'Farm Certification' : key;
+          const fileType = result.type === 'image' ? 'image' : 'file';
+          return `${docName} (${fileType})`;
         });
         
         this.showNotification(
-          'Some Documents Failed to Upload', 
-          `The following documents failed to upload: ${failedNames.join(', ')}. Your application will be submitted without these documents. You can upload them later from your seller dashboard.`, 
+          'Some Documents Failed to Process', 
+          `The following documents failed to upload: ${failedDetails.join(', ')}. Your application will be submitted without these documents. You can upload them later from your seller dashboard.`, 
           'warning', 
           7000
         );
         return true; // Continue with submission
       }
 
+      // Show success message for mixed uploads
+      const imageCount = Object.values(uploadResults).filter(r => r.success && r.type === 'image').length;
+      const fileCount = Object.values(uploadResults).filter(r => r.success && r.type === 'file').length;
+      
+      if (imageCount > 0 && fileCount > 0) {
+        this.showNotification(
+          'Documents Ready!', 
+          `Successfully processed ${imageCount} image(s) and uploaded ${fileCount} file(s). Your application is ready to submit.`, 
+          'success', 
+          4000
+        );
+      } else if (imageCount > 0) {
+        this.showNotification(
+          'Images Ready!', 
+          `Successfully processed ${imageCount} image(s). Your application is ready to submit.`, 
+          'success', 
+          3000
+        );
+      } else if (fileCount > 0) {
+        this.showNotification(
+          'Files Ready!', 
+          `Successfully uploaded ${fileCount} file(s). Your application is ready to submit.`, 
+          'success', 
+          3000
+        );
+      }
+
       return true; // All uploads successful or no issues
-    },
-    
-    // Simple upload method for testing
-    async simpleUploadTest(file, docType) {
-      try {
-        console.log(`Starting simple upload test for ${docType}`);
-        
-        const user = auth.currentUser;
-        if (!user) {
-          throw new Error('User not authenticated');
-        }
-        
-        // Create a simple filename
-        const timestamp = Date.now();
-        const extension = file.name.split('.').pop();
-        const fileName = `test_${docType}_${timestamp}.${extension}`;
-        
-        // Create storage reference
-        const storageRef = ref(storage, `test-uploads/${user.uid}/${fileName}`);
-        
-        console.log(`Uploading to: test-uploads/${user.uid}/${fileName}`);
-        
-        // Try simple upload
-        const snapshot = await uploadBytesResumable(storageRef, file);
-        const downloadURL = await getDownloadURL(snapshot.ref);
-        
-        console.log(`Simple upload successful: ${downloadURL}`);
-        return downloadURL;
-        
-      } catch (error) {
-        console.error(`Simple upload failed for ${docType}:`, error);
-        throw error;
-      }
-    },
-    
-    // Test upload method that can be called manually
-    async testUpload(docType) {
-      const file = this.formData.verificationDocs[docType];
-      if (!file) {
-        this.showNotification('No File Selected', `Please select a ${docType} file first`, 'warning');
-        return;
-      }
-      
-      this.showNotification('Testing Upload', `Starting test upload for ${docType}...`, 'info', 2000);
-      
-      try {
-        const result = await this.simpleUploadTest(file, docType);
-        this.showNotification('Test Successful!', `Upload test passed for ${docType}`, 'success', 4000);
-        console.log('Test upload result:', result);
-      } catch (error) {
-        this.showNotification('Test Failed', `Upload test failed: ${error.message}`, 'error', 5000);
-        console.error('Test upload error:', error);
-      }
     }
   }
 };
 </script>
 
 <style scoped>
+/* Global overflow prevention */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  overflow-x: hidden;
+}
+
 /* Custom Notification */
 .custom-notification {
   position: fixed;
@@ -1614,78 +1836,14 @@ export default {
   }
 }
 
-/* Debug Panel */
-.debug-panel {
-  background-color: #f8f9fa;
-  border: 2px dashed #dee2e6;
-  border-radius: 8px;
-  padding: 15px;
-  margin-top: 20px;
-}
-
-.debug-panel h4 {
-  color: #495057;
-  margin: 0 0 15px 0;
-  font-size: 14px;
-}
-
-.debug-info ul {
-  margin: 8px 0;
-  padding-left: 20px;
-}
-
-.debug-info li {
-  margin-bottom: 5px;
-  font-size: 13px;
-  color: #666;
-}
-
-.status-uploading {
-  color: #f59e0b;
-  font-weight: 600;
-}
-
-.status-complete {
-  color: #10b981;
-  font-weight: 600;
-}
-
-.status-pending {
-  color: #6b7280;
-}
-
-.test-buttons {
-  display: flex;
-  gap: 8px;
-  margin-top: 12px;
-  flex-wrap: wrap;
-}
-
-.test-btn {
-  background-color: #3b82f6;
-  color: white;
-  border: none;
-  padding: 6px 12px;
-  border-radius: 4px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.test-btn:hover:not(:disabled) {
-  background-color: #2563eb;
-}
-
-.test-btn:disabled {
-  background-color: #9ca3af;
-  cursor: not-allowed;
-}
-
 .supplier-form-page {
-  height: 100%;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
   background-color: #f5f5f5;
+  width: 100%;
+  padding: 0;
+  overflow-x: hidden;
 }
 
 .header {
@@ -1716,8 +1874,12 @@ export default {
 
 .content {
   flex: 1;
-  padding: 20px 15px;
+  padding: 10px;
   overflow-y: auto;
+  overflow-x: hidden;
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
 }
 
 /* Progress Bar */
@@ -1742,27 +1904,32 @@ export default {
 .step-indicators {
   display: flex;
   justify-content: space-between;
-  overflow-x: auto;
-  padding-bottom: 10px;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 0;
+  overflow: visible;
 }
 
 .step-indicators::-webkit-scrollbar {
-  height: 4px;
+  display: none;
 }
 
 .step-indicators::-webkit-scrollbar-thumb {
-  background-color: #ccc;
-  border-radius: 2px;
+  display: none;
 }
 
 .step-indicator {
   display: flex;
   flex-direction: column;
   align-items: center;
-  min-width: 70px;
+  flex: 1;
+  min-width: 80px;
+  max-width: 120px;
   cursor: pointer;
   opacity: 0.5;
   transition: all 0.3s ease;
+  padding: 5px;
+  box-sizing: border-box;
 }
 
 .step-indicator.active {
@@ -1796,15 +1963,21 @@ export default {
   font-size: 11px;
   text-align: center;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 /* Form Container */
 .form-container {
   background-color: white;
   border-radius: 10px;
-  padding: 20px;
+  padding: 25px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
   margin-bottom: 20px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .form-step h2 {
@@ -1823,6 +1996,7 @@ export default {
 .form-group {
   margin-bottom: 20px;
   position: relative;
+  width: 100%;
 }
 
 .form-group label {
@@ -1831,10 +2005,12 @@ export default {
   font-weight: 500;
   color: #333;
   margin-bottom: 8px;
+  width: 100%;
 }
 
 .form-group input[type="text"],
 .form-group input[type="email"],
+.form-group input[type="tel"],
 .form-group input[type="number"],
 .form-group select,
 .form-group textarea {
@@ -1845,6 +2021,8 @@ export default {
   font-size: 14px;
   transition: border-color 0.3s ease;
   background-color: white;
+  box-sizing: border-box;
+  max-width: 100%;
 }
 
 .form-group input::placeholder,
@@ -1852,6 +2030,10 @@ export default {
 .form-group select::placeholder {
   color: #999;
   opacity: 1;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .form-group input:focus,
@@ -2073,6 +2255,10 @@ export default {
 .form-navigation {
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  margin-top: 20px;
+  padding: 0 10px;
 }
 
 .prev-button,
@@ -2093,17 +2279,20 @@ export default {
 .prev-button {
   background-color: #f0f0f0;
   color: #333;
+  order: 1;
 }
 
 .next-button {
   background-color: #2e5c31;
   color: white;
+  order: 2;
   margin-left: auto;
 }
 
 .submit-button {
   background-color: #2e5c31;
   color: white;
+  order: 2;
   margin-left: auto;
 }
 
@@ -2126,6 +2315,382 @@ export default {
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+}
+
+/* Document Upload Container */
+.document-upload-container {
+  width: 100%;
+  max-width: 100%;
+  border: 2px dashed #ddd;
+  border-radius: 8px;
+  padding: 20px;
+  background-color: #fafafa;
+  transition: all 0.3s ease;
+}
+
+.document-upload-container:hover {
+  border-color: #2e5c31;
+  background-color: #f8f9fa;
+}
+
+/* Upload Options */
+.upload-options {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 15px;
+  flex-wrap: wrap;
+}
+
+.upload-option-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border: 2px solid #2e5c31;
+  border-radius: 8px;
+  background-color: white;
+  color: #2e5c31;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex: 1;
+  min-width: 120px;
+  justify-content: center;
+}
+
+.upload-option-btn:hover {
+  background-color: #2e5c31;
+  color: white;
+}
+
+.upload-option-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.upload-option-btn i {
+  font-size: 16px;
+}
+
+/* Ensure Lucide icons work properly */
+.upload-option-btn svg,
+.camera-btn svg,
+.remove-file-btn svg,
+.document-file-info svg {
+  flex-shrink: 0;
+}
+
+.camera-btn svg {
+  width: 24px;
+  height: 24px;
+}
+
+.remove-file-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.document-file-info svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* Camera View */
+.camera-view {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+  background-color: #000;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.camera-feed {
+  width: 100%;
+  height: auto;
+  max-height: 300px;
+  object-fit: cover;
+}
+
+.camera-controls {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+  padding: 15px;
+  background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+}
+
+.camera-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.capture-btn {
+  background-color: #2e5c31;
+  color: white;
+}
+
+.capture-btn:hover {
+  background-color: #1e3d21;
+  transform: scale(1.05);
+}
+
+.cancel-btn {
+  background-color: #dc3545;
+  color: white;
+}
+
+.cancel-btn:hover {
+  background-color: #c82333;
+  transform: scale(1.05);
+}
+
+.camera-btn i {
+  font-size: 24px;
+}
+
+/* File Preview */
+.file-preview {
+  position: relative;
+  width: 100%;
+  max-width: 300px;
+  margin: 15px auto;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: white;
+}
+
+.document-preview-image {
+  width: 100%;
+  height: auto;
+  max-height: 200px;
+  object-fit: cover;
+}
+
+.document-file-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 15px;
+  color: #333;
+}
+
+.document-file-info i {
+  font-size: 20px;
+  color: #2e5c31;
+}
+
+.remove-file-btn {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background-color: rgba(220, 53, 69, 0.9);
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.remove-file-btn:hover {
+  background-color: rgba(220, 53, 69, 1);
+  transform: scale(1.1);
+}
+
+.remove-file-btn i {
+  font-size: 14px;
+}
+
+/* Field Error */
+.field-error {
+  color: #dc3545;
+  font-size: 12px;
+  margin-top: 5px;
+  display: block;
+}
+
+/* Mobile Responsive Improvements */
+@media (max-width: 768px) {
+  .supplier-form-page {
+    padding: 0;
+    min-height: 100vh;
+    width: 100%;
+  }
+  
+  .content {
+    padding: 8px;
+    width: 100%;
+    max-width: 100%;
+  }
+  
+  .form-container {
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    padding: 20px;
+    box-shadow: none;
+    border-radius: 8px;
+    box-sizing: border-box;
+  }
+  
+  .form-group {
+    margin-bottom: 20px;
+    width: 100%;
+  }
+  
+  .form-group label {
+    font-size: 14px;
+    margin-bottom: 8px;
+    width: 100%;
+  }
+  
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    width: 100%;
+    padding: 14px 12px;
+    font-size: 16px; /* Prevents zoom on iOS */
+    border-radius: 6px;
+    box-sizing: border-box;
+    max-width: 100%;
+  }
+  
+  .form-group input::placeholder,
+  .form-group textarea::placeholder {
+    font-size: 14px;
+    color: #999;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  
+  .upload-options {
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .upload-option-btn {
+    width: 100%;
+    justify-content: center;
+    padding: 14px;
+  }
+  
+  .document-upload-container {
+    padding: 15px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  
+  .upload-help-note {
+    padding: 12px;
+    margin-bottom: 15px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  
+  .camera-feed {
+    max-height: 250px;
+    width: 100%;
+  }
+  
+  .file-preview {
+    max-width: 100%;
+    margin: 10px 0;
+  }
+  
+  .progress-container {
+    padding: 15px 10px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  
+  .step-indicators {
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+  }
+  
+  .step-indicator {
+    flex: 1;
+    min-width: 80px;
+    padding: 6px 4px;
+    max-width: 120px;
+  }
+  
+  .step-name {
+    font-size: 11px;
+  }
+  
+  .form-navigation {
+    flex-direction: row;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 0 5px;
+  }
+  
+  .prev-button,
+  .next-button,
+  .submit-button {
+    min-width: 120px;
+    justify-content: center;
+    padding: 14px 16px;
+    font-size: 14px;
+  }
+  
+  .prev-button {
+    order: 1;
+  }
+  
+  .next-button,
+  .submit-button {
+    order: 2;
+    margin-left: auto;
+  }
+}
+
+/* Extra small screens */
+@media (max-width: 480px) {
+  .header h1 {
+    font-size: 18px;
+  }
+  
+  .form-step h2 {
+    font-size: 20px;
+  }
+  
+  .step-description {
+    font-size: 13px;
+  }
+  
+  .upload-help-note {
+    padding: 12px;
+  }
+  
+  .upload-help-note li {
+    font-size: 13px;
+  }
+  
+  .file-help {
+    font-size: 11px;
+  }
 }
 
 .submit-button:disabled .loading-spinner {

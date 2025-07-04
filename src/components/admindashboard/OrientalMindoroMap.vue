@@ -55,17 +55,6 @@
                 <span class="info-label">Customers:</span>
                 <span class="info-value">{{ getMunicipalityUsers(municipality.name).filter(u => u.role === 'customer').length }}</span>
               </div>
-              <div v-if="getMunicipalityUsers(municipality.name).length > 0" class="user-list">
-                <strong>Users:</strong>
-                <ul>
-                  <li v-for="user in getMunicipalityUsers(municipality.name).slice(0, 5)" :key="user.id">
-                    {{ user.name || user.email }} ({{ user.role }})
-                  </li>
-                  <li v-if="getMunicipalityUsers(municipality.name).length > 5">
-                    ...and {{ getMunicipalityUsers(municipality.name).length - 5 }} more
-                  </li>
-                </ul>
-              </div>
             </div>
           </l-popup>
         </l-marker>
@@ -404,23 +393,6 @@ onMounted(async () => {
 .info-value {
   font-weight: 600;
   color: #333;
-}
-
-.user-list {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid #eee;
-}
-
-.user-list ul {
-  margin: 5px 0;
-  padding-left: 15px;
-}
-
-.user-list li {
-  font-size: 0.8rem;
-  margin-bottom: 2px;
-  color: #555;
 }
 
 .custom-marker {

@@ -118,8 +118,13 @@
                 <span class="notification-time">{{ formatTime(notification.createdAt) }}</span>
               </div>
               
-              <!-- Display the admin's message directly -->
-              <p class="notification-message">{{ notification.message }}</p>
+              <!-- Short preview message for price warnings -->
+              <p v-if="notification.type === 'price_warning'" class="notification-message">
+                Your product "{{ notification.productName }}" is priced {{ formatDeviation(notification.deviation) }} above the recommended price.
+              </p>
+              
+              <!-- Display the admin's message directly for other notifications -->
+              <p v-else class="notification-message">{{ notification.message }}</p>
               
               <!-- Price Update Details -->
               <div v-if="notification.type === 'price_update'" class="price-update-details">
@@ -149,40 +154,25 @@
                 </div>
               </div>
               
-              <!-- Price Warning Details -->
-              <div v-if="notification.type === 'price_warning'" class="price-warning-details">
-                <div class="warning-info">
-                  <div class="price-comparison">
-                    <span class="current-price">Your Price: ₱{{ formatPrice(notification.currentPrice) }}</span>
-                    <span class="max-price">Max Allowed: ₱{{ formatPrice(notification.maxAllowedPrice) }}</span>
-                    <span class="excess-amount">Excess: ₱{{ formatPrice(notification.excessAmount) }} ({{ formatDeviation(notification.deviation) }})</span>
-                  </div>
-                  <div class="warning-level-badge" :class="getWarningLevelClass(notification.warningLevel)">
-                    {{ notification.warningLevel?.toUpperCase() }} LEVEL
-                  </div>
+              <!-- Price Warning Preview -->
+              <div v-if="notification.type === 'price_warning'" class="price-warning-preview">
+                <div class="warning-preview-info">
+                  <span class="product-name">{{ notification.productName }}</span>
+                  <span class="warning-level-badge" :class="getWarningLevelClass(notification.warningLevel)">
+                    {{ notification.warningLevel?.toUpperCase() }}
+                  </span>
                 </div>
-                
-                <div v-if="notification.isFinalWarning" class="final-warning-alert">
-                  <AlertTriangle size="16" />
-                  <span>FINAL WARNING - Product will be deactivated if not corrected within 24 hours</span>
+                <div class="warning-preview-details">
+                  <span class="current-price">Your Price: ₱{{ formatPrice(notification.currentPrice) }}</span>
+                  <span class="excess-amount">Excess: ₱{{ formatPrice(notification.excessAmount) }}</span>
                 </div>
-                
-                <div class="warning-actions">
-                  <button 
-                    class="action-btn primary" 
-                    @click.stop="navigateToEditProduct(notification.productId)"
-                  >
-                    <Edit size="14" />
-                    Edit Product Price
-                  </button>
-                  <button 
-                    class="action-btn secondary" 
-                    @click.stop="acknowledgeWarning(notification)"
-                  >
-                    <Check size="14" />
-                    Acknowledge
-                  </button>
-                </div>
+                <button 
+                  class="view-details-btn" 
+                  @click.stop="openWarningModal(notification)"
+                >
+                  <Eye size="14" />
+                  View Details
+                </button>
               </div>
               
               <!-- Order Details -->
@@ -255,6 +245,89 @@
           </button>
         </div>
       </div>
+
+      <!-- Price Warning Modal -->
+      <div v-if="showWarningModal" class="modal-overlay" @click="closeWarningModal">
+        <div class="modal-content" @click.stop>
+          <div class="modal-header">
+            <h2>{{ selectedWarning?.title || 'Price Warning Details' }}</h2>
+            <button class="close-btn" @click="closeWarningModal">
+              <X size="20" />
+            </button>
+          </div>
+          <div class="modal-body">
+            <div v-if="selectedWarning" class="warning-details-full">
+              <!-- Full Message Section -->
+              <div class="message-section">
+                <h3>Warning Message</h3>
+                <div class="full-message">
+                  {{ selectedWarning.message }}
+                </div>
+              </div>
+
+              <div class="product-section">
+                <h3>Product Information</h3>
+                <div class="product-info-full">
+                  <span class="product-name-full">{{ selectedWarning.productName }}</span>
+                  <span class="category-badge">{{ selectedWarning.category }}</span>
+                </div>
+              </div>
+
+              <div class="price-section">
+                <h3>Price Comparison</h3>
+                <div class="price-comparison-full">
+                  <div class="price-item">
+                    <span class="label">Your Current Price:</span>
+                    <span class="current-price-full">₱{{ formatPrice(selectedWarning.currentPrice) }}</span>
+                  </div>
+                  <div class="price-item">
+                    <span class="label">Maximum Allowed Price:</span>
+                    <span class="max-price-full">₱{{ formatPrice(selectedWarning.maxAllowedPrice) }}</span>
+                  </div>
+                  <div class="price-item">
+                    <span class="label">Excess Amount:</span>
+                    <span class="excess-amount-full">₱{{ formatPrice(selectedWarning.excessAmount) }} ({{ formatDeviation(selectedWarning.deviation) }})</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="warning-section">
+                <h3>Warning Information</h3>
+                <div class="warning-level-full">
+                  <span class="warning-level-badge-full" :class="getWarningLevelClass(selectedWarning.warningLevel)">
+                    {{ selectedWarning.warningLevel?.toUpperCase() }} LEVEL
+                  </span>
+                </div>
+                
+                <div v-if="selectedWarning.isFinalWarning" class="final-warning-alert-full">
+                  <AlertTriangle size="16" />
+                  <span>FINAL WARNING - Product will be deactivated if not corrected within 24 hours</span>
+                </div>
+              </div>
+
+              <div class="actions-section">
+                <h3>Actions</h3>
+                <div class="warning-actions-full">
+                  <button 
+                    class="action-btn primary" 
+                    @click="navigateToEditProduct(selectedWarning.productId)"
+                  >
+                    <Edit size="14" />
+                    Edit Product Price
+                  </button>
+                  <button 
+                    class="action-btn secondary" 
+                    @click="acknowledgeWarning(selectedWarning)"
+                  >
+                    <Check size="14" />
+                    Acknowledge Warning
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -279,7 +352,8 @@ import {
   TrendingUp,
   Edit,
   MessageCircle,
-  Ban
+  Ban,
+  Eye
 } from 'lucide-vue-next';
 import Sidebar from '@/components/Sidebar.vue';
 import { db } from '@/firebase/firebaseConfig';
@@ -310,6 +384,8 @@ const currentSellerId = ref('');
 const connectionError = ref(false);
 const retryCount = ref(0);
 const maxRetries = 3;
+const showWarningModal = ref(false);
+const selectedWarning = ref(null);
 
 // Computed properties
 const unreadCount = computed(() => 
@@ -372,6 +448,16 @@ const toggleDarkMode = () => {
 const setActiveFilter = (filter) => {
   activeFilter.value = filter;
   currentPage.value = 1;
+};
+
+const openWarningModal = (notification) => {
+  selectedWarning.value = notification;
+  showWarningModal.value = true;
+};
+
+const closeWarningModal = () => {
+  showWarningModal.value = false;
+  selectedWarning.value = null;
 };
 
 const getNotificationIcon = (type) => {
@@ -492,7 +578,7 @@ const handleNotificationClick = async (notification) => {
   if (notification.type === 'new_order' && notification.orderDetails?.orderId) {
     window.location.href = `/orders?id=${notification.orderDetails.orderId}`;
   } else if (notification.type === 'price_warning' && notification.productId) {
-    navigateToEditProduct(notification.productId);
+    openWarningModal(notification);
   } else if (notification.type === 'price_update' && notification.productId) {
     // Navigate to product details or inventory page
     window.location.href = `/seller/products?highlight=${notification.productId}`;
@@ -521,6 +607,7 @@ const acknowledgeWarning = async (notification) => {
       originalWarningId: notification.id
     });
     
+    closeWarningModal();
     alert('Warning acknowledged. Please update your product price to comply with guidelines.');
   } catch (error) {
     console.error('Error acknowledging warning:', error);
@@ -684,7 +771,7 @@ onMounted(async () => {
 .main-content {
   flex: 1;
   padding: 20px;
-  margin-left: 250px;
+  margin-left: 230px;
   overflow-y: auto;
 }
 
@@ -719,18 +806,18 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 .page-title h1 {
-  font-size: 1.75rem;
+  font-size: 1.5rem;
   font-weight: 700;
   color: #111827;
-  margin: 0 0 4px 0;
+  margin: 0 0 5px 0;
 }
 
 .page-title p {
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   color: #6b7280;
   margin: 0;
 }
@@ -763,14 +850,14 @@ onMounted(async () => {
   background: none;
   border: none;
   color: #111827;
+  font-size: 1.25rem;
   cursor: pointer;
-  padding: 8px;
+  padding: 0.5rem;
   border-radius: 50%;
-  transition: background-color 0.2s;
 }
 
 .theme-toggle:hover {
-  background-color: rgba(0,0,0,0.05);
+  background: rgba(0,0,0,0.05);
 }
 
 .notification-stats {
@@ -924,7 +1011,7 @@ onMounted(async () => {
 }
 
 .notifications-list {
-  divide-y: 1px solid #e5e7eb;
+  /* Remove the divide-y approach and use border-bottom instead */
 }
 
 .notification-item {
@@ -935,6 +1022,11 @@ onMounted(async () => {
   cursor: pointer;
   transition: background-color 0.2s;
   border-left: 3px solid transparent;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.notification-item:last-child {
+  border-bottom: none;
 }
 
 .notification-item:hover {
@@ -1099,24 +1191,24 @@ onMounted(async () => {
   color: #6b7280;
 }
 
-.price-warning-details {
+.price-warning-preview {
   background: #fef3c7;
   padding: 12px;
   border-radius: 6px;
   margin-top: 8px;
 }
 
-.warning-info {
+.warning-preview-info {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   margin-bottom: 8px;
 }
 
-.price-comparison {
+.warning-preview-details {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  gap: 16px;
+  margin-bottom: 8px;
   font-size: 0.8rem;
 }
 
@@ -1125,14 +1217,27 @@ onMounted(async () => {
   font-weight: 600;
 }
 
-.max-price {
-  color: #059669;
-  font-weight: 500;
-}
-
 .excess-amount {
   color: #f59e0b;
   font-weight: 600;
+}
+
+.view-details-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: #2e5c31;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.view-details-btn:hover {
+  background: #234425;
 }
 
 .warning-level-badge {
@@ -1155,54 +1260,6 @@ onMounted(async () => {
 .warning-level-severe {
   background: #dc2626;
   color: white;
-}
-
-.final-warning-alert {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: #fee2e2;
-  color: #dc2626;
-  padding: 8px;
-  border-radius: 4px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  margin-bottom: 8px;
-}
-
-.warning-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.action-btn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 12px;
-  border: none;
-  border-radius: 4px;
-  font-size: 0.8rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.action-btn.primary {
-  background: #2e5c31;
-  color: white;
-}
-
-.action-btn.primary:hover {
-  background: #234425;
-}
-
-.action-btn.secondary {
-  background: #f3f4f6;
-  color: #4b5563;
-}
-
-.action-btn.secondary:hover {
-  background: #e5e7eb;
 }
 
 .notification-details {
@@ -1245,6 +1302,36 @@ onMounted(async () => {
 .deactivation-actions {
   display: flex;
   gap: 8px;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.action-btn.primary {
+  background: #2e5c31;
+  color: white;
+}
+
+.action-btn.primary:hover {
+  background: #234425;
+}
+
+.action-btn.secondary {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+
+.action-btn.secondary:hover {
+  background: #e5e7eb;
 }
 
 .notification-actions {
@@ -1325,6 +1412,185 @@ onMounted(async () => {
   color: #6b7280;
   margin-top: 8px;
   font-size: 0.8rem;
+}
+
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 100;
+}
+
+.modal-content {
+  background-color: white;
+  border-radius: 8px;
+  width: 90%;
+  max-width: 700px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.modal-header h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.close-btn:hover {
+  background-color: #f3f4f6;
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+.warning-details-full {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.message-section,
+.product-section,
+.price-section,
+.warning-section,
+.actions-section {
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 16px;
+}
+
+.message-section:last-child,
+.product-section:last-child,
+.price-section:last-child,
+.warning-section:last-child,
+.actions-section:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.message-section h3,
+.product-section h3,
+.price-section h3,
+.warning-section h3,
+.actions-section h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #111827;
+  margin: 0 0 12px 0;
+}
+
+.full-message {
+  background: #f9fafb;
+  padding: 16px;
+  border-radius: 6px;
+  border-left: 4px solid #f59e0b;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: #374151;
+  white-space: pre-line;
+}
+
+.product-info-full {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.product-name-full {
+  font-weight: 600;
+  color: #111827;
+  font-size: 1.1rem;
+}
+
+.price-comparison-full {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.price-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+}
+
+.price-item .label {
+  font-weight: 500;
+  color: #4b5563;
+}
+
+.current-price-full {
+  color: #dc2626;
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.max-price-full {
+  color: #059669;
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.excess-amount-full {
+  color: #f59e0b;
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.warning-level-full {
+  margin-bottom: 12px;
+}
+
+.warning-level-badge-full {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.final-warning-alert-full {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fee2e2;
+  color: #dc2626;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.warning-actions-full {
+  display: flex;
+  gap: 12px;
 }
 
 /* Dark mode styles */
@@ -1442,6 +1708,55 @@ onMounted(async () => {
   color: #9ca3af;
 }
 
+:global(.dark) .modal-content {
+  background-color: #1f2937;
+}
+
+:global(.dark) .modal-header {
+  border-bottom-color: #374151;
+}
+
+:global(.dark) .modal-header h2 {
+  color: #f9fafb;
+}
+
+:global(.dark) .close-btn {
+  color: #9ca3af;
+}
+
+:global(.dark) .close-btn:hover {
+  background-color: #374151;
+}
+
+:global(.dark) .message-section,
+:global(.dark) .product-section,
+:global(.dark) .price-section,
+:global(.dark) .warning-section,
+:global(.dark) .actions-section {
+  border-bottom-color: #374151;
+}
+
+:global(.dark) .message-section h3,
+:global(.dark) .product-section h3,
+:global(.dark) .price-section h3,
+:global(.dark) .warning-section h3,
+:global(.dark) .actions-section h3 {
+  color: #f9fafb;
+}
+
+:global(.dark) .full-message {
+  background-color: #374151;
+  color: #d1d5db;
+}
+
+:global(.dark) .product-name-full {
+  color: #f9fafb;
+}
+
+:global(.dark) .price-item .label {
+  color: #d1d5db;
+}
+
 /* Responsive styles */
 @media (max-width: 768px) {
   .main-content {
@@ -1483,12 +1798,17 @@ onMounted(async () => {
     margin-left: 0;
   }
   
-  .warning-info {
+  .warning-preview-info {
     flex-direction: column;
     gap: 8px;
   }
   
-  .warning-actions {
+  .warning-preview-details {
+    flex-direction: column;
+    gap: 4px;
+  }
+  
+  .warning-actions-full {
     flex-direction: column;
   }
   
@@ -1501,5 +1821,14 @@ onMounted(async () => {
     align-items: flex-start;
     gap: 4px;
   }
+  
+  .modal-content {
+    width: 95%;
+    margin: 10px;
+  }
+}
+
+:global(.dark) .notification-item {
+  border-bottom-color: #374151;
 }
 </style>

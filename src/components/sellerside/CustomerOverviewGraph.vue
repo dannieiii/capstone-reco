@@ -1,19 +1,19 @@
 <template>
-  <div class="sales-revenue-overview">
+  <div class="customer-overview-graph">
     <div class="chart-header">
       <div class="chart-title">
-        <h3>Sales Revenue Overview</h3>
-        <p>Track your revenue performance over time</p>
+        <h3>Customer Overview</h3>
+        <p>Track your customer engagement and order patterns</p>
       </div>
       <div class="chart-controls">
         <div class="chart-legend">
           <div class="legend-item">
             <span class="legend-color" style="background-color: #2e5c31;"></span>
-            <span>Revenue</span>
+            <span>New Customers</span>
           </div>
           <div class="legend-item">
             <span class="legend-color" style="background-color: #4a8f4d;"></span>
-            <span>Profit</span>
+            <span>Returning Customers</span>
           </div>
         </div>
         <select v-model="chartTimeRange" @change="updateChartData" class="time-filter">
@@ -26,35 +26,35 @@
     </div>
     
     <div class="chart-container">
-      <canvas ref="revenueChart"></canvas>
+      <canvas ref="customerChart"></canvas>
     </div>
     
     <div class="chart-summary">
       <div class="summary-item">
-        <span class="summary-label">Total Revenue</span>
-        <span class="summary-value">₱{{ formatNumber(totalRevenue) }}</span>
-        <span class="summary-trend" :class="revenueTrend >= 0 ? 'positive' : 'negative'">
-          <span v-if="revenueTrend >= 0">↑</span>
+        <span class="summary-label">Total Customers</span>
+        <span class="summary-value">{{ totalCustomers }}</span>
+        <span class="summary-trend" :class="customerTrend >= 0 ? 'positive' : 'negative'">
+          <span v-if="customerTrend >= 0">↑</span>
           <span v-else>↓</span>
-          {{ Math.abs(revenueTrend) }}%
+          {{ Math.abs(customerTrend) }}%
         </span>
       </div>
       <div class="summary-item">
-        <span class="summary-label">Total Profit</span>
-        <span class="summary-value">₱{{ formatNumber(totalProfit) }}</span>
-        <span class="summary-trend" :class="profitTrend >= 0 ? 'positive' : 'negative'">
-          <span v-if="profitTrend >= 0">↑</span>
-          <span v-else">↓</span>
-          {{ Math.abs(profitTrend) }}%
+        <span class="summary-label">New This Period</span>
+        <span class="summary-value">{{ newCustomersThisPeriod }}</span>
+        <span class="summary-trend" :class="newCustomerTrend >= 0 ? 'positive' : 'negative'">
+          <span v-if="newCustomerTrend >= 0">↑</span>
+          <span v-else>↓</span>
+          {{ Math.abs(newCustomerTrend) }}%
         </span>
       </div>
       <div class="summary-item">
-        <span class="summary-label">Profit Margin</span>
-        <span class="summary-value">{{ profitMargin }}%</span>
-        <span class="summary-trend" :class="marginTrend >= 0 ? 'positive' : 'negative'">
-          <span v-if="marginTrend >= 0">↑</span>
-          <span v-else">↓</span>
-          {{ Math.abs(marginTrend) }}%
+        <span class="summary-label">Avg Orders/Customer</span>
+        <span class="summary-value">{{ averageOrdersPerCustomer }}</span>
+        <span class="summary-trend" :class="avgOrderTrend >= 0 ? 'positive' : 'negative'">
+          <span v-if="avgOrderTrend >= 0">↑</span>
+          <span v-else>↓</span>
+          {{ Math.abs(avgOrderTrend) }}%
         </span>
       </div>
     </div>
@@ -70,43 +70,57 @@ const props = defineProps({
   sellerId: {
     type: String,
     required: true
-  },
-  currency: {
-    type: String,
-    default: '₱'
   }
 })
 
 // Reactive data
-const revenueChart = ref(null)
+const customerChart = ref(null)
 const chartTimeRange = ref('month')
 let chartInstance = null
 
-// Data from Firebase (simulated based on Analytics.vue structure)
+// Data from Firebase (simulated based on CustomersTable.vue structure)
 const orders = ref([])
-const totalRevenue = ref(0)
-const totalProfit = ref(0)
-const profitMargin = ref(0)
-const revenueTrend = ref(15.2)
-const profitTrend = ref(8.7)
-const marginTrend = ref(3.1)
+const customers = ref([])
+const totalCustomers = ref(0)
+const newCustomersThisPeriod = ref(0)
+const averageOrdersPerCustomer = ref(0)
+const customerTrend = ref(12.5)
+const newCustomerTrend = ref(18.3)
+const avgOrderTrend = ref(5.7)
 
 // Computed properties for chart data
 const chartData = computed(() => {
-  return processOrdersForChart(orders.value, chartTimeRange.value)
+  return processCustomersForChart(orders.value, chartTimeRange.value)
 })
 
 // Methods
 const formatNumber = (num) => {
-  return parseFloat(num).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")
+  return parseFloat(num).toFixed(0)
 }
 
-// Process orders data for chart (based on Analytics.vue logic)
-const processOrdersForChart = (ordersData, timeRange) => {
+// Process customer data for chart (based on CustomersTable.vue logic)
+const processCustomersForChart = (ordersData, timeRange) => {
   const now = new Date()
   let labels = []
-  let revenueData = []
-  let profitData = []
+  let newCustomersData = []
+  let returningCustomersData = []
+  
+  // Track first order date for each customer
+  const customerFirstOrder = new Map()
+  const customerOrderCounts = new Map()
+  
+  // Process orders to identify customer patterns
+  ordersData.forEach(order => {
+    const customerId = order.userId
+    const orderDate = getOrderDate(order)
+    
+    if (!customerFirstOrder.has(customerId)) {
+      customerFirstOrder.set(customerId, orderDate)
+      customerOrderCounts.set(customerId, 1)
+    } else {
+      customerOrderCounts.set(customerId, customerOrderCounts.get(customerId) + 1)
+    }
+  })
   
   switch (timeRange) {
     case 'week':
@@ -115,20 +129,26 @@ const processOrdersForChart = (ordersData, timeRange) => {
         const date = new Date()
         date.setDate(now.getDate() - i)
         labels.push(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))
-        revenueData.push(0)
-        profitData.push(0)
+        newCustomersData.push(0)
+        returningCustomersData.push(0)
       }
       
-      // Populate data for each day
+      // Count new vs returning customers per day
       ordersData.forEach(order => {
-        let orderDate = getOrderDate(order)
+        const orderDate = getOrderDate(order)
         const daysDiff = Math.floor((now - orderDate) / (1000 * 60 * 60 * 24))
         
         if (daysDiff >= 0 && daysDiff < 7) {
           const index = 6 - daysDiff
-          const itemPrice = getOrderPrice(order)
-          revenueData[index] += itemPrice
-          profitData[index] += itemPrice * 0.3 // 30% profit margin
+          const customerId = order.userId
+          const firstOrderDate = customerFirstOrder.get(customerId)
+          
+          // Check if this is customer's first order on this day
+          if (firstOrderDate && Math.floor((now - firstOrderDate) / (1000 * 60 * 60 * 24)) === daysDiff) {
+            newCustomersData[index]++
+          } else if (customerOrderCounts.get(customerId) > 1) {
+            returningCustomersData[index]++
+          }
         }
       })
       break
@@ -137,21 +157,26 @@ const processOrdersForChart = (ordersData, timeRange) => {
       // Last 4 weeks
       for (let i = 3; i >= 0; i--) {
         labels.push(`Week ${4 - i}`)
-        revenueData.push(0)
-        profitData.push(0)
+        newCustomersData.push(0)
+        returningCustomersData.push(0)
       }
       
       ordersData.forEach(order => {
-        let orderDate = getOrderDate(order)
+        const orderDate = getOrderDate(order)
         const daysDiff = Math.floor((now - orderDate) / (1000 * 60 * 60 * 24))
         
         if (daysDiff >= 0 && daysDiff < 28) {
           const weekIndex = Math.floor(daysDiff / 7)
           if (weekIndex < 4) {
             const index = 3 - weekIndex
-            const itemPrice = getOrderPrice(order)
-            revenueData[index] += itemPrice
-            profitData[index] += itemPrice * 0.3
+            const customerId = order.userId
+            const firstOrderDate = customerFirstOrder.get(customerId)
+            
+            if (firstOrderDate && Math.floor((now - firstOrderDate) / (1000 * 60 * 60 * 24 * 7)) === weekIndex) {
+              newCustomersData[index]++
+            } else if (customerOrderCounts.get(customerId) > 1) {
+              returningCustomersData[index]++
+            }
           }
         }
       })
@@ -163,20 +188,28 @@ const processOrdersForChart = (ordersData, timeRange) => {
         const date = new Date()
         date.setMonth(now.getMonth() - i)
         labels.push(date.toLocaleDateString('en-US', { month: 'long' }))
-        revenueData.push(0)
-        profitData.push(0)
+        newCustomersData.push(0)
+        returningCustomersData.push(0)
       }
       
       ordersData.forEach(order => {
-        let orderDate = getOrderDate(order)
+        const orderDate = getOrderDate(order)
         const monthDiff = (now.getMonth() - orderDate.getMonth()) + 
                           (now.getFullYear() - orderDate.getFullYear()) * 12
         
         if (monthDiff >= 0 && monthDiff < 3) {
           const index = 2 - monthDiff
-          const itemPrice = getOrderPrice(order)
-          revenueData[index] += itemPrice
-          profitData[index] += itemPrice * 0.3
+          const customerId = order.userId
+          const firstOrderDate = customerFirstOrder.get(customerId)
+          
+          const firstOrderMonthDiff = (now.getMonth() - firstOrderDate.getMonth()) + 
+                                     (now.getFullYear() - firstOrderDate.getFullYear()) * 12
+          
+          if (firstOrderMonthDiff === monthDiff) {
+            newCustomersData[index]++
+          } else if (customerOrderCounts.get(customerId) > 1) {
+            returningCustomersData[index]++
+          }
         }
       })
       break
@@ -185,28 +218,34 @@ const processOrdersForChart = (ordersData, timeRange) => {
       // All 12 months
       const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
       labels = [...months]
-      revenueData = Array(12).fill(0)
-      profitData = Array(12).fill(0)
+      newCustomersData = Array(12).fill(0)
+      returningCustomersData = Array(12).fill(0)
       
       const currentYear = now.getFullYear()
       
       ordersData.forEach(order => {
-        let orderDate = getOrderDate(order)
+        const orderDate = getOrderDate(order)
         
         if (orderDate.getFullYear() === currentYear) {
           const month = orderDate.getMonth()
-          const itemPrice = getOrderPrice(order)
-          revenueData[month] += itemPrice
-          profitData[month] += itemPrice * 0.3
+          const customerId = order.userId
+          const firstOrderDate = customerFirstOrder.get(customerId)
+          
+          if (firstOrderDate && firstOrderDate.getFullYear() === currentYear && 
+              firstOrderDate.getMonth() === month) {
+            newCustomersData[month]++
+          } else if (customerOrderCounts.get(customerId) > 1) {
+            returningCustomersData[month]++
+          }
         }
       })
       break
   }
   
-  return { labels, revenueData, profitData }
+  return { labels, newCustomersData, returningCustomersData }
 }
 
-// Helper functions (based on Analytics.vue)
+// Helper functions (based on CustomersTable.vue)
 const getOrderDate = (order) => {
   if (order.createdAt && typeof order.createdAt.toDate === 'function') {
     return order.createdAt.toDate()
@@ -217,141 +256,177 @@ const getOrderDate = (order) => {
   }
 }
 
-const getOrderPrice = (order) => {
-  return order.itemPrice || (order.unitPrice * order.quantity) || order.totalPrice || 0
-}
-
-// Fetch orders from Firebase (simulated)
-const fetchOrders = async () => {
+// Fetch orders and process customer data (simulated)
+const fetchCustomerData = async () => {
   try {
     // Simulate Firebase data fetching
-    // In real implementation, this would use:
-    // const ordersQuery = query(collection(db, "orders"), where("sellerId", "==", props.sellerId))
+    // In real implementation, this would use the same logic as CustomersTable.vue:
+    // const ordersQuery = query(collection(db, 'orders'), where('sellerId', '==', props.sellerId))
     // const ordersSnapshot = await getDocs(ordersQuery)
     
-    // Sample data structure matching Analytics.vue
+    // Sample data structure matching CustomersTable.vue
     const sampleOrders = [
       {
         id: '1',
         sellerId: props.sellerId,
+        userId: 'user1',
+        username: 'john_doe',
         productName: 'Fresh Tomatoes',
-        category: 'Vegetables',
-        unitPrice: 45,
-        quantity: 10,
-        itemPrice: 450,
         totalPrice: 450,
         createdAt: { toDate: () => new Date(Date.now() - 1 * 24 * 60 * 60 * 1000) }
       },
       {
         id: '2',
         sellerId: props.sellerId,
+        userId: 'user2',
+        username: 'jane_smith',
         productName: 'Organic Lettuce',
-        category: 'Vegetables',
-        unitPrice: 35,
-        quantity: 8,
-        itemPrice: 280,
         totalPrice: 280,
         createdAt: { toDate: () => new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) }
       },
       {
         id: '3',
         sellerId: props.sellerId,
+        userId: 'user1',
+        username: 'john_doe',
         productName: 'Sweet Corn',
-        category: 'Vegetables',
-        unitPrice: 25,
-        quantity: 15,
-        itemPrice: 375,
         totalPrice: 375,
         createdAt: { toDate: () => new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) }
       },
       {
         id: '4',
         sellerId: props.sellerId,
+        userId: 'user3',
+        username: 'mike_wilson',
         productName: 'Fresh Carrots',
-        category: 'Vegetables',
-        unitPrice: 40,
-        quantity: 12,
-        itemPrice: 480,
         totalPrice: 480,
         createdAt: { toDate: () => new Date(Date.now() - 5 * 24 * 60 * 60 * 1000) }
       },
       {
         id: '5',
         sellerId: props.sellerId,
+        userId: 'user2',
+        username: 'jane_smith',
         productName: 'Green Beans',
-        category: 'Vegetables',
-        unitPrice: 55,
-        quantity: 6,
-        itemPrice: 330,
         totalPrice: 330,
         createdAt: { toDate: () => new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
+      },
+      {
+        id: '6',
+        sellerId: props.sellerId,
+        userId: 'user4',
+        username: 'sarah_jones',
+        productName: 'Bell Peppers',
+        totalPrice: 220,
+        createdAt: { toDate: () => new Date(Date.now() - 10 * 24 * 60 * 60 * 1000) }
+      },
+      {
+        id: '7',
+        sellerId: props.sellerId,
+        userId: 'user1',
+        username: 'john_doe',
+        productName: 'Cucumber',
+        totalPrice: 150,
+        createdAt: { toDate: () => new Date(Date.now() - 12 * 24 * 60 * 60 * 1000) }
       }
     ]
     
     orders.value = sampleOrders
     
-    // Calculate totals (matching Analytics.vue logic)
-    let totalSalesValue = 0
-    let totalProfitValue = 0
+    // Process customer data (matching CustomersTable.vue logic)
+    const customerMap = new Map()
     
     sampleOrders.forEach(order => {
-      const itemPrice = getOrderPrice(order)
-      totalSalesValue += itemPrice
-      totalProfitValue += itemPrice * 0.3 // 30% profit margin
+      if (!customerMap.has(order.userId)) {
+        customerMap.set(order.userId, {
+          userId: order.userId,
+          username: order.username,
+          orderCount: 0,
+          totalSpent: 0,
+          firstOrderDate: getOrderDate(order)
+        })
+      }
+      
+      const customer = customerMap.get(order.userId)
+      customer.orderCount++
+      customer.totalSpent += order.totalPrice
+      
+      // Update first order date if this order is earlier
+      const orderDate = getOrderDate(order)
+      if (orderDate < customer.firstOrderDate) {
+        customer.firstOrderDate = orderDate
+      }
     })
     
-    totalRevenue.value = totalSalesValue
-    totalProfit.value = totalProfitValue
+    customers.value = Array.from(customerMap.values())
+    totalCustomers.value = customers.value.length
     
-    if (totalSalesValue > 0) {
-      profitMargin.value = Math.round((totalProfitValue / totalSalesValue) * 100)
+    // Calculate new customers this period
+    const now = new Date()
+    const periodStart = new Date()
+    
+    switch (chartTimeRange.value) {
+      case 'week':
+        periodStart.setDate(now.getDate() - 7)
+        break
+      case 'month':
+        periodStart.setMonth(now.getMonth() - 1)
+        break
+      case 'quarter':
+        periodStart.setMonth(now.getMonth() - 3)
+        break
+      case 'year':
+        periodStart.setFullYear(now.getFullYear() - 1)
+        break
     }
     
+    newCustomersThisPeriod.value = customers.value.filter(customer => 
+      customer.firstOrderDate >= periodStart
+    ).length
+    
+    // Calculate average orders per customer
+    const totalOrders = customers.value.reduce((sum, customer) => sum + customer.orderCount, 0)
+    averageOrdersPerCustomer.value = customers.value.length > 0 
+      ? Math.round((totalOrders / customers.value.length) * 10) / 10 
+      : 0
+    
   } catch (error) {
-    console.error("Error fetching orders:", error)
+    console.error("Error fetching customer data:", error)
   }
 }
 
 const initChart = () => {
-  if (!revenueChart.value) return
+  if (!customerChart.value) return
   
-  const ctx = revenueChart.value.getContext('2d')
-  const { labels, revenueData, profitData } = chartData.value
+  const ctx = customerChart.value.getContext('2d')
+  const { labels, newCustomersData, returningCustomersData } = chartData.value
   
   if (chartInstance) {
     chartInstance.destroy()
   }
   
   chartInstance = new Chart(ctx, {
-    type: 'line',
+    type: 'bar',
     data: {
       labels: labels,
       datasets: [
         {
-          label: 'Revenue',
-          data: revenueData,
+          label: 'New Customers',
+          data: newCustomersData,
+          backgroundColor: 'rgba(46, 92, 49, 0.8)',
           borderColor: '#2e5c31',
-          backgroundColor: 'rgba(46, 92, 49, 0.1)',
-          tension: 0.4,
-          fill: true,
-          pointBackgroundColor: '#2e5c31',
-          pointBorderColor: '#fff',
-          pointBorderWidth: 2,
-          pointRadius: 4,
-          pointHoverRadius: 6
+          borderWidth: 1,
+          borderRadius: 4,
+          borderSkipped: false
         },
         {
-          label: 'Profit',
-          data: profitData,
+          label: 'Returning Customers',
+          data: returningCustomersData,
+          backgroundColor: 'rgba(74, 143, 77, 0.8)',
           borderColor: '#4a8f4d',
-          backgroundColor: 'rgba(74, 143, 77, 0.1)',
-          tension: 0.4,
-          fill: true,
-          pointBackgroundColor: '#4a8f4d',
-          pointBorderColor: '#fff',
-          pointBorderWidth: 2,
-          pointRadius: 4,
-          pointHoverRadius: 6
+          borderWidth: 1,
+          borderRadius: 4,
+          borderSkipped: false
         }
       ]
     },
@@ -372,13 +447,14 @@ const initChart = () => {
           borderWidth: 1,
           callbacks: {
             label: function(context) {
-              return `${context.dataset.label}: ${props.currency}${formatNumber(context.raw)}`
+              return `${context.dataset.label}: ${context.raw} customers`
             }
           }
         }
       },
       scales: {
         x: {
+          stacked: true,
           grid: {
             display: false
           },
@@ -390,6 +466,7 @@ const initChart = () => {
           }
         },
         y: {
+          stacked: true,
           beginAtZero: true,
           grid: {
             color: 'rgba(0, 0, 0, 0.1)'
@@ -399,8 +476,9 @@ const initChart = () => {
             font: {
               size: 12
             },
+            stepSize: 1,
             callback: function(value) {
-              return props.currency + formatNumber(value)
+              return Math.floor(value)
             }
           }
         }
@@ -414,12 +492,12 @@ const initChart = () => {
 }
 
 const updateChartData = () => {
-  initChart()
+  fetchCustomerData()
 }
 
 // Lifecycle
 onMounted(async () => {
-  await fetchOrders()
+  await fetchCustomerData()
   initChart()
 })
 
@@ -431,7 +509,7 @@ onUnmounted(() => {
 
 // Watch for changes
 watch(() => props.sellerId, async () => {
-  await fetchOrders()
+  await fetchCustomerData()
   initChart()
 })
 
@@ -441,7 +519,7 @@ watch(chartData, () => {
 </script>
 
 <style scoped>
-.sales-revenue-overview {
+.customer-overview-graph {
   background-color: #fff;
   border-radius: 12px;
   padding: 24px;
@@ -604,7 +682,7 @@ watch(chartData, () => {
 }
 
 @media (max-width: 480px) {
-  .sales-revenue-overview {
+  .customer-overview-graph {
     padding: 16px;
   }
 
@@ -624,7 +702,7 @@ watch(chartData, () => {
 
 /* Dark mode support */
 @media (prefers-color-scheme: dark) {
-  .sales-revenue-overview {
+  .customer-overview-graph {
     background-color: #1f2937;
     border-color: #374151;
   }

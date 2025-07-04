@@ -1,11 +1,10 @@
 <template>
-  <div class="dashboard-container" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
+  <div class="dashboard-container">
     <Sidebar 
       :initialActiveItem="isEditing ? 'Farm Products' : 'Add Product'" 
-      @sidebarToggle="handleSidebarToggle"
     />
     
-    <div class="main-content" :class="{ 'expanded': sidebarCollapsed }">
+    <div class="main-content">
       <NotifProduct ref="notifProduct" />
       
       <!-- Header -->
@@ -1270,7 +1269,6 @@ export default {
     ]);    // Component state
     const isEditing = computed(() => route.name === 'EditProduct');
     const isSaving = ref(false);
-    const sidebarCollapsed = ref(false);
     const selectedUnits = ref([]);
     const categories = ref([]);
     const productTable = ref([]); // Data from ProductTable (productPrices collection)
@@ -2431,9 +2429,7 @@ const selectProductUnit = (productItem, unitSummary) => {
       setTimeout(() => router.push('/products'), 1500);
     };
 
-    const handleSidebarToggle = (collapsed) => {
-      sidebarCollapsed.value = collapsed;
-    };    // Watch for changes to generate product code
+    // Watch for changes to generate product code
     watch([() => product.value.category, () => product.value.productName], () => {
       if (product.value.category && product.value.productName) {
         generateProductCode();
@@ -2484,11 +2480,6 @@ const selectProductUnit = (productItem, unitSummary) => {
         id: doc.id,
         category: doc.data().category
       }));
-
-      const savedSidebarState = localStorage.getItem('sidebar-collapsed');
-      if (savedSidebarState === 'true') {
-        sidebarCollapsed.value = true;
-      }
 
       if (isEditing.value && route.params.id) {
         fetchProduct(route.params.id);
@@ -2579,7 +2570,6 @@ const selectProductUnit = (productItem, unitSummary) => {
       getDisplayProductName,
       isEditing,
       isSaving,
-      sidebarCollapsed,
       product,
       categories,
       availableUnits,
@@ -2607,7 +2597,6 @@ const selectProductUnit = (productItem, unitSummary) => {
       tempSelectedReferenceUnits,
       filteredCategories,
       notifProduct,
-      handleSidebarToggle,
       generateProductCode,
       onCategoryChange,
       onCategorySearch,
@@ -2666,8 +2655,59 @@ const selectProductUnit = (productItem, unitSummary) => {
   overflow-y: auto;
 }
 
-.main-content.expanded {
-  margin-left: 60px;
+.sidebar.collapsed ~ .main-content {
+  margin-left: 70px;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+  .main-content {
+    margin-left: 0;
+    padding: 15px;
+  }
+  
+  .main-content.expanded {
+    margin-left: 0;
+  }
+  
+  .form-grid {
+    grid-template-columns: 1fr;
+    gap: 15px;
+  }
+  
+  .form-section {
+    padding: 15px;
+  }
+  
+  .page-title h1 {
+    font-size: 1.5rem;
+  }
+  
+  .product-form {
+    padding: 15px;
+  }
+}
+
+@media (max-width: 480px) {
+  .main-content {
+    padding: 10px;
+  }
+  
+  .form-section {
+    padding: 12px;
+  }
+  
+  .product-form {
+    padding: 12px;
+  }
+  
+  .page-title h1 {
+    font-size: 1.25rem;
+  }
+  
+  .status-ribbons {
+    flex-direction: column;
+  }
 }
 
 /* Header */
@@ -2819,6 +2859,39 @@ const selectProductUnit = (productItem, unitSummary) => {
   font-size: 0.875rem;
   color: #111827;
   transition: border-color 0.2s;
+}
+
+/* Mobile friendly form inputs */
+@media (max-width: 768px) {
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    padding: 12px;
+    font-size: 16px; /* Prevents zoom on iOS */
+    border-radius: 6px;
+  }
+  
+  .form-group label {
+    font-size: 0.9rem;
+    margin-bottom: 6px;
+  }
+  
+  .form-group {
+    margin-bottom: 18px;
+  }
+}
+
+@media (max-width: 480px) {
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    padding: 14px;
+    font-size: 16px;
+  }
+  
+  .form-group {
+    margin-bottom: 20px;
+  }
 }
 
 .form-group input:focus,
@@ -2986,6 +3059,38 @@ const selectProductUnit = (productItem, unitSummary) => {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
+/* Mobile responsive image preview */
+@media (max-width: 768px) {
+  .image-preview {
+    gap: 8px;
+  }
+  
+  .image-item {
+    width: 100px;
+    height: 100px;
+  }
+}
+
+@media (max-width: 480px) {
+  .image-preview {
+    justify-content: center;
+    gap: 6px;
+  }
+  
+  .image-item {
+    width: 80px;
+    height: 80px;
+  }
+  
+  .remove-image {
+    width: 20px;
+    height: 20px;
+    font-size: 12px;
+    top: 3px;
+    right: 3px;
+  }
+}
+
 .product-image {
   width: 100%;
   height: 100%;
@@ -3089,6 +3194,23 @@ const selectProductUnit = (productItem, unitSummary) => {
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
+  min-width: 100px;
+}
+
+/* Mobile responsive buttons */
+@media (max-width: 480px) {
+  .form-actions {
+    flex-direction: column-reverse;
+    gap: 12px;
+  }
+  
+  .cancel-btn,
+  .save-btn {
+    width: 100%;
+    padding: 12px 20px;
+    font-size: 1rem;
+    justify-content: center;
+  }
 }
 
 .cancel-btn {
@@ -3159,6 +3281,41 @@ const selectProductUnit = (productItem, unitSummary) => {
   z-index: 1000;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
   min-width: 100%;
+}
+
+/* Mobile responsive dropdowns */
+@media (max-width: 768px) {
+  .dropdown-list {
+    max-height: 200px;
+    font-size: 0.9rem;
+  }
+  
+  .dropdown-item {
+    padding: 12px;
+    font-size: 0.9rem;
+  }
+  
+  .searchable-input {
+    font-size: 16px; /* Prevents zoom on iOS */
+    padding: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .dropdown-list {
+    max-height: 150px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+  
+  .dropdown-item {
+    padding: 10px;
+  }
+  
+  .product-main {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
 }
 
 .dropdown-item {
@@ -3403,6 +3560,44 @@ const selectProductUnit = (productItem, unitSummary) => {
   max-height: 80vh;
   overflow-y: auto;
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+}
+
+/* Mobile responsive modals */
+@media (max-width: 768px) {
+  .modal-content {
+    width: 95%;
+    max-height: 90vh;
+    margin: 20px;
+  }
+  
+  .modal-header {
+    padding: 15px;
+  }
+  
+  .modal-header h3 {
+    font-size: 1rem;
+  }
+  
+  .modal-body {
+    padding: 15px;
+  }
+}
+
+@media (max-width: 480px) {
+  .modal-content {
+    width: 98%;
+    max-height: 95vh;
+    margin: 10px;
+    border-radius: 4px;
+  }
+  
+  .modal-header {
+    padding: 12px;
+  }
+  
+  .modal-body {
+    padding: 12px;
+  }
 }
 
 .modal-header {

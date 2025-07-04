@@ -1254,6 +1254,7 @@ export default {
           price: unitPrice,
           farmName: this.farmName,
           sellerId: this.sellerId,
+          cartStatus: false,
           createdAt: serverTimestamp()
         };
 
