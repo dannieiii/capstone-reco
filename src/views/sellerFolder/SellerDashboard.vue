@@ -131,7 +131,7 @@
         </div>
       </div>
       
-      <!-- Sales Revenue Chart & Oriental Mindoro Map -->
+      <!-- Sales Revenue Chart -->
       <div class="dashboard-row">
         <div class="dashboard-col dashboard-col--main">
           <SalesRevenueChart 

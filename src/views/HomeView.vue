@@ -10,7 +10,7 @@
         
         <div class="filter-dropdown" v-if="showFilterMenu" ref="filterDropdownRef">
           <div class="filter-header">
-            <h3>Filter Products Janssen</h3>
+            <h3>Filter Products</h3>
             <button class="close-filter" @click="toggleFilterMenu">
               <X size="16" />
             </button>
@@ -18,7 +18,7 @@
           
           
           <div class="filter-section">
-            <h4>Price Range</h4>
+            <h4>Price Range </h4>
             <div class="price-range">
               <div class="price-inputs">
                 <div class="price-input-group">

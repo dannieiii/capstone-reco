@@ -100,7 +100,7 @@
       <div class="charts-container">
         <div class="chart-card main-chart">
           <div class="chart-header">
-            <h2>Sales Performance</h2>
+            <h2>Sales Performance </h2>
             <div class="chart-controls">
               <div class="chart-legend">
                 <div class="legend-item">

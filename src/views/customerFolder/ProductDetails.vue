@@ -368,8 +368,12 @@
                 <User size="18" class="input-icon" />
                 <input 
                   type="email" 
-                  placeholder="Email" 
+                  placeholder="Email address" 
                   class="login-input"
+                  autocomplete="email"
+                  inputmode="email"
+                  spellcheck="false"
+                  aria-label="Email address"
                   v-model="loginEmail"
                 />
               </div>
@@ -386,6 +390,8 @@
                   :type="showPassword ? 'text' : 'password'" 
                   placeholder="Password" 
                   class="login-input"
+                  autocomplete="current-password"
+                  aria-label="Password"
                   v-model="loginPassword"
                 />
                 <button 
@@ -491,7 +497,8 @@ export default {
     Store,
     Eye,
     ShoppingBag,
-    TrendingUp
+  TrendingUp,
+  User
   },
   props: {
     productId: {
@@ -2244,6 +2251,40 @@ async handleBuyNowConfirm() {
   align-items: center;
   background: white;
   border-radius: 25px;
+  border: 1px solid #e5e7eb;
+  padding: 0 14px;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.input-wrapper:focus-within {
+  border-color: #2e5c31;
+  box-shadow: 0 0 0 4px rgba(46, 92, 49, 0.08);
+}
+
+.input-icon {
+  color: #7a8b7c;
+}
+
+.login-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  padding: 14px 10px;
+  font-size: 0.95rem;
+  color: #1f2937;
+}
+
+.login-input::placeholder {
+  color: #9aa7a0;
+}
+
+.password-toggle {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  color: #6b7280;
 }
 
 .form-options {
@@ -2284,10 +2325,6 @@ async handleBuyNowConfirm() {
 }
 
 .login-button {
-  text-decoration: underline;
-}
-
-.login-button {
   width: 100%;
   padding: 15px;
   background: linear-gradient(135deg, #2e5c31, #1e4a21);
@@ -2299,6 +2336,7 @@ async handleBuyNowConfirm() {
   cursor: pointer;
   transition: all 0.2s ease;
   margin-bottom: 20px;
+  text-decoration: none;
 }
 
 .login-button:hover:not(:disabled) {
