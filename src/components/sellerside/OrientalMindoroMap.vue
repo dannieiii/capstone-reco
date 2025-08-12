@@ -40,7 +40,6 @@
           :key="index"
           :lat-lng="municipality.coordinates"
           :icon="icon"
-            @click="onMarkerClick(municipality)"
         >
           <l-popup>
             <div class="popup-content">
@@ -56,36 +55,38 @@
               </ul>
             </div>
           </l-popup>
-  </l-marker>
-
-        <!-- Barangay customer markers: shown only when zoomed in and a municipality is active -->
-        <template v-if="showBarangays">
-          <l-marker
-            v-for="(b, bIndex) in barangayMarkers"
-            :key="'b-'+bIndex"
-            :lat-lng="b.coordinates"
-            :icon="barangayIcon"
-          >
-            <l-popup>
-              <div class="popup-content">
-                <h4>{{ b.barangay }} ({{ b.municipality }})</h4>
-                <div class="info-item">
-                  <span class="info-label">Customers:</span>
-                  <span class="info-value">{{ b.users.length }}</span>
-                </div>
-                <ul>
-                  <li v-for="u in b.users" :key="u.id">{{ u.name }}</li>
-                </ul>
-              </div>
-            </l-popup>
-          </l-marker>
-        </template>
+        </l-marker>
       </l-map>
       <div v-if="municipalityMarkers.length === 0" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#888;">
         No delivery areas registered by sellers yet.
       </div>
       
-      
+      <!-- Legend -->
+      <div class="map-legend">
+        <div class="legend-title">User Count</div>
+        <div class="legend-items">
+          <div class="legend-item">
+            <div class="legend-color" style="background-color: #eff3ff;"></div>
+            <div class="legend-label">1-5</div>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background-color: #bdd7e7;"></div>
+            <div class="legend-label">6-15</div>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background-color: #6baed6;"></div>
+            <div class="legend-label">16-30</div>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background-color: #3182bd;"></div>
+            <div class="legend-label">31-50</div>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background-color: #08519c;"></div>
+            <div class="legend-label">50+</div>
+          </div>
+        </div>
+      </div>
     </div>
     
     <div class="stats-summary">
@@ -109,7 +110,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { db } from '@/firebase/firebaseConfig';
 import { collection, getDocs, doc, getDoc } from "firebase/firestore";
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
@@ -121,19 +122,10 @@ const icon = L.icon({
   iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png',
   shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
-  // Slightly smaller marker
-  iconSize: [18, 30],
-  iconAnchor: [9, 30],
-  popupAnchor: [1, -24],
-  shadowSize: [30, 30]
-});
-
-// Tiny green dot icon for barangay markers
-const barangayIcon = L.divIcon({
-  className: 'barangay-dot',
-  html: '<div class="dot"></div>',
-  iconSize: [10, 10],
-  iconAnchor: [5, 5]
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
 });
 
 const loading = ref(true);
@@ -148,18 +140,6 @@ const bounds = ref([
 ]);
 const auth = getAuth();
 const currentUserId = ref(null);
-const mapInstance = ref(null);
-// Barangay/customer state
-const usersAddresses = ref([]); // { municipality, barangay, raw, userId, name }
-const activeMunicipality = ref(null);
-const barangayMarkers = ref([]); // markers for the active municipality
-const BARANGAY_ZOOM = 12;
-// Shared resize handler to keep map sized correctly
-const handleResize = () => {
-  if (mapInstance.value) {
-    try { mapInstance.value.invalidateSize(); } catch (e) { /* noop */ }
-  }
-};
 
 const municipalities = [
   { name: "Puerto Galera", coordinates: [13.5022, 120.9547] },
@@ -178,97 +158,6 @@ const municipalities = [
   { name: "Mansalay", coordinates: [12.5167, 121.4333] },
   { name: "Bulalacao", coordinates: [12.3333, 121.3500] }
 ];
-
-// Fetch users collection and extract addresses for Oriental Mindoro
-const fetchUsersAddresses = async () => {
-  try {
-    const snapshot = await getDocs(collection(db, 'users'));
-    const results = [];
-    snapshot.forEach(d => {
-      const data = d.data() || {};
-      const uid = d.id;
-      const displayName = data.firstName || data.name || data.email || uid;
-      const role = String(data.role || '').toLowerCase();
-      const isSellerFlag = typeof data.isSeller === 'boolean' ? data.isSeller : undefined;
-      // Only include customers: role === 'customer'; or if role is missing, treat as customer when isSeller !== true
-      const isCustomer = role === 'customer' || (role === '' && isSellerFlag !== true);
-      if (!isCustomer) return;
-      // Prefer structured addresses array if present
-      if (Array.isArray(data.addresses) && data.addresses.length) {
-        data.addresses.forEach(addr => {
-          const province = (addr.province || addr.address || '').toLowerCase();
-          if (province.includes('oriental mindoro')) {
-            const barangay = (addr.barangay || '').trim();
-            const municipality = (addr.municipality || '').trim();
-            if (barangay && municipality) {
-              results.push({ userId: uid, name: displayName, barangay, municipality, raw: addr.address || '' });
-            }
-          }
-        });
-      }
-      // Fallback to single string address
-      const single = (data.address || '').trim();
-      if (single && single.toLowerCase().includes('oriental mindoro')) {
-        const { barangay, municipality } = parseAddress(single);
-        if (barangay && municipality) {
-          results.push({ userId: uid, name: displayName, barangay, municipality, raw: single });
-        }
-      }
-    });
-    usersAddresses.value = results;
-  } catch (e) {
-    console.error('Error fetching users addresses:', e);
-    usersAddresses.value = [];
-  }
-};
-
-// Basic parser for strings like "Tawiran, Calapan, Oriental Mindoro"
-const parseAddress = (str) => {
-  const parts = String(str).split(',').map(s => s.trim()).filter(Boolean);
-  // Heuristic: barangay first, municipality second
-  let barangay = parts[0] || '';
-  let municipality = parts[1] || '';
-  // Normalize known variants
-  barangay = normalizeName(barangay);
-  municipality = normalizeName(municipality);
-  return { barangay, municipality };
-};
-
-const normalizeName = (s) => (s || '').toString().trim().toLowerCase().replace(/\s+/g, ' ').replace(/\./g, '').replace(/ city$/,'');
-
-// Deterministic pseudo position around a municipality center for a barangay name
-const positionAround = (base, key) => {
-  if (!Array.isArray(base) || base.length !== 2) return base;
-  const seed = [...key].reduce((a,c) => (a*31 + c.charCodeAt(0))>>>0, 0);
-  const angle = (seed % 360) * Math.PI/180;
-  const minR = 0.005; // ~500-700m
-  const maxR = 0.02;  // ~2km
-  const r = minR + (seed % 1000)/1000 * (maxR - minR);
-  const dLat = r * Math.cos(angle);
-  const dLng = r * Math.sin(angle);
-  return [base[0] + dLat, base[1] + dLng];
-};
-
-// Build barangay markers for the selected municipality
-const buildBarangayMarkers = (municipalityName) => {
-  const muniNorm = normalizeName(municipalityName);
-  const muni = municipalities.find(m => normalizeName(m.name) === muniNorm);
-  if (!muni) { barangayMarkers.value = []; return; }
-  const grouped = new Map();
-  usersAddresses.value.forEach(u => {
-    if (normalizeName(u.municipality) === muniNorm) {
-      const bKey = normalizeName(u.barangay);
-      if (!grouped.has(bKey)) grouped.set(bKey, { name: u.barangay, users: [] });
-      grouped.get(bKey).users.push({ id: u.userId, name: u.name });
-    }
-  });
-  const list = [];
-  grouped.forEach((val, key) => {
-    const coords = positionAround(muni.coordinates, key);
-    list.push({ barangay: val.name, municipality: muni.name, coordinates: coords, users: val.users });
-  });
-  barangayMarkers.value = list;
-};
 
 // Fetch current seller's delivery areas
 const fetchCurrentSellerAreas = async (userId) => {
@@ -351,61 +240,6 @@ onMounted(() => {
       loading.value = false;
     }
   });
-  // Ensure the map reflows on initial mount/resizes (especially on mobile)
-  window.addEventListener('resize', handleResize);
-  // Preload user addresses for barangay markers
-  fetchUsersAddresses();
-});
-
-// Cleanup listener
-onBeforeUnmount(() => {
-  window.removeEventListener('resize', handleResize);
-});
-
-// Vue-Leaflet map ready hook: save instance and fix sizing
-const onMapReady = (map) => {
-  mapInstance.value = map;
-  // Recalculate size after DOM/layout settles
-  nextTick(() => {
-    try { map.invalidateSize(); } catch (e) { /* noop */ }
-  });
-  setTimeout(() => {
-    try { map.invalidateSize(); } catch (e) { /* noop */ }
-  }, 200);
-  // Keep local zoom in sync with actual map zoom
-  try {
-    map.on('zoomend', () => {
-      try { zoom.value = map.getZoom(); } catch (e) { /* noop */ }
-    });
-  } catch (e) { /* noop */ }
-};
-
-// Zoom into a municipality when its marker is clicked
-const onMarkerClick = (municipality) => {
-  if (!municipality || !municipality.coordinates || !mapInstance.value) return;
-  // Zoom in to level 12 (or keep current if closer) and center on the marker
-  const targetZoom = Math.max(zoom.value, 13);
-  try {
-    mapInstance.value.flyTo(municipality.coordinates, targetZoom, { duration: 0.8 });
-  } catch (e) { /* noop */ }
-  activeMunicipality.value = municipality.name;
-  buildBarangayMarkers(municipality.name);
-};
-
-// When loading finishes or markers change, reflow the map
-watch(loading, (v) => {
-  if (v === false && mapInstance.value) {
-    nextTick(() => {
-      try { mapInstance.value.invalidateSize(); } catch (e) { /* noop */ }
-    });
-  }
-});
-watch(() => municipalityMarkers.value.length, () => {
-  if (mapInstance.value) {
-    nextTick(() => {
-      try { mapInstance.value.invalidateSize(); } catch (e) { /* noop */ }
-    });
-  }
 });
 
 // For popup info - show current seller info
@@ -429,19 +263,6 @@ const topMunicipality = computed(() => {
     name: municipalityMarkers.value[0]?.name || 'N/A', 
     count: 1 
   };
-});
-
-// Only show barangay markers when focused and zoomed in
-const showBarangays = computed(() => {
-  const currentZoom = mapInstance.value ? (function(){ try { return mapInstance.value.getZoom(); } catch (e) { return zoom.value; } })() : zoom.value;
-  return !!activeMunicipality.value && currentZoom >= BARANGAY_ZOOM;
-});
-
-// If addresses load after a municipality is already active, rebuild markers
-watch(usersAddresses, () => {
-  if (activeMunicipality.value) {
-    buildBarangayMarkers(activeMunicipality.value);
-  }
 });
 </script>
 
@@ -511,29 +332,13 @@ watch(usersAddresses, () => {
 
 .map-container {
   position: relative;
-  /* Fix mobile visibility: enforce a reliable height and avoid flex shrink issues */
-  height: 320px;
-  min-height: 260px;
+  height: 320px; /* Match the chart container height */
   width: 100%;
   border-radius: 8px;
   overflow: hidden;
   margin-bottom: 15px;
   border: 1px solid #d1e5f0;
-  /* Prevent parent flex rules from collapsing the map on small screens */
-  flex: 0 0 auto;
-}
-
-/* Fallback to guarantee Leaflet fills container */
-.leaflet-container {
-  width: 100% !important;
-  height: 100% !important;
-}
-
-@media (max-width: 576px) {
-  .map-container {
-    height: 280px;
-    min-height: 240px;
-  }
+  flex: 1;
 }
 
 .popup-content {
@@ -562,7 +367,44 @@ watch(usersAddresses, () => {
   color: #333;
 }
 
+.map-legend {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  background-color: white;
+  padding: 8px;
+  border-radius: 4px;
+  box-shadow: 0 1px 5px rgba(0,0,0,0.2);
+  z-index: 1000;
+}
 
+.legend-title {
+  font-weight: 600;
+  font-size: 0.8rem;
+  margin-bottom: 5px;
+}
+
+.legend-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.legend-color {
+  width: 15px;
+  height: 15px;
+  border: 1px solid #ccc;
+}
+
+.legend-label {
+  font-size: 0.7rem;
+}
 
 .stats-summary {
   display: flex;
@@ -596,16 +438,6 @@ watch(usersAddresses, () => {
   font-size: 0.8em;
   color: #888;
   margin-top: -10px;
-}
-
-/* Barangay tiny dot marker */
-.barangay-dot .dot {
-  width: 10px;
-  height: 10px;
-  background-color: #22c55e; /* green */
-  border-radius: 50%;
-  border: 2px solid white; /* halo for contrast */
-  box-shadow: 0 0 2px rgba(0,0,0,0.4);
 }
 
 </style>

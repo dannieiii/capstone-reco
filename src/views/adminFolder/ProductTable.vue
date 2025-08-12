@@ -1446,7 +1446,8 @@ try {
     isSendingNotification.value = true;
     
     try {
-      const notificationData = {
+      // Standardized notification schema
+      const baseNotification = {
         type: 'price_update',
         productId: notificationProduct.value.id,
         productName: notificationProduct.value.productName,
@@ -1455,8 +1456,13 @@ try {
         newMinPrice: notificationProduct.value.minPrice,
         oldMaxPrice: notificationOldPrice.value.maxPrice,
         newMaxPrice: notificationProduct.value.maxPrice,
-        message: notificationMessage.value || `Price updated for ${notificationProduct.value.productName}`,
+        title: 'D.A. Price Updated',
+        message: notificationMessage.value || `D.A. price reference updated for ${notificationProduct.value.productName}`,
+        // Use createdAt to align with seller Notifications.vue
+        createdAt: serverTimestamp(),
+        // Keep timestamp for backward compatibility with other widgets
         timestamp: serverTimestamp(),
+        read: false,
         sentBy: 'admin'
       };
       
@@ -1464,13 +1470,16 @@ try {
       if (notificationSettings.value.notifySellers) {
         // Get all sellers who might have this product
         const sellersSnapshot = await getDocs(collection(db, 'sellers'));
-        const sellerNotifications = sellersSnapshot.docs.map(sellerDoc => ({
-          ...notificationData,
-          sellerId: sellerDoc.id,
-          recipientType: 'seller',
-          title: 'Product Price Updated',
-          read: false
-        }));
+        const sellerNotifications = sellersSnapshot.docs.map(sellerDoc => {
+          const sellerData = sellerDoc.data() || {};
+          // Prefer the auth userId stored on the seller profile; fall back to doc id
+          const targetSellerId = sellerData.userId || sellerDoc.id;
+          return {
+            ...baseNotification,
+            sellerId: targetSellerId,
+            recipientType: 'seller'
+          };
+        });
         
         // Add notifications for all sellers
         for (const notification of sellerNotifications) {
@@ -1492,11 +1501,10 @@ try {
                 order.items?.some(item => item.productId === notificationProduct.value.id)
               )) {
             customerNotifications.push({
-              ...notificationData,
+              ...baseNotification,
               customerId: customerDoc.id,
               recipientType: 'customer',
-              title: 'Price Update Alert',
-              read: false
+              title: 'Price Update Alert'
             });
           }
         }
