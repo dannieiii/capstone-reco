@@ -1,3 +1,39 @@
+## GCash via Xendit Setup (Quick Guide)
+
+1) Prerequisites
+- Xendit account with PHP currency enabled
+- Get API Key (Live/Test)
+- Frontend URL (local: http://localhost:8080 or your deployed domain)
+
+2) Configure Firebase Functions Secrets
+- Set Xendit API key:
+   firebase functions:secrets:set XENDIT_API_KEY
+- Optionally set webhook verification token:
+   firebase functions:secrets:set WEBHOOK_TOKEN
+
+3) Deploy Functions
+- Deploy your functions:
+   firebase deploy --only functions
+
+4) Webhook
+- In Xendit Dashboard, add a Callback URL:
+   https://us-central1-<your-project-id>.cloudfunctions.net/xenditWebhook
+- If you configured WEBHOOK_TOKEN, add it as the callback token in Xendit settings.
+
+5) Frontend Redirects
+- Success: <FRONTEND_URL>/payment/success?order=<groupOrderCode>
+- Failed:  <FRONTEND_URL>/payment/failed?order=<groupOrderCode>
+
+6) Flow Summary
+- Checkout generates a groupOrderCode and creates one order per seller with that link.
+- A single Xendit invoice is created with external_id = groupOrderCode.
+- User pays on Xendit; webhook updates all orders/sales with that group code to the new status.
+- Success/Failed pages query orders by groupOrderCode or fallback to orderCode.
+
+7) Testing Tips
+- Use the createGcashPaymentPublic endpoint for test runs if callable fails due to auth.
+- Check Cloud Functions logs for any API errors.
+
 # GCash Integration Setup Guide
 
 ## Step 1: Get Xendit API Credentials

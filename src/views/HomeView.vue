@@ -426,40 +426,21 @@
               <span v-else-if="product.ribbon === 'organic'">ORGANIC</span>
               <span v-else-if="product.ribbon === 'limited'">LIMITED</span>
             </div>
+            <div class="product-badge" v-if="product.isOrganic && !product.ribbon">Organic</div>
             
-            <!-- Status Badges - Only show if no ribbon -->
-            <div class="status-badges" v-if="!product.ribbon">
-              <div class="wholesale-badge" v-if="product.wholesaleAvailable">
-                <Package size="12" />
-                Wholesale
-              </div>
-              
-              <div class="pre-order-badge" v-if="product.isPreOrder">
-                <Calendar size="12" />
-                Pre-Order
-              </div>
-              
-              <div class="sale-badge" v-if="product.isOnSale && !product.isPreOrder">
-                <Percent size="12" />
-                {{ product.discountPercentage }}% OFF
-              </div>
-              
-              <div class="organic-badge" v-if="product.isOrganic">
-                Organic
-              </div>
+            <div class="pre-order-badge" v-if="product.preOrders">
+              <Calendar size="12" />
+              Pre-Order
             </div>
             
-            <!-- Trending/Hot Seller badges on bottom right -->
-            <div class="performance-badges">
-              <div class="trending-badge" v-if="product.isTrending">
-                <TrendingUp size="12" />
-                Trending
-              </div>
-              
-              <div class="hot-seller-badge" v-else-if="product.isHotSeller">
-                <Flame size="12" />
-                Hot Seller
-              </div>
+            <div class="trending-badge" v-if="product.isTrending">
+              <TrendingUp size="12" />
+              Trending
+            </div>
+            
+            <div class="hot-seller-badge" v-if="product.isHotSeller && !product.isTrending">
+              <Flame size="12" />
+              Hot Seller
             </div>
           </div>
           <div class="product-info">
@@ -476,7 +457,7 @@
               </div>
             </div>
             
-            <!-- Display available unit prices (limit to 3 to prevent overcrowding) -->
+            <!-- Display available unit prices -->
             <div class="unit-prices">
               <div v-if="product.pricePerKilo > 0" class="price-tag">
                 <span class="price">₱{{ formatPrice(product.pricePerKilo) }}</span>
@@ -485,52 +466,47 @@
                   ₱{{ formatPrice(calculateSalePrice(product.pricePerKilo, product.discountPercentage)) }}
                 </span>
               </div>
-              <div v-else-if="product.pricePerSack > 0" class="price-tag">
+              <div v-if="product.pricePerSack > 0" class="price-tag">
                 <span class="price">₱{{ formatPrice(product.pricePerSack) }}</span>
                 <span class="unit">/sack</span>
                 <span v-if="product.isOnSale" class="sale-price">
                   ₱{{ formatPrice(calculateSalePrice(product.pricePerSack, product.discountPercentage)) }}
                 </span>
               </div>
-              <div v-else-if="product.pricePerTali > 0" class="price-tag">
+              <div v-if="product.pricePerTali > 0" class="price-tag">
                 <span class="price">₱{{ formatPrice(product.pricePerTali) }}</span>
                 <span class="unit">/tali</span>
                 <span v-if="product.isOnSale" class="sale-price">
                   ₱{{ formatPrice(calculateSalePrice(product.pricePerTali, product.discountPercentage)) }}
                 </span>
               </div>
-              <div v-else-if="product.pricePerKaing > 0" class="price-tag">
+              <div v-if="product.pricePerKaing > 0" class="price-tag">
                 <span class="price">₱{{ formatPrice(product.pricePerKaing) }}</span>
                 <span class="unit">/kaing</span>
                 <span v-if="product.isOnSale" class="sale-price">
                   ₱{{ formatPrice(calculateSalePrice(product.pricePerKaing, product.discountPercentage)) }}
                 </span>
               </div>
-              <div v-else-if="product.pricePerBundle > 0" class="price-tag">
+              <div v-if="product.pricePerBundle > 0" class="price-tag">
                 <span class="price">₱{{ formatPrice(product.pricePerBundle) }}</span>
                 <span class="unit">/bundle</span>
                 <span v-if="product.isOnSale" class="sale-price">
                   ₱{{ formatPrice(calculateSalePrice(product.pricePerBundle, product.discountPercentage)) }}
                 </span>
               </div>
-              <div v-else-if="product.pricePerTray > 0" class="price-tag">
+              <div v-if="product.pricePerTray > 0" class="price-tag">
                 <span class="price">₱{{ formatPrice(product.pricePerTray) }}</span>
                 <span class="unit">/tray</span>
                 <span v-if="product.isOnSale" class="sale-price">
                   ₱{{ formatPrice(calculateSalePrice(product.pricePerTray, product.discountPercentage)) }}
                 </span>
               </div>
-              <div v-else-if="product.pricePerPiece > 0" class="price-tag">
+              <div v-if="product.pricePerPiece > 0" class="price-tag">
                 <span class="price">₱{{ formatPrice(product.pricePerPiece) }}</span>
                 <span class="unit">/piece</span>
                 <span v-if="product.isOnSale" class="sale-price">
                   ₱{{ formatPrice(calculateSalePrice(product.pricePerPiece, product.discountPercentage)) }}
                 </span>
-              </div>
-              
-              <!-- Show "+ more" if there are additional price units -->
-              <div v-if="getAdditionalPriceCount(product) > 1" class="more-prices">
-                +{{ getAdditionalPriceCount(product) - 1 }} more units
               </div>
             </div>
           </div>
@@ -694,7 +670,7 @@
               </div>
               <div class="product-badge" v-if="product.isOrganic && !product.ribbon">Organic</div>
               
-              <div class="pre-order-badge" v-if="product.isPreOrder">
+              <div class="pre-order-badge" v-if="product.preOrders">
                 <Calendar size="12" />
                 Pre-Order
               </div>
@@ -724,13 +700,13 @@
               </div>
               <div class="price">
                 <span>₱{{ formatPrice(product.price) }}</span>
-                <span v-if="product.preOrderMessage && product.isPreOrder" class="pre-order-message">
+                <span v-if="product.preOrderMessage && product.preOrders" class="pre-order-message">
                   {{ product.preOrderMessage }}
                 </span>
-                <span v-if="product.preorderDays && product.isPreOrder" class="pre-order-days">
+                <span v-if="product.preorderDays && product.preOrders" class="pre-order-days">
                   Available in {{ product.preorderDays }} days
                 </span>
-                <span v-if="product.preOrderLimit && product.isPreOrder" class="pre-order-limit">
+                <span v-if="product.preOrderLimit && product.preOrders" class="pre-order-limit">
                   Limit: {{ product.preOrderLimit }} units
                 </span>
                 <span class="unit">/kg</span>
@@ -990,7 +966,7 @@ const filteredProducts = computed(() => {
             (typeFilter.value.includes('sale') && product.ribbon === 'sale') ||
             (typeFilter.value.includes('trending') && product.isTrending) ||
             (typeFilter.value.includes('wholesale') && product.wholesaleAvailable) ||
-            (typeFilter.value.includes('pre-order') && product.isPreOrder)
+            (typeFilter.value.includes('pre-order') && product.preOrders)
           );
         });
       }
@@ -1263,7 +1239,6 @@ const fetchProducts = async () => {
             whominWholesaleQty: productData.whominWholesaleQty || 0,
             // Pre-order fields
             preOrders: productData.preOrders || false,
-            isPreOrder: productData.isPreOrder || false,
             preorderDays: productData.preorderDays || 0,
             preOrderMessage: productData.preOrderMessage || '',
             preOrderLimit: productData.preOrderLimit || 0
@@ -1285,7 +1260,7 @@ const fetchProducts = async () => {
 
     // Add computed property for pre-order products
     const preOrderProducts = computed(() => {
-      return products.value.filter(product => product.isPreOrder === true);
+      return products.value.filter(product => product.preOrders === true);
     });
 
     // Add method to filter by wholesale
@@ -1319,19 +1294,6 @@ const fetchProducts = async () => {
         showPreOrderSection.value = false;
       }
     });
-
-    // Count how many price units a product has
-    const getAdditionalPriceCount = (product) => {
-      let count = 0;
-      if (product.pricePerKilo > 0) count++;
-      if (product.pricePerSack > 0) count++;
-      if (product.pricePerTali > 0) count++;
-      if (product.pricePerKaing > 0) count++;
-      if (product.pricePerBundle > 0) count++;
-      if (product.pricePerTray > 0) count++;
-      if (product.pricePerPiece > 0) count++;
-      return count;
-    };
 
     return {
       router,
@@ -1384,8 +1346,7 @@ const fetchProducts = async () => {
       filterByWholesale,
       showPreOrderSection,
       preOrderProducts,
-      filterByPreOrder,
-      getAdditionalPriceCount
+      filterByPreOrder
     };
   },
   data() {
@@ -2132,15 +2093,13 @@ watch: {
 .categories {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  /* Let rows size to content to avoid clipping labels on small screens */
-  grid-auto-rows: minmax(90px, auto);
+  grid-template-rows: repeat(2, 1fr);
   gap: 8px;
   padding: 0;
   margin-top: 10px;
   width: 100%;
   box-sizing: border-box;
-  /* Remove fixed height so text isn't cut off */
-  max-height: none;
+  max-height: 140px; /* Fixed height to ensure 2 rows */
 }
 
 .category {
@@ -2150,8 +2109,6 @@ watch: {
   gap: 5px;
   cursor: pointer;
   transition: all 0.2s ease;
-  /* Ensure enough vertical space for icon + two-line label */
-  min-height: 90px;
 }
 
 .category-icon {
@@ -2205,19 +2162,11 @@ watch: {
   font-weight: 500;
   margin-top: 8px;
   text-align: center;
-  /* Use multi-line clamp for long labels on small screens */
-  display: -webkit-box;
+  display: block;
   max-width: 100%;
-  white-space: normal;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  line-clamp: 2;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  line-height: 1.2;
-  min-height: calc(1.2em * 2);
-  /* Subtle shadow to improve readability on dark/complex backgrounds */
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 
 .category.active span {
@@ -2631,6 +2580,9 @@ watch: {
 
 /* Trending Badge */
 .trending-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
   background-color: rgba(233, 30, 99, 0.9);
   color: white;
   font-size: 10px;
@@ -2641,11 +2593,14 @@ watch: {
   align-items: center;
   gap: 3px;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-  white-space: nowrap;
+  z-index: 2;
 }
 
 /* Hot Seller Badge */
 .hot-seller-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
   background-color: rgba(255, 87, 34, 0.9);
   color: white;
   font-size: 10px;
@@ -2656,7 +2611,7 @@ watch: {
   align-items: center;
   gap: 3px;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-  white-space: nowrap;
+  z-index: 2;
 }
 
 /* Loading State */
@@ -2744,7 +2699,6 @@ watch: {
   flex-direction: column;
   height: 100%;
   width: 100%;
-  min-height: 380px;
 }
 
 .product-card:hover {
@@ -2781,61 +2735,6 @@ watch: {
   padding: 4px 8px;
   border-radius: 12px;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-}
-
-/* Product Status Badges */
-.status-badges {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  z-index: 3;
-  max-width: calc(100% - 80px); /* Leave space for performance badges */
-}
-
-.wholesale-badge, .pre-order-badge, .sale-badge, .organic-badge {
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(10px);
-  border-radius: 12px;
-  padding: 4px 8px;
-  font-size: 10px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  white-space: nowrap;
-}
-
-.wholesale-badge {
-  color: #2563eb;
-  border-left: 3px solid #2563eb;
-}
-
-.pre-order-badge {
-  color: #7c3aed;
-  border-left: 3px solid #7c3aed;
-}
-
-.sale-badge {
-  color: #dc2626;
-  border-left: 3px solid #dc2626;
-}
-
-.organic-badge {
-  color: #16a34a;
-  border-left: 3px solid #16a34a;
-}
-
-/* Performance badges positioned separately */
-.performance-badges {
-  position: absolute;
-  bottom: 10px;
-  right: 10px;
-  z-index: 3;
 }
 
 .product-ribbon {
@@ -2881,13 +2780,10 @@ watch: {
 }
 
 .product-info {
-  padding: 15px;
-  padding-bottom: 50px; /* Add space for add-to-cart button */
+  padding: 12px;
   flex: 1;
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;
-  min-height: 120px;
 }
 
 .product-info h3 {
@@ -2898,20 +2794,17 @@ watch: {
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  border-bottom: 2px solid #2e5c31; /* Changed from yellow to green */
   -webkit-box-orient: vertical;
   line-height: 1.3;
   min-height: 36px;
-  max-height: 36px;
 }
 
 .unit-prices {
-  margin-top: auto;
+  margin-top: 8px;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 80px;
-  overflow-y: auto;
 }
 .price-tag {
   display: flex;
@@ -2919,7 +2812,6 @@ watch: {
   gap: 4px;
   font-size: 13px;
   line-height: 1.2;
-  flex-shrink: 0;
 }
 .price {
   font-weight: 700;
@@ -2928,13 +2820,6 @@ watch: {
 .unit {
   color: #666;
   font-size: 11px;
-}
-
-.more-prices {
-  font-size: 11px;
-  color: #666;
-  font-style: italic;
-  margin-top: 2px;
 }
 
 .sale-price {
@@ -2979,7 +2864,7 @@ watch: {
 .add-to-cart-button {
   position: absolute;
   bottom: 12px;
-  left: 12px;
+  right: 12px;
   background-color: #2e5c31;
   color: white;
   border: none;
@@ -2993,7 +2878,6 @@ watch: {
   cursor: pointer;
   transition: all 0.2s ease;
   box-shadow: 0 3px 8px rgba(46, 92, 49, 0.3);
-  z-index: 4;
 }
 
 .add-to-cart-button:hover:not(:disabled) {

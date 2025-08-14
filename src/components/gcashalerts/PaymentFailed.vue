@@ -52,7 +52,7 @@
 import { ChevronLeft, XCircle } from 'lucide-vue-next';
 import { ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/firebase/firebaseConfig';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
@@ -79,12 +79,32 @@ export default {
           return;
         }
 
-        const orderDoc = await getDoc(doc(db, 'orders', orderCode));
-        if (orderDoc.exists()) {
-          orderData.value = orderDoc.data();
-        } else {
-          router.push('/');
+        let qRef = query(collection(db, 'orders'), where('groupOrderCode', '==', orderCode));
+        let snap = await getDocs(qRef);
+        if (snap.empty) {
+          qRef = query(collection(db, 'orders'), where('orderCode', '==', orderCode));
+          snap = await getDocs(qRef);
         }
+        if (snap.empty) {
+          router.push('/');
+          return;
+        }
+
+        let totalPrice = 0;
+        let paymentMethod = null;
+
+        snap.forEach(d => {
+          const data = d.data();
+          totalPrice += Number(data.totalPrice) || 0;
+          if (!paymentMethod) paymentMethod = data.paymentMethod;
+          if (data.paymentMethod === 'gcash') paymentMethod = 'gcash';
+        });
+
+        orderData.value = {
+          orderCode,
+          totalPrice: totalPrice.toFixed(2),
+          paymentMethod: paymentMethod || 'gcash'
+        };
       } catch (error) {
         console.error('Error fetching order details:', error);
         router.push('/');

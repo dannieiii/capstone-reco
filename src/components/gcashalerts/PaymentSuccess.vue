@@ -52,7 +52,7 @@
 import { ChevronLeft, CheckCircle } from 'lucide-vue-next';
 import { ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { doc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/firebase/firebaseConfig';
 
 export default {
@@ -68,27 +68,62 @@ export default {
 
     const fetchOrderDetails = async () => {
       try {
-        const orderCode = route.query.order;
+  const orderCode = route.query.order;
         if (!orderCode) {
           router.push('/');
           return;
         }
 
-        const orderDoc = await getDoc(doc(db, 'orders', orderCode));
-        if (orderDoc.exists()) {
-          orderData.value = orderDoc.data();
-        } else {
-          router.push('/');
+        // Query by orderCode (multiple docs possible for multi-seller orders)
+        // Try groupOrderCode first, then orderCode
+        let qRef = query(collection(db, 'orders'), where('groupOrderCode', '==', orderCode));
+        let snap = await getDocs(qRef);
+        if (snap.empty) {
+          qRef = query(collection(db, 'orders'), where('orderCode', '==', orderCode));
+          snap = await getDocs(qRef);
         }
+        if (snap.empty) {
+          router.push('/');
+          return;
+        }
+
+        // Aggregate details across all seller orders
+        let totalPrice = 0;
+        let paymentMethod = null;
+        let createdAt = null;
+
+        snap.forEach(d => {
+          const data = d.data();
+          const price = Number(data.totalPrice) || 0;
+          totalPrice += price;
+          // Prefer GCash if any is gcash
+          if (!paymentMethod) paymentMethod = data.paymentMethod;
+          if (data.paymentMethod === 'gcash') paymentMethod = 'gcash';
+          // Use earliest createdAt
+          const ts = data.createdAt;
+          if (ts && typeof ts?.toDate === 'function') {
+            const date = ts.toDate();
+            if (!createdAt || date < createdAt) createdAt = date;
+          }
+        });
+
+        orderData.value = {
+          orderCode,
+          totalPrice: totalPrice.toFixed(2),
+          paymentMethod: paymentMethod === 'gcash' ? 'GCash' : (paymentMethod || 'N/A'),
+          createdAt
+        };
       } catch (error) {
         console.error('Error fetching order details:', error);
         router.push('/');
       }
     };
 
-    const formatDate = (timestamp) => {
-      if (!timestamp) return 'N/A';
-      const date = timestamp.toDate();
+    const formatDate = (value) => {
+      if (!value) return 'N/A';
+      // Accept Firestore Timestamp or Date
+      const date = typeof value?.toDate === 'function' ? value.toDate() : (value instanceof Date ? value : new Date(value));
+      if (isNaN(date.getTime())) return 'N/A';
       return date.toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'long',

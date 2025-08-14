@@ -13,6 +13,8 @@ const webhookToken = defineSecret('WEBHOOK_TOKEN');
 
 // Xendit configuration - Updated for Firebase Functions v2
 const XENDIT_API_URL = 'https://api.xendit.co/v2';
+// IMPORTANT: Set this to your deployed frontend URL in Firebase config (functions:config:set) or env
+// Fallbacks to localhost for local development
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:8080';
 
 // Create GCash payment function (using onCall for better integration with Vue)
@@ -41,7 +43,7 @@ exports.createGcashPayment = functions.https.onCall({
       console.log('Creating GCash payment for:', { amount, orderCode, customerName });
 
       // Check if we have the API key
-      const apiKey = xenditApiKey.value();
+  const apiKey = (xenditApiKey.value() || '').trim();
       if (!apiKey) {
         console.error('Xendit API key not configured');
         throw new functions.https.HttpsError('failed-precondition', 'Xendit API key not configured');
@@ -56,7 +58,7 @@ exports.createGcashPayment = functions.https.onCall({
         throw new functions.https.HttpsError('invalid-argument', 'Invalid payment amount');
       }
 
-      // Create payment link using Xendit API
+  // Create payment link using Xendit API
       const xenditPayload = {
         external_id: orderCode,
         amount: paymentAmount,
@@ -66,8 +68,9 @@ exports.createGcashPayment = functions.https.onCall({
           given_names: customerName,
           email: customerEmail
         },
-        success_redirect_url: `${FRONTEND_URL}/payment/success?order=${orderCode}`,
-        failure_redirect_url: `${FRONTEND_URL}/payment/failed?order=${orderCode}`,
+  // Success/Failure redirect URLs consumed by router to show details based on orderCode
+  success_redirect_url: `${FRONTEND_URL}/payment/success?order=${orderCode}`,
+  failure_redirect_url: `${FRONTEND_URL}/payment/failed?order=${orderCode}`,
         payment_methods: ['GCASH'],
         currency: 'PHP',
         notification_preference: {
@@ -151,7 +154,7 @@ exports.createGcashPaymentHttp = functions.https.onRequest({
         console.log('HTTP: Creating GCash payment for:', { amount, orderCode, customerName });
 
         // Check if we have the API key
-        const apiKey = xenditApiKey.value();
+  const apiKey = (xenditApiKey.value() || '').trim();
         if (!apiKey) {
           return res.status(500).json({ error: 'Xendit API key not configured' });
         }
@@ -202,33 +205,56 @@ exports.createGcashPaymentHttp = functions.https.onRequest({
 
 // Webhook handler for Xendit payment notifications
 exports.xenditWebhook = functions.https.onRequest({
-  secrets: [webhookToken]
+  secrets: [webhookToken],
+  invoker: 'public'
 }, async (req, res) => {
     try {
       console.log('Received webhook:', req.body);
       
-      const receivedToken = req.headers['x-callback-token'];
-      const expectedToken = webhookToken.value();
-      
-      // Verify webhook token (optional but recommended for production)
-      if (expectedToken && receivedToken !== expectedToken) {
-        console.error('Invalid webhook token');
-        return res.status(401).send('Unauthorized');
+  const expectedToken = webhookToken.value();
+      // Accept token via header (preferred) or query string fallback (?token=...)
+  const headerToken = req.headers['x-callback-token'];
+  const queryToken = req.query.token || req.query['x-callback-token'];
+  const receivedTokenRaw = headerToken || queryToken;
+  const normalize = (s) => (s ?? '').toString().trim();
+  const receivedToken = normalize(receivedTokenRaw);
+  const expectedTokenNorm = normalize(expectedToken);
+
+      // Verify webhook token (recommended for production)
+      if (expectedTokenNorm) {
+        if (!receivedToken) {
+          console.error('Missing webhook token');
+          return res.status(401).send('Unauthorized');
+        }
+        if (receivedToken !== expectedTokenNorm) {
+          console.error('Invalid webhook token');
+          return res.status(401).send('Unauthorized');
+        }
       }
 
-      const { external_id, status, payment_method, paid_amount, payment_channel } = req.body;
+      // If this is a simple GET ping from a dashboard test, return 200 OK after token check
+      if (req.method !== 'POST') {
+        return res.status(200).send('Webhook OK');
+      }
 
-      if (!external_id) {
+  const { external_id, status, payment_method, paid_amount, payment_channel } = req.body;
+
+  if (!external_id) {
         return res.status(400).send('Missing external_id');
       }
 
-      // Update all orders with this order code
-      const orderQuery = admin.firestore().collection('orders').where('orderCode', '==', external_id);
-      const orderSnapshot = await orderQuery.get();
+      // external_id corresponds to our groupOrderCode
+      // Update all orders where groupOrderCode == external_id OR orderCode == external_id (fallback)
+      const ordersRef = admin.firestore().collection('orders');
+      let orderSnapshot = await ordersRef.where('groupOrderCode', '==', external_id).get();
+      if (orderSnapshot.empty) {
+        orderSnapshot = await ordersRef.where('orderCode', '==', external_id).get();
+      }
 
       if (orderSnapshot.empty) {
         console.log(`No orders found with order code: ${external_id}`);
-        return res.status(404).send('Order not found');
+        // For dashboard tests or unmatched external_id, acknowledge with 200 to avoid failing webhook setup
+        return res.status(200).send('No matching order; acknowledged');
       }
 
       const batch = admin.firestore().batch();
@@ -249,9 +275,12 @@ exports.xenditWebhook = functions.https.onRequest({
         batch.update(orderDoc.ref, updateData);
       });
 
-      // Also update sales records
-      const salesQuery = admin.firestore().collection('sales').where('orderCode', '==', external_id);
-      const salesSnapshot = await salesQuery.get();
+      // Also update sales records linked by groupOrderCode or orderCode
+      const salesRef = admin.firestore().collection('sales');
+      let salesSnapshot = await salesRef.where('groupOrderCode', '==', external_id).get();
+      if (salesSnapshot.empty) {
+        salesSnapshot = await salesRef.where('orderCode', '==', external_id).get();
+      }
       
       salesSnapshot.docs.forEach(saleDoc => {
         batch.update(saleDoc.ref, {
@@ -262,7 +291,7 @@ exports.xenditWebhook = functions.https.onRequest({
 
       await batch.commit();
 
-      console.log(`Updated payment status for order ${external_id}: ${status}`);
+  console.log(`Updated payment status for order ${external_id}: ${status}`);
       res.status(200).send('Webhook processed successfully');
       
     } catch (error) {
@@ -296,7 +325,7 @@ exports.createMultiSellerPayment = functions.https.onCall({
       console.log(`Creating payments for ${sellerPayments.length} sellers`);
 
       // Check if we have the API key
-      const apiKey = xenditApiKey.value();
+  const apiKey = (xenditApiKey.value() || '').trim();
       if (!apiKey) {
         throw new functions.https.HttpsError('failed-precondition', 'Xendit API key not configured');
       }
@@ -468,7 +497,7 @@ exports.createGcashPaymentPublic = functions.https.onRequest({
       }
 
       // Get API key
-      const apiKey = xenditApiKey.value();
+  const apiKey = (xenditApiKey.value() || '').trim();
       if (!apiKey) {
         console.error('Xendit API key not configured');
         return res.status(500).json({ error: 'Payment service not configured' });

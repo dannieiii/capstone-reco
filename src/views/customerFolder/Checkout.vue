@@ -1315,7 +1315,7 @@ export default {
           );
         }
 
-        // Process orders for each seller separately
+  // Process orders for each seller separately
         const allOrderCodes = [];
         const successfulOrders = [];
         
@@ -1335,6 +1335,9 @@ export default {
           });
         }
         
+        // Generate a single group code to link all seller orders in this checkout
+        const groupOrderCode = generateOrderCode();
+
         for (const sellerId of sellerIds) {
           const sellerItems = itemsBySeller[sellerId];
           const orderCode = generateOrderCode();
@@ -1404,6 +1407,7 @@ export default {
                 
                 transaction.set(orderRef, {
                   orderCode: orderCode,
+                  groupOrderCode: groupOrderCode,
                   sellerId: item.sellerId, // ✅ SELLER DOCUMENT ID (for seller identification)
                   productId: item.productId,
                   productName: item.productName,
@@ -1452,6 +1456,7 @@ export default {
                   sellerId: item.sellerId, // ✅ SELLER DOCUMENT ID (for seller identification)
                   season: getCurrentSeason(),
                   orderCode: orderCode,
+                  groupOrderCode: groupOrderCode,
                   isBuyNow: isBuyNow.value,
                   paymentStatus: 'unpaid',
                   // Multi-seller order metadata
@@ -1481,8 +1486,8 @@ export default {
           console.log(`Order ${order.orderCode}: Seller ${order.sellerId} (${order.itemCount} items)`);
         });
 
-        // Set the primary order number for success modal (first order)
-        orderNumber.value = allOrderCodes[0];
+  // Set the primary order number for success modal/group tracking
+  orderNumber.value = groupOrderCode;
         multipleOrderCodes.value = allOrderCodes;
 
         // PHASE 3: CLEANUP - Update cart items status after successful transaction
@@ -1513,7 +1518,7 @@ export default {
           try {
             console.log('Creating GCash payment with:', {
               amount: total.value,
-              orderCode: orderCode,
+              orderCode: groupOrderCode,
               customerName: username,
               customerEmail: email
             });
@@ -1524,7 +1529,7 @@ export default {
             try {
               paymentResult = await createGcashPayment({
                 amount: total.value,
-                orderCode: orderCode,
+                orderCode: groupOrderCode,
                 customerName: username,
                 customerEmail: email,
                 bypassAuth: true // Temporary bypass for authentication issues
@@ -1542,7 +1547,7 @@ export default {
                   },
                   body: JSON.stringify({
                     amount: total.value,
-                    orderCode: orderCode,
+                    orderCode: groupOrderCode,
                     customerName: username,
                     customerEmail: email,
                     items: orderItems.value.map(item => ({
@@ -1572,7 +1577,7 @@ export default {
                   },
                   body: JSON.stringify({
                     amount: total.value,
-                    orderCode: orderCode,
+                    orderCode: groupOrderCode,
                     customerName: username,
                     customerEmail: email
                   })
@@ -1616,7 +1621,7 @@ export default {
                       },
                       body: JSON.stringify({
                         amount: total.value,
-                        orderCode: orderCode,
+                        orderCode: groupOrderCode,
                         customerName: username,
                         customerEmail: email,
                         simulate: true,
