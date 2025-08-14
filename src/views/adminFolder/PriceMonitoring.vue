@@ -29,6 +29,15 @@
             Overpriced Products ({{ overpricedProducts.length }})
           </button>
           
+          <button 
+            @click="setView('underpriced')" 
+            class="view-btn" 
+            :class="{ active: currentView === 'underpriced' }"
+          >
+            <TrendingDown size="16" />
+            Underpriced Products ({{ underpricedProducts.length }})
+          </button>
+          
           <button @click="refreshData" class="refresh-btn" :disabled="loading">
             <RefreshCw v-if="loading" size="16" class="spinner" />
             <span v-else>Refresh Data</span>
@@ -72,6 +81,17 @@
             <h3>Overpriced Products</h3>
             <div class="card-value text-warning">{{ overpricedProducts.length }}</div>
             <div class="card-period">{{ severeOverpriced.length }} severe cases</div>
+          </div>
+        </div>
+        
+        <div class="summary-card">
+          <div class="card-icon">
+            <TrendingDown size="24" />
+          </div>
+          <div class="card-content">
+            <h3>Underpriced Products</h3>
+            <div class="card-value text-info">{{ underpricedProducts.length }}</div>
+            <div class="card-period">Below DA minimum</div>
           </div>
         </div>
         
@@ -345,6 +365,14 @@
         @refresh-products="refreshData"
       />
 
+      <!-- Underpriced Products View -->
+      <UnderpricedProducts 
+        v-if="currentView === 'underpriced'"
+        :underpricedProducts="underpricedProducts"
+        :sellers="sellers"
+        @refresh-products="refreshData"
+      />
+
       <!-- Loading State -->
       <div v-if="loading" class="loading-state">
         <div class="spinner-container">
@@ -530,6 +558,7 @@ import { db } from '@/firebase/firebaseConfig';
 import Chart from 'chart.js/auto';
 import AdminSidebar from '@/components/AdminSidebar.vue';
 import OverpricedProducts from '@/components/OverpricedProducts.vue';
+import UnderpricedProducts from '@/components/UnderpricedProducts.vue';
 import {
   RefreshCw,
   TrendingUp,
@@ -560,6 +589,7 @@ const daProducts = ref([]);
 const sellers = ref([]);
 const monitoredProducts = ref([]);
 const overpricedProducts = ref([]);
+const underpricedProducts = ref([]);
 const customProducts = ref([]);
 
 // Chart refs
@@ -712,6 +742,7 @@ const processProductAnalysis = async () => {
   console.log('Processing product analysis...');
   const analyzed = [];
   const overpriced = [];
+  const underpriced = [];
   const custom = [];
 
   for (const product of products.value) {
@@ -734,6 +765,7 @@ const processProductAnalysis = async () => {
       overallDeviation: null,
       priceStatus: 'no-reference',
       hasOverpricedUnits: false,
+      hasUnderpricedUnits: false,
       warningLevel: 'none'
     };
 
@@ -741,6 +773,7 @@ const processProductAnalysis = async () => {
     let totalDeviation = 0;
     let deviationCount = 0;
     let hasOverpriced = false;
+    let hasUnderpriced = false;
     let maxDeviation = 0;
 
     productUnits.forEach(unit => {
@@ -763,6 +796,9 @@ const processProductAnalysis = async () => {
         if (status === 'overpriced') {
           hasOverpriced = true;
           unit.isOverpriced = true;
+        } else if (status === 'underpriced') {
+          hasUnderpriced = true;
+          unit.isUnderpriced = true;
         }
       } else {
         // Explicitly set these values for units without DA reference
@@ -770,16 +806,24 @@ const processProductAnalysis = async () => {
         unit.priceStatus = 'no-reference';
         unit.excessAmount = 0;
         unit.isOverpriced = false;
+        unit.isUnderpriced = false;
       }
     });
 
     // Calculate overall product metrics
     if (deviationCount > 0) {
       analyzedProduct.overallDeviation = totalDeviation / deviationCount;
-      analyzedProduct.priceStatus = hasOverpriced ? 'overpriced' : 'within-range';
+      if (hasOverpriced) {
+        analyzedProduct.priceStatus = 'overpriced';
+      } else if (hasUnderpriced) {
+        analyzedProduct.priceStatus = 'underpriced';
+      } else {
+        analyzedProduct.priceStatus = 'within-range';
+      }
     }
 
     analyzedProduct.hasOverpricedUnits = hasOverpriced;
+    analyzedProduct.hasUnderpricedUnits = hasUnderpriced;
 
     // Determine warning level based on maximum deviation
     if (hasOverpriced) {
@@ -794,6 +838,11 @@ const processProductAnalysis = async () => {
       overpriced.push(analyzedProduct);
     }
 
+    // Add products with underpriced units to underpriced array
+    if (hasUnderpriced) {
+      underpriced.push(analyzedProduct);
+    }
+
     if (!daReference) {
       custom.push(analyzedProduct);
     }
@@ -803,11 +852,13 @@ const processProductAnalysis = async () => {
 
   monitoredProducts.value = analyzed;
   overpricedProducts.value = overpriced;
+  underpricedProducts.value = underpriced;
   customProducts.value = custom;
 
   console.log('Analysis complete:', {
     total: analyzed.length,
     overpriced: overpriced.length,
+    underpriced: underpriced.length,
     custom: custom.length
   });
 
@@ -832,12 +883,26 @@ const getProductUnits = (product) => {
     
     // Only create unit if price > 0 (seller actually offers this unit)
     if (price > 0) {
+      const daReference = findUnitDAReference(product, unitType);
+      
+      // Add debug logging
+      if (!daReference) {
+        console.log(`No DA reference found for ${product.productName} - ${unitType}:`, {
+          product: product.productName,
+          unitType,
+          hasDAData: !!findDAReference(product),
+          daProductKeys: findDAReference(product) ? Object.keys(findDAReference(product).unitPricing || {}) : []
+        });
+      } else {
+        console.log(`DA reference found for ${product.productName} - ${unitType}:`, daReference);
+      }
+      
       const unit = {
         type: unitConfig.label,
         price: price,
         stock: stock,
         stockUnit: unitConfig.stockUnit,
-        daReference: findUnitDAReference(product, unitType),
+        daReference: daReference,
         deviation: null, // Will be calculated in processProductAnalysis
         priceStatus: 'unknown',
         excessAmount: 0,
@@ -871,40 +936,46 @@ const findUnitDAReference = (product, unitType) => {
   
   // First try exact matches
   for (const [daUnitName, pricing] of Object.entries(daProduct.unitPricing)) {
-    if (pricing && typeof pricing === 'object' && 
-        pricing.minPrice !== undefined && pricing.maxPrice !== undefined &&
-        pricing.minPrice > 0 && pricing.maxPrice > 0) {
+    if (pricing && typeof pricing === 'object') {
+      // Check for both newMinPrice/newMaxPrice and minPrice/maxPrice patterns
+      const minPrice = pricing.newMinPrice || pricing.minPrice;
+      const maxPrice = pricing.newMaxPrice || pricing.maxPrice;
       
-      const normalizedDAName = daUnitName.toLowerCase().trim();
-      
-      // Check for exact matches first
-      if (possibleNames.some(name => normalizedDAName === name)) {
-        return {
-          unit: daUnitName,
-          minPrice: parseFloat(pricing.minPrice),
-          maxPrice: parseFloat(pricing.maxPrice)
-        };
+      if (minPrice !== undefined && maxPrice !== undefined && minPrice > 0 && maxPrice > 0) {
+        const normalizedDAName = daUnitName.toLowerCase().trim();
+        
+        // Check for exact matches first
+        if (possibleNames.some(name => normalizedDAName === name)) {
+          return {
+            unit: daUnitName,
+            minPrice: parseFloat(minPrice),
+            maxPrice: parseFloat(maxPrice)
+          };
+        }
       }
     }
   }
   
   // Then try partial matches
   for (const [daUnitName, pricing] of Object.entries(daProduct.unitPricing)) {
-    if (pricing && typeof pricing === 'object' && 
-        pricing.minPrice !== undefined && pricing.maxPrice !== undefined &&
-        pricing.minPrice > 0 && pricing.maxPrice > 0) {
+    if (pricing && typeof pricing === 'object') {
+      // Check for both newMinPrice/newMaxPrice and minPrice/maxPrice patterns
+      const minPrice = pricing.newMinPrice || pricing.minPrice;
+      const maxPrice = pricing.newMaxPrice || pricing.maxPrice;
       
-      const normalizedDAName = daUnitName.toLowerCase().trim();
-      
-      // Check for partial matches
-      if (possibleNames.some(name => 
-        normalizedDAName.includes(name) || name.includes(normalizedDAName.replace('per ', ''))
-      )) {
-        return {
-          unit: daUnitName,
-          minPrice: parseFloat(pricing.minPrice),
-          maxPrice: parseFloat(pricing.maxPrice)
-        };
+      if (minPrice !== undefined && maxPrice !== undefined && minPrice > 0 && maxPrice > 0) {
+        const normalizedDAName = daUnitName.toLowerCase().trim();
+        
+        // Check for partial matches
+        if (possibleNames.some(name => 
+          normalizedDAName.includes(name) || name.includes(normalizedDAName.replace('per ', ''))
+        )) {
+          return {
+            unit: daUnitName,
+            minPrice: parseFloat(minPrice),
+            maxPrice: parseFloat(maxPrice)
+          };
+        }
       }
     }
   }

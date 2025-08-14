@@ -106,7 +106,6 @@
             v-for="notification in paginatedNotifications" 
             :key="notification.id"
             :class="['notification-item', getNotificationClasses(notification)]"
-            @click="handleNotificationClick(notification)"
           >
             <div class="notification-icon" :class="getNotificationIconClass(notification)">
               <component :is="getNotificationIcon(notification.type)" size="20" />
@@ -136,18 +135,18 @@
                   <div class="price-change-item">
                     <span class="label">Min Price:</span>
                     <span class="price-change">
-                      ₱{{ formatPrice(notification.oldMinPrice) }} → ₱{{ formatPrice(notification.newMinPrice) }}
-                      <span :class="getPriceChangeClass(notification.oldMinPrice, notification.newMinPrice)">
-                        ({{ getPriceChangePercentage(notification.oldMinPrice, notification.newMinPrice) }})
+                      ₱{{ formatPrice(notification.priceDetails?.minPrice?.old) }} → ₱{{ formatPrice(notification.priceDetails?.minPrice?.new) }}
+                      <span :class="getPriceChangeClass(notification.priceDetails?.minPrice?.old, notification.priceDetails?.minPrice?.new)">
+                        ({{ getPriceChangePercentage(notification.priceDetails?.minPrice?.old, notification.priceDetails?.minPrice?.new) }})
                       </span>
                     </span>
                   </div>
                   <div class="price-change-item">
                     <span class="label">Max Price:</span>
                     <span class="price-change">
-                      ₱{{ formatPrice(notification.oldMaxPrice) }} → ₱{{ formatPrice(notification.newMaxPrice) }}
-                      <span :class="getPriceChangeClass(notification.oldMaxPrice, notification.newMaxPrice)">
-                        ({{ getPriceChangePercentage(notification.oldMaxPrice, notification.newMaxPrice) }})
+                      ₱{{ formatPrice(notification.priceDetails?.maxPrice?.old) }} → ₱{{ formatPrice(notification.priceDetails?.maxPrice?.new) }}
+                      <span :class="getPriceChangeClass(notification.priceDetails?.maxPrice?.old, notification.priceDetails?.maxPrice?.new)">
+                        ({{ getPriceChangePercentage(notification.priceDetails?.maxPrice?.old, notification.priceDetails?.maxPrice?.new) }})
                       </span>
                     </span>
                   </div>
@@ -206,7 +205,8 @@
                 @click.stop="markAsRead(notification.id)"
                 title="Mark as read"
               >
-                <Check size="14" />
+                <Check size="16" />
+                <span>Mark Read</span>
               </button>
               
               <button 
@@ -519,7 +519,20 @@ const getPriceChangeClass = (oldPrice, newPrice) => {
 };
 
 const getPriceChangePercentage = (oldPrice, newPrice) => {
-  if (!oldPrice || oldPrice === 0) return 'N/A';
+  // Handle cases where prices are missing or invalid
+  if (newPrice === null || newPrice === undefined || isNaN(newPrice)) {
+    return 'N/A';
+  }
+  
+  // If old price is 0, null, or undefined, but new price exists
+  if (!oldPrice || oldPrice === 0 || oldPrice === null || oldPrice === undefined || isNaN(oldPrice)) {
+    if (newPrice > 0) {
+      return 'New'; // Indicates this is a new price being set
+    }
+    return 'N/A';
+  }
+  
+  // Normal percentage calculation
   const percentage = ((newPrice - oldPrice) / oldPrice) * 100;
   const sign = percentage > 0 ? '+' : '';
   return `${sign}${percentage.toFixed(1)}%`;
@@ -545,6 +558,12 @@ const formatTime = (timestamp) => {
 };
 
 const formatPrice = (price) => {
+  if (price === null || price === undefined) {
+    return '0.00';
+  }
+  if (isNaN(price)) {
+    return '0.00';
+  }
   return parseFloat(price).toFixed(2);
 };
 
@@ -569,20 +588,16 @@ const getEmptyMessage = () => {
 };
 
 const handleNotificationClick = async (notification) => {
-  // Mark as read if unread
-  if (!notification.read) {
-    await markAsRead(notification.id);
-  }
+  // This function is no longer used for general notification clicks
+  // Only specific actions like warning modals should use it
   
-  // Navigate based on notification type
+  // Navigate based on notification type (only for specific cases)
   if (notification.type === 'new_order' && notification.orderDetails?.orderId) {
     window.location.href = `/orders?id=${notification.orderDetails.orderId}`;
   } else if (notification.type === 'price_warning' && notification.productId) {
     openWarningModal(notification);
-  } else if (notification.type === 'price_update' && notification.productId) {
-    // Navigate to product details or inventory page
-    window.location.href = `/seller/products?highlight=${notification.productId}`;
   }
+  // Removed price_update navigation - users should use the check button instead
 };
 
 const navigateToEditProduct = (productId) => {
@@ -675,30 +690,53 @@ const setupNotificationListener = async () => {
   currentSellerId.value = currentUser.uid;
 
   try {
-    // Query for notifications sent to this seller
+    // Query for notifications sent to this seller - try both userId and sellerId fields
     const notificationQuery = query(
       collection(db, 'notifications'),
       where('sellerId', '==', currentUser.uid),
       limit(100)
     );
 
+    // Alternative query for userId field (fallback)
+    const alternativeQuery = query(
+      collection(db, 'notifications'),
+      where('userId', '==', currentUser.uid),
+      limit(100)
+    );
+
     // Try to get data first to test if basic query works
     const snapshot = await getDocs(notificationQuery);
-    console.log(`Found ${snapshot.docs.length} notifications`);
+    console.log(`Found ${snapshot.docs.length} notifications with sellerId`);
+
+    // Try alternative query if first one returns empty
+    let finalQuery = notificationQuery;
+    if (snapshot.docs.length === 0) {
+      const altSnapshot = await getDocs(alternativeQuery);
+      console.log(`Found ${altSnapshot.docs.length} notifications with userId`);
+      if (altSnapshot.docs.length > 0) {
+        finalQuery = alternativeQuery;
+      }
+    }
 
     // If basic query works, set up the listener
     const unsubscribe = onSnapshot(
-      notificationQuery,
+      finalQuery,
       (snapshot) => {
-        const notificationData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
+        const notificationData = snapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            ...data,
+            // Ensure read status is computed correctly
+            read: data.read || !!data.readAt
+          };
+        });
         
         // Sort on client side since we can't use complex orderBy without index
+        // Try multiple timestamp field names for compatibility
         notifications.value = notificationData.sort((a, b) => {
-          const dateA = a.createdAt?.toDate?.() || new Date(a.createdAt || 0);
-          const dateB = b.createdAt?.toDate?.() || new Date(b.createdAt || 0);
+          const dateA = a.createdAt?.toDate?.() || a.timestamp?.toDate?.() || new Date(a.createdAt || a.timestamp || 0);
+          const dateB = b.createdAt?.toDate?.() || b.timestamp?.toDate?.() || new Date(b.createdAt || b.timestamp || 0);
           return dateB - dateA;
         });
         
@@ -706,9 +744,27 @@ const setupNotificationListener = async () => {
         connectionError.value = false;
         retryCount.value = 0;
         
-        console.log(`Loaded ${notifications.value.length} notifications successfully`);
-        console.log('Price update notifications:', notifications.value.filter(n => n.type === 'price_update').length);
-        console.log('Price warning notifications:', notifications.value.filter(n => n.type === 'price_warning').length);
+        console.log(`✅ Loaded ${notifications.value.length} notifications successfully`);
+        console.log(`📊 Notification breakdown:`, {
+          total: notifications.value.length,
+          unread: notifications.value.filter(n => !n.read).length,
+          priceUpdates: notifications.value.filter(n => n.type === 'price_update').length,
+          priceWarnings: notifications.value.filter(n => n.type === 'price_warning').length,
+          newOrders: notifications.value.filter(n => n.type === 'new_order').length
+        });
+        
+        // Log recent price update notifications for debugging
+        const recentPriceUpdates = notifications.value
+          .filter(n => n.type === 'price_update')
+          .slice(0, 3);
+        if (recentPriceUpdates.length > 0) {
+          console.log(`🔔 Recent price update notifications:`, recentPriceUpdates.map(n => ({
+            product: n.productName,
+            unit: n.unit,
+            message: n.message,
+            timestamp: n.createdAt || n.timestamp
+          })));
+        }
       },
       (error) => {
         console.error('Error in notification listener:', error);
@@ -1008,10 +1064,6 @@ onMounted(async () => {
 .empty-state p {
   color: #6b7280;
   margin: 0 0 16px 0;
-}
-
-.notifications-list {
-  /* Remove the divide-y approach and use border-bottom instead */
 }
 
 .notification-item {

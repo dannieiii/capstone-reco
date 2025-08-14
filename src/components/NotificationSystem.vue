@@ -35,7 +35,7 @@
               <div class="notification-content">
                 <div class="notification-title">{{ notification.title }}</div>
                 <div class="notification-message">{{ notification.message }}</div>
-                <div class="notification-time">{{ formatTime(notification.timestamp) }}</div>
+                <div class="notification-time">{{ showAbsoluteTime ? formatAbsoluteTime(notification.timestamp) : formatTime(notification.timestamp) }}</div>
               </div>
             </div>
           </div>
@@ -95,8 +95,16 @@
     userId: {
       type: String,
       default: null
+    },
+    // If true, show absolute date/time instead of relative (used in Admin)
+    showAbsoluteTime: {
+      type: Boolean,
+      default: false
     }
   });
+  
+  // Emits
+  const emit = defineEmits(['notification-count-update', 'new-notification']);
   
   // Computed properties
   const unreadCount = computed(() => {
@@ -142,6 +150,22 @@
     } else {
       return date.toLocaleDateString();
     }
+  };
+  
+  // Absolute timestamp: M-D-YY h:mmA.M / P.M
+  const formatAbsoluteTime = (timestamp) => {
+    if (!timestamp) return '';
+    const date = timestamp instanceof Timestamp 
+      ? timestamp.toDate() 
+      : new Date(timestamp);
+    const m = date.getMonth() + 1;
+    const d = date.getDate();
+    const yy = String(date.getFullYear()).slice(-2);
+    let h = date.getHours();
+    const mer = h >= 12 ? 'P.M' : 'A.M';
+    h = h % 12 || 12;
+    const mm = String(date.getMinutes()).padStart(2, '0');
+    return `${m}-${d}-${yy} ${h}:${mm}${mer}`;
   };
   
   // Get notification type class
@@ -191,6 +215,7 @@
         }
         return notification;
       });
+  try { emit('notification-count-update', unreadCount.value); } catch {}
     } catch (error) {
       console.error('Error marking notification as read:', error);
     }
@@ -218,6 +243,7 @@
       notifications.value = notifications.value.map(notification => {
         return { ...notification, read: true };
       });
+  try { emit('notification-count-update', unreadCount.value); } catch {}
     } catch (error) {
       console.error('Error marking all notifications as read:', error);
     }
@@ -240,7 +266,8 @@
       limit(20)
     );
     
-    unsubscribeNotifications.value = onSnapshot(q, (snapshot) => {
+  let isFirstSnapshot = true;
+  unsubscribeNotifications.value = onSnapshot(q, (snapshot) => {
       const notificationsList = [];
       
       snapshot.forEach((doc) => {
@@ -259,6 +286,27 @@
       
       notifications.value = notificationsList;
       console.log('Notifications updated:', notificationsList.length);
+      try { emit('notification-count-update', unreadCount.value); } catch {}
+
+      if (!isFirstSnapshot) {
+        snapshot.docChanges().forEach(change => {
+          if (change.type === 'added') {
+            const d = change.doc.data();
+            const n = {
+              id: change.doc.id,
+              title: d.title || 'Notification',
+              message: d.message || '',
+              type: d.type || 'default',
+              category: d.category || null,
+              read: d.read || false,
+              timestamp: d.timestamp || new Date(),
+              link: d.link || null
+            };
+            try { emit('new-notification', n); } catch {}
+          }
+        });
+      }
+      isFirstSnapshot = false;
     }, (error) => {
       console.error('Error setting up notification listener:', error);
     });
@@ -536,7 +584,8 @@
     background-color: #fff;
     border-radius: 10px;
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-    z-index: 100;
+    /* Raise above Leaflet popup panes (which are ~700) */
+    z-index: 2100;
     overflow: hidden;
   }
   
@@ -649,6 +698,8 @@
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+  /* compatibility */
+  line-clamp: 2;
   }
   
   .notification-time {
@@ -747,7 +798,7 @@
       left: 10px;
       width: auto;
       max-width: calc(100% - 20px);
-      z-index: 1000;
+      z-index: 2200;
     }
   }
   </style>

@@ -4,9 +4,11 @@
   <div class="main-content">
     <div class="header-actions">
       <h1 class="page-title">Product Price Management</h1>
-      <button class="add-btn" @click="openAddProductModal">
-        <i class="fas fa-plus"></i> Add Product
-      </button>
+      <div class="header-buttons">
+        <button class="add-btn" @click="openAddProductModal">
+          <i class="fas fa-plus"></i> Add Product
+        </button>
+      </div>
     </div>
 
     <!-- Filters -->
@@ -86,9 +88,9 @@
                   <div class="price-display">
                     <span class="price-item-compact">
                       <span class="price-label-compact">Min:</span>
-                      <div class="editable-cell-compact" @click="startEditing(product, 'minPrice', Object.keys(product.unitPricing)[0])">
-                        <span v-if="editingCell.id !== product.id || editingCell.field !== 'minPrice' || editingCell.unit !== Object.keys(product.unitPricing)[0]">
-                          ₱{{ (Object.values(product.unitPricing)[0]?.minPrice || 0).toFixed(2) }}
+                      <div class="editable-cell-compact" @click="startEditing(product, 'newMinPrice', Object.keys(product.unitPricing)[0])">
+                        <span v-if="editingCell.id !== product.id || editingCell.field !== 'newMinPrice' || editingCell.unit !== Object.keys(product.unitPricing)[0]">
+                          ₱{{ (Object.values(product.unitPricing)[0]?.newMinPrice || Object.values(product.unitPricing)[0]?.minPrice || 0).toFixed(2) }}
                         </span>
                         <input 
                           v-else
@@ -105,9 +107,9 @@
                     </span>
                     <span class="price-item-compact">
                       <span class="price-label-compact">Max:</span>
-                      <div class="editable-cell-compact" @click="startEditing(product, 'maxPrice', Object.keys(product.unitPricing)[0])">
-                        <span v-if="editingCell.id !== product.id || editingCell.field !== 'maxPrice' || editingCell.unit !== Object.keys(product.unitPricing)[0]">
-                          ₱{{ (Object.values(product.unitPricing)[0]?.maxPrice || 0).toFixed(2) }}
+                      <div class="editable-cell-compact" @click="startEditing(product, 'newMaxPrice', Object.keys(product.unitPricing)[0])">
+                        <span v-if="editingCell.id !== product.id || editingCell.field !== 'newMaxPrice' || editingCell.unit !== Object.keys(product.unitPricing)[0]">
+                          ₱{{ (Object.values(product.unitPricing)[0]?.newMaxPrice || Object.values(product.unitPricing)[0]?.maxPrice || 0).toFixed(2) }}
                         </span>
                         <input 
                           v-else
@@ -130,9 +132,9 @@
                   <div class="price-display" v-if="getSelectedUnitPricing(product)">
                     <span class="price-item-compact">
                       <span class="price-label-compact">Min:</span>
-                      <div class="editable-cell-compact" @click="startEditing(product, 'minPrice', getSelectedUnit(product))">
-                        <span v-if="editingCell.id !== product.id || editingCell.field !== 'minPrice' || editingCell.unit !== getSelectedUnit(product)">
-                          ₱{{ (getSelectedUnitPricing(product)?.minPrice || 0).toFixed(2) }}
+                      <div class="editable-cell-compact" @click="startEditing(product, 'newMinPrice', getSelectedUnit(product))">
+                        <span v-if="editingCell.id !== product.id || editingCell.field !== 'newMinPrice' || editingCell.unit !== getSelectedUnit(product)">
+                          ₱{{ (getSelectedUnitPricing(product)?.newMinPrice || getSelectedUnitPricing(product)?.minPrice || 0).toFixed(2) }}
                         </span>
                         <input 
                           v-else
@@ -149,9 +151,9 @@
                     </span>
                     <span class="price-item-compact">
                       <span class="price-label-compact">Max:</span>
-                      <div class="editable-cell-compact" @click="startEditing(product, 'maxPrice', getSelectedUnit(product))">
-                        <span v-if="editingCell.id !== product.id || editingCell.field !== 'maxPrice' || editingCell.unit !== getSelectedUnit(product)">
-                          ₱{{ (getSelectedUnitPricing(product)?.maxPrice || 0).toFixed(2) }}
+                      <div class="editable-cell-compact" @click="startEditing(product, 'newMaxPrice', getSelectedUnit(product))">
+                        <span v-if="editingCell.id !== product.id || editingCell.field !== 'newMaxPrice' || editingCell.unit !== getSelectedUnit(product)">
+                          ₱{{ (getSelectedUnitPricing(product)?.newMaxPrice || getSelectedUnitPricing(product)?.maxPrice || 0).toFixed(2) }}
                         </span>
                         <input 
                           v-else
@@ -178,6 +180,9 @@
               <div class="action-buttons">
                 <button class="history-btn" @click="openPriceHistoryModal(product)" title="View Price History">
                   <i class="fas fa-chart-line"></i>
+                </button>
+                <button class="notification-btn" @click="openNotificationModal(product)" title="Send Price Notification">
+                  <i class="fas fa-bell"></i>
                 </button>
                 <button class="edit-btn" @click="editProduct(product)" title="Edit Product">
                   <i class="fas fa-edit"></i>
@@ -299,29 +304,35 @@
                   <h4 class="unit-title">{{ unit }}</h4>
                   <div class="form-row" v-if="currentProduct.unitPricing && currentProduct.unitPricing[unit]">
                     <div class="form-group">
-                      <label :for="`minPrice-${unit}`">Minimum Price (₱) *</label>
+                      <label :for="`newMinPrice-${unit}`">Minimum Price (₱) *</label>
                       <input 
                         type="number" 
-                        :id="`minPrice-${unit}`"
-                        v-model="currentProduct.unitPricing[unit].minPrice" 
+                        :id="`newMinPrice-${unit}`"
+                        v-model="currentProduct.unitPricing[unit].newMinPrice" 
                         required
                         min="0"
                         step="0.01"
                         placeholder="0.00"
                       />
+                      <div v-if="currentProduct.unitPricing[unit].oldMinPrice > 0" class="price-history-hint">
+                        Previous: ₱{{ formatPrice(currentProduct.unitPricing[unit].oldMinPrice) }}
+                      </div>
                     </div>
 
                     <div class="form-group">
-                      <label :for="`maxPrice-${unit}`">Maximum Price (₱) *</label>
+                      <label :for="`newMaxPrice-${unit}`">Maximum Price (₱) *</label>
                       <input 
                         type="number" 
-                        :id="`maxPrice-${unit}`"
-                        v-model="currentProduct.unitPricing[unit].maxPrice" 
+                        :id="`newMaxPrice-${unit}`"
+                        v-model="currentProduct.unitPricing[unit].newMaxPrice" 
                         required
                         min="0"
                         step="0.01"
                         placeholder="0.00"
                       />
+                      <div v-if="currentProduct.unitPricing[unit].oldMaxPrice > 0" class="price-history-hint">
+                        Previous: ₱{{ formatPrice(currentProduct.unitPricing[unit].oldMaxPrice) }}
+                      </div>
                     </div>
                   </div>
                   <div v-else class="loading-pricing">
@@ -447,11 +458,44 @@
           <div class="form-group">
             <label>Product: <strong>{{ notificationProduct?.productName }}</strong></label>
           </div>
+          
+          <!-- Notification Preview -->
           <div class="form-group">
-            <label>Price Change:</label>
-            <div class="price-change">
-              <span>Min: ₱{{ notificationOldPrice?.minPrice?.toFixed(2) }} → ₱{{ notificationProduct?.minPrice?.toFixed(2) }}</span>
-              <span>Max: ₱{{ notificationOldPrice?.maxPrice?.toFixed(2) }} → ₱{{ notificationProduct?.maxPrice?.toFixed(2) }}</span>
+            <label>Notification Preview:</label>
+            <div class="notification-preview">
+              <div class="preview-header">
+                <div class="preview-icon">
+                  <i class="fas fa-chart-line"></i>
+                </div>
+                <div class="preview-content">
+                  <div class="preview-title">D.A. price update notice</div>
+                  <div class="preview-time">21m ago</div>
+                </div>
+                <div class="preview-actions">
+                  <i class="fas fa-check"></i>
+                  <i class="fas fa-times"></i>
+                </div>
+              </div>
+              <div class="preview-message">
+                "{{ notificationProduct?.productName }}" price reference has been updated. Please review your price within 48 hours to avoid flags.
+              </div>
+              <div class="preview-pricing" v-if="notificationProduct?.unitPricing">
+                <div class="pricing-row" v-for="(pricing, unit) in notificationProduct.unitPricing" :key="unit">
+                  <span class="pricing-label">{{ unit }}:</span>
+                  <span class="pricing-range">₱{{ (pricing.minPrice || 0).toFixed(2) }} → ₱{{ (pricing.maxPrice || 0).toFixed(2) }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label>Current Pricing:</label>
+            <div class="price-change" v-if="notificationProduct?.unitPricing">
+              <div v-for="(pricing, unit) in notificationProduct.unitPricing" :key="unit" class="price-unit-row">
+                <strong>{{ unit }}:</strong>
+                <span>Min: ₱{{ (pricing.minPrice || 0).toFixed(2) }}</span>
+                <span>Max: ₱{{ (pricing.maxPrice || 0).toFixed(2) }}</span>
+              </div>
             </div>
           </div>
           
@@ -510,6 +554,7 @@
 import { ref, computed, onMounted, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { db } from '@/firebase/firebaseConfig';
+import { getAuth } from 'firebase/auth';
 import { 
 collection, 
 getDocs, 
@@ -517,6 +562,7 @@ addDoc,
 doc, 
 updateDoc, 
 deleteDoc, 
+deleteField,
 query, 
 where, 
 serverTimestamp,
@@ -815,6 +861,13 @@ setup() {
     return product.unitPricing[selectedUnit];
   };
 
+  // Safe number formatting helper
+  const formatPrice = (value) => {
+    const num = Number(value);
+    if (isNaN(num)) return '0.00';
+    return num.toFixed(2);
+  };
+
   // Methods
   const closeNotification = () => {
     notification.value.show = false;
@@ -977,12 +1030,23 @@ try {
 
   const editProduct = (product) => {
     isEditing.value = true;
+    
+    // Deep copy to avoid reference issues
+    const productCopy = JSON.parse(JSON.stringify(product));
+    
     currentProduct.value = {
-      ...product,
-      selectedUnits: Object.keys(product.unitPricing || {}),
-      unitPricing: { ...product.unitPricing }
+      ...productCopy,
+      selectedUnits: Object.keys(productCopy.unitPricing || {}),
+      unitPricing: { ...productCopy.unitPricing }
     };
-    originalProduct.value = { ...product };
+    
+    // Store original product with deep copy to prevent reference issues
+    originalProduct.value = JSON.parse(JSON.stringify(product));
+    
+    console.log('📝 EDIT MODAL OPENED:');
+    console.log('Original product data:', originalProduct.value);
+    console.log('Current form data:', currentProduct.value);
+    
     showModal.value = true;
   };
 
@@ -996,6 +1060,26 @@ try {
     
     showPriceHistoryModal.value = true;
     await fetchPriceHistory(product.id);
+  };
+
+  const openNotificationModal = (product) => {
+    notificationProduct.value = product;
+    // Get the current pricing for all units
+    const units = Object.keys(product.unitPricing || {});
+    if (units.length > 0) {
+      // For simplicity, use the first unit's pricing for the modal display
+      const firstUnit = units[0];
+      const pricing = product.unitPricing[firstUnit];
+      notificationOldPrice.value = { ...pricing }; // This will show current as "old" in the preview
+    }
+    
+    // Reset notification settings
+    notificationSettings.value = {
+      notifySellers: true,
+      notifyCustomers: false
+    };
+    notificationMessage.value = '';
+    showNotificationModal.value = true;
   };
 
   const closeModal = () => {
@@ -1142,6 +1226,11 @@ try {
       if (!currentProduct.value.unitPricing[unit]) {
         // Use Vue's reactive assignment to ensure reactivity
         currentProduct.value.unitPricing[unit] = {
+          oldMinPrice: 0,
+          oldMaxPrice: 0,
+          newMinPrice: 0,
+          newMaxPrice: 0,
+          // Keep legacy fields for backward compatibility during transition
           minPrice: 0,
           maxPrice: 0
         };
@@ -1183,17 +1272,17 @@ try {
     for (const unit of currentProduct.value.selectedUnits) {
       const pricing = currentProduct.value.unitPricing[unit];
       
-      if (!pricing || pricing.minPrice <= 0) {
+      if (!pricing || pricing.newMinPrice <= 0) {
         showNotification(`Minimum price for ${unit} must be greater than zero`, 'error');
         return false;
       }
       
-      if (!pricing || pricing.maxPrice <= 0) {
+      if (!pricing || pricing.newMaxPrice <= 0) {
         showNotification(`Maximum price for ${unit} must be greater than zero`, 'error');
         return false;
       }
       
-      if (pricing.minPrice > pricing.maxPrice) {
+      if (pricing.newMinPrice > pricing.newMaxPrice) {
         showNotification(`Minimum price cannot be greater than maximum price for ${unit}`, 'error');
         return false;
       }
@@ -1251,10 +1340,66 @@ try {
     isSaving.value = true;
     
     try {
+      // Apply the SAME working logic from saveEdit to the modal
+      const transformedUnitPricing = {};
+      
+      if (isEditing.value && originalProduct.value && originalProduct.value.unitPricing) {
+        // EDITING: Use the exact same price rolling logic as saveEdit
+        console.log('🔍 DEBUGGING MODAL PRICE ROLLING:');
+        console.log('Original product unitPricing:', originalProduct.value.unitPricing);
+        console.log('Current form unitPricing:', currentProduct.value.unitPricing);
+        
+        for (const [unit, pricing] of Object.entries(currentProduct.value.unitPricing)) {
+          const originalUnitPricing = originalProduct.value.unitPricing[unit] || {};
+          
+          console.log(`\n🔧 Processing unit: ${unit}`);
+          console.log('Original unit pricing:', originalUnitPricing);
+          console.log('Form unit pricing:', pricing);
+          
+          // Get the current NEW prices from database (these will become OLD prices)
+          const currentNewMin = Number(originalUnitPricing.newMinPrice || originalUnitPricing.minPrice || 0);
+          const currentNewMax = Number(originalUnitPricing.newMaxPrice || originalUnitPricing.maxPrice || 0);
+          
+          // Get the new values from the modal form
+          const newMin = Number(pricing.newMinPrice ?? pricing.minPrice ?? 0);
+          const newMax = Number(pricing.newMaxPrice ?? pricing.maxPrice ?? 0);
+          
+          console.log('📊 Price calculation:');
+          console.log(`  Database newMinPrice: ${originalUnitPricing.newMinPrice}`);
+          console.log(`  Database newMaxPrice: ${originalUnitPricing.newMaxPrice}`);
+          console.log(`  Calculated currentNewMin: ${currentNewMin} (will become oldMinPrice)`);
+          console.log(`  Calculated currentNewMax: ${currentNewMax} (will become oldMaxPrice)`);
+          console.log(`  Form newMin: ${newMin} (will become newMinPrice)`);
+          console.log(`  Form newMax: ${newMax} (will become newMaxPrice)`);
+          
+          // Apply the EXACT SAME logic as saveEdit
+          transformedUnitPricing[unit] = {
+            oldMinPrice: currentNewMin,  // Current newMinPrice becomes oldMinPrice
+            oldMaxPrice: currentNewMax,  // Current newMaxPrice becomes oldMaxPrice
+            newMinPrice: newMin,         // Form values become new prices
+            newMaxPrice: newMax
+          };
+          
+          console.log('✅ Final transformation result:', transformedUnitPricing[unit]);
+        }
+      } else {
+        // NEW PRODUCT: No price rolling needed
+        for (const [unit, pricing] of Object.entries(currentProduct.value.unitPricing)) {
+          transformedUnitPricing[unit] = {
+            oldMinPrice: 0,
+            oldMaxPrice: 0,
+            newMinPrice: Number(pricing.newMinPrice ?? pricing.minPrice ?? 0),
+            newMaxPrice: Number(pricing.newMaxPrice ?? pricing.maxPrice ?? 0)
+          };
+          
+          console.log('➕ NEW PRODUCT pricing for unit:', unit, transformedUnitPricing[unit]);
+        }
+      }
+      
       const productData = {
         productName: currentProduct.value.productName.trim(),
         category: currentProduct.value.category,
-        unitPricing: { ...currentProduct.value.unitPricing },
+        unitPricing: transformedUnitPricing,
         variety: currentProduct.value.variety?.trim() || '',
         updatedAt: serverTimestamp()
       };
@@ -1262,18 +1407,45 @@ try {
       if (isEditing.value && currentProduct.value.id) {
         // Update existing product
         console.log('Updating existing product with ID:', currentProduct.value.id);
-        await updateDoc(doc(db, 'productPrices', currentProduct.value.id), productData);
+  await updateDoc(doc(db, 'productPrices', currentProduct.value.id), productData);
         
-        // Record price history for each unit that changed
+        // Record price history for each unit that changed AND send notifications for modal updates
         if (originalProduct.value && originalProduct.value.unitPricing) {
-          for (const [unit, newPricing] of Object.entries(currentProduct.value.unitPricing)) {
+          for (const [unit, newPricing] of Object.entries(transformedUnitPricing)) {
             const oldPricing = originalProduct.value.unitPricing[unit];
             
-            // Check if prices actually changed
-            if (!oldPricing || 
-                oldPricing.minPrice !== newPricing.minPrice || 
-                oldPricing.maxPrice !== newPricing.maxPrice) {
-              await recordPriceHistory(currentProduct.value.id, unit, oldPricing, newPricing, 'update');
+            // Check if prices actually changed (compare against legacy fields for backward compatibility)
+            const oldMin = oldPricing?.newMinPrice ?? oldPricing?.minPrice ?? 0;
+            const oldMax = oldPricing?.newMaxPrice ?? oldPricing?.maxPrice ?? 0;
+            const newMin = newPricing.newMinPrice ?? 0;
+            const newMax = newPricing.newMaxPrice ?? 0;
+            
+            // Always send notifications for modal updates, regardless of price changes
+            console.log('🔔 Sending notifications for modal update:', {
+              product: currentProduct.value.productName,
+              unit: unit,
+              oldMin: oldMin,
+              newMin: newMin,
+              oldMax: oldMax,
+              newMax: newMax,
+              modalUpdate: true
+            });
+            
+            // Create normalized pricing objects for history and notifications
+            const normalizedOldPricing = {
+              minPrice: oldMin,
+              maxPrice: oldMax
+            };
+            const normalizedNewPricing = { minPrice: newMin, maxPrice: newMax };
+            
+            // Send notifications for both min and max prices when updating via modal
+            console.log('� Sending min price notification from modal...');
+            await sendCombinedPriceUpdateNotification(currentProduct.value, unit, normalizedOldPricing, normalizedNewPricing);
+
+            
+            // Only record price history if prices actually changed
+            if (!oldPricing || oldMin !== newMin || oldMax !== newMax) {
+              await recordPriceHistory(currentProduct.value.id, unit, normalizedOldPricing, normalizedNewPricing, 'update');
             }
           }
         }
@@ -1293,7 +1465,16 @@ try {
         
         // Record initial price history for all units
         for (const [unit, pricing] of Object.entries(currentProduct.value.unitPricing)) {
-          await recordPriceHistory(docRef.id, unit, null, pricing, 'create');
+          // Create normalized pricing object for history (new products don't have "old" prices)
+          const normalizedPricing = {
+            minPrice: pricing.newMinPrice || 0,
+            maxPrice: pricing.newMaxPrice || 0
+          };
+          
+          await recordPriceHistory(docRef.id, unit, null, normalizedPricing, 'create');
+          
+          // Send notifications for new product pricing
+          await sendNewProductNotifications(currentProduct.value, unit, normalizedPricing);
         }
         
         // Update local state
@@ -1348,17 +1529,22 @@ try {
       return;
     }
     
-    // Additional safety check for the specific field
-    if (product.unitPricing[unit][field] === undefined || product.unitPricing[unit][field] === null) {
-      showNotification(`${field === 'minPrice' ? 'Minimum' : 'Maximum'} price data not available for ${unit}`, 'error');
-      return;
+    // Compute an initial value with fallback for legacy schema
+    const unitPricing = product.unitPricing[unit];
+    let initial = unitPricing[field];
+    if (initial === undefined || initial === null) {
+      if (field === 'newMinPrice') initial = unitPricing.minPrice ?? 0;
+      else if (field === 'newMaxPrice') initial = unitPricing.maxPrice ?? 0;
+      else if (field === 'minPrice') initial = unitPricing.newMinPrice ?? unitPricing.minPrice ?? 0;
+      else if (field === 'maxPrice') initial = unitPricing.newMaxPrice ?? unitPricing.maxPrice ?? 0;
+      else initial = 0;
     }
     
     editingCell.value = {
       id: product.id,
       field,
       unit,
-      value: product.unitPricing[unit][field] || 0
+      value: Number(initial) || 0
     };
     
     // Focus the input after it's rendered
@@ -1394,25 +1580,52 @@ try {
     
     // Additional validation for min/max price relationship
     const currentUnitPricing = product.unitPricing[unit];
-    if (field === 'minPrice' && newValue > (currentUnitPricing.maxPrice || 0)) {
+    if (field === 'newMinPrice' && newValue > (currentUnitPricing.newMaxPrice || currentUnitPricing.maxPrice || 0)) {
       showNotification(`Minimum price cannot be greater than maximum price for ${unit}`, 'error');
       editingCell.value = { id: null, field: null, unit: null, value: null };
       return;
     }
     
-    if (field === 'maxPrice' && newValue < (currentUnitPricing.minPrice || 0)) {
+    if (field === 'newMaxPrice' && newValue < (currentUnitPricing.newMinPrice || currentUnitPricing.minPrice || 0)) {
       showNotification(`Maximum price cannot be less than minimum price for ${unit}`, 'error');
       editingCell.value = { id: null, field: null, unit: null, value: null };
       return;
     }
     
+    // Handle legacy field names for backward compatibility
+    if (field === 'minPrice') field = 'newMinPrice';
+    if (field === 'maxPrice') field = 'newMaxPrice';
+    
     try {
+      // Before updating, move current value to old if this is the first update
+      const updateData = { updatedAt: serverTimestamp() };
+      
+      if (field === 'newMinPrice') {
+        const currentValue = currentUnitPricing.newMinPrice || currentUnitPricing.minPrice || 0;
+        console.log('🔄 Min price update:', {
+          field,
+          currentValue,
+          newValue,
+          currentUnitPricing: currentUnitPricing
+        });
+        updateData[`unitPricing.${unit}.oldMinPrice`] = currentValue;
+        updateData[`unitPricing.${unit}.newMinPrice`] = newValue;
+      }
+      
+      if (field === 'newMaxPrice') {
+        const currentValue = currentUnitPricing.newMaxPrice || currentUnitPricing.maxPrice || 0;
+        console.log('🔄 Max price update:', {
+          field,
+          currentValue,
+          newValue,
+          currentUnitPricing: currentUnitPricing
+        });
+        updateData[`unitPricing.${unit}.oldMaxPrice`] = currentValue;
+        updateData[`unitPricing.${unit}.newMaxPrice`] = newValue;
+      }
+      
       // Update in Firestore
-      const updatePath = `unitPricing.${unit}.${field}`;
-      await updateDoc(doc(db, 'productPrices', product.id), {
-        [updatePath]: newValue,
-        updatedAt: serverTimestamp()
-      });
+      await updateDoc(doc(db, 'productPrices', product.id), updateData);
       
       // Update local state
       const index = products.value.findIndex(p => p.id === product.id);
@@ -1422,16 +1635,50 @@ try {
           products.value[index].unitPricing = {};
         }
         if (!products.value[index].unitPricing[unit]) {
-          products.value[index].unitPricing[unit] = { minPrice: 0, maxPrice: 0 };
+          products.value[index].unitPricing[unit] = { 
+            oldMinPrice: 0, oldMaxPrice: 0, 
+            newMinPrice: 0, newMaxPrice: 0
+          };
         }
-        products.value[index].unitPricing[unit][field] = newValue;
+        
+        if (field === 'newMinPrice') {
+          products.value[index].unitPricing[unit].oldMinPrice = currentUnitPricing.newMinPrice || currentUnitPricing.minPrice || 0;
+          products.value[index].unitPricing[unit].newMinPrice = newValue;
+        }
+        
+        if (field === 'newMaxPrice') {
+          products.value[index].unitPricing[unit].oldMaxPrice = currentUnitPricing.newMaxPrice || currentUnitPricing.maxPrice || 0;
+          products.value[index].unitPricing[unit].newMaxPrice = newValue;
+        }
       }
       
-      // Record price history - create new pricing object with updated value
-      const newPricing = { ...oldPricing, [field]: newValue };
+      // Create pricing objects for history and notifications
+      const oldPricing = {
+        minPrice: currentUnitPricing.newMinPrice || currentUnitPricing.minPrice || 0,
+        maxPrice: currentUnitPricing.newMaxPrice || currentUnitPricing.maxPrice || 0
+      };
+      
+      const newPricing = { ...oldPricing };
+      if (field === 'newMinPrice') newPricing.minPrice = newValue;
+      if (field === 'newMaxPrice') newPricing.maxPrice = newValue;
+      
+      // Record price history
       await recordPriceHistory(product.id, unit, oldPricing, newPricing, 'update');
       
-      showNotification(`Product ${field === 'minPrice' ? 'minimum' : 'maximum'} price updated for ${unit}`);
+      // Automatically send price update notifications to all sellers/farmers
+      const notificationField = field === 'newMinPrice' ? 'minPrice' : 'maxPrice';
+      console.log('🔔 About to send notifications from saveEdit:', {
+        product: product.productName,
+        unit: unit,
+        field: field,
+        notificationField: notificationField,
+        oldPricing: oldPricing,
+        newPricing: newPricing
+      });
+      
+      await sendAutomaticPriceUpdateNotifications(product, unit, oldPricing, newPricing, notificationField);
+      
+      showNotification(`Product ${field === 'newMinPrice' ? 'minimum' : 'maximum'} price updated for ${unit}`);
     } catch (error) {
       console.error('Error updating product:', error);
       showNotification('Failed to update price', 'error');
@@ -1439,6 +1686,701 @@ try {
       editingCell.value = { id: null, field: null, unit: null, value: null };
     }
   };
+  // Automatically send price update notifications to all sellers/farmers
+  const sendAutomaticPriceUpdateNotifications = async (product, unit, oldPricing, newPricing, field) => {
+    try {
+      console.log('🔔 Starting automatic notification process...', {
+        product: product.productName,
+        unit: unit,
+        field: field,
+        oldPricing: oldPricing,
+        newPricing: newPricing
+      });
+
+      // Get all sellers/farmers from the users collection
+      const sellersQuery = query(collection(db, 'users'), where('role', '==', 'seller'));
+      const sellersSnapshot = await getDocs(sellersQuery);
+      
+      console.log(`📊 Found ${sellersSnapshot.docs.length} sellers in database`);
+      
+      if (sellersSnapshot.docs.length === 0) {
+        console.warn('⚠️ No sellers found in users collection. Checking for different role names...');
+        
+        // Try alternative queries for different role naming
+        const alternativeQueries = [
+          query(collection(db, 'users'), where('role', '==', 'farmer')),
+          query(collection(db, 'users'), where('userType', '==', 'seller')),
+          query(collection(db, 'users'), where('userType', '==', 'farmer'))
+        ];
+        
+        for (const altQuery of alternativeQueries) {
+          const altSnapshot = await getDocs(altQuery);
+          console.log(`🔍 Alternative query found ${altSnapshot.docs.length} users`);
+          if (altSnapshot.docs.length > 0) {
+            // Use the first successful alternative query
+            sellersSnapshot.docs = altSnapshot.docs;
+            break;
+          }
+        }
+      }
+      
+      // If still no users found, log all users for debugging
+      if (sellersSnapshot.docs.length === 0) {
+        console.log('🔍 No users found with any seller/farmer role. Checking all users...');
+        const allUsersSnapshot = await getDocs(collection(db, 'users'));
+        console.log(`📋 Total users in database: ${allUsersSnapshot.docs.length}`);
+        allUsersSnapshot.docs.slice(0, 3).forEach((doc, index) => {
+          console.log(`👤 User ${index + 1}:`, {
+            id: doc.id,
+            data: doc.data()
+          });
+        });
+      }
+
+      // Prepare the notification message similar to your example
+      const priceType = field === 'minPrice' ? 'Min Price' : 'Max Price';
+      const oldPrice = oldPricing[field] || 0;
+      const newPrice = newPricing[field] || 0;
+      const priceChangeDirection = newPrice > oldPrice ? 'increased' : 'decreased';
+      
+      // Create notification message that clearly informs sellers about the price update
+      const notificationTitle = 'Product Price Update Notice';
+      const priceChangeText = oldPrice !== newPrice ? 
+        `updated from ₱${oldPrice.toFixed(2)} to ₱${newPrice.toFixed(2)}` : 
+        `confirmed at ₱${newPrice.toFixed(2)}`;
+      const notificationMessage = `🔔 PRICE UPDATE: "${product.productName}" ${priceType.toLowerCase()} has been ${priceChangeText} per ${unit}. This is the current D.A. reference price. Please review your price within 48 hours to avoid flags.`;
+      
+      // Create the base notification object
+      const baseNotification = {
+        type: 'price_update',
+        category: 'price-update',
+        productId: product.id,
+        productName: product.productName,
+        productCategory: product.category,
+        unit: unit,
+        title: notificationTitle,
+        message: notificationMessage,
+        priceDetails: {
+          unit: unit,
+          priceType: priceType,
+          oldPrice: oldPrice,
+          newPrice: newPrice,
+          priceChangeDirection: priceChangeDirection,
+          minPrice: newPricing.minPrice || 0,
+          maxPrice: newPricing.maxPrice || 0
+        },
+        createdAt: serverTimestamp(),
+        timestamp: serverTimestamp(),
+        read: false,
+        sentBy: 'admin',
+        source: 'price_management'
+      };
+      
+      // Send notification to each seller/farmer
+      const notificationPromises = sellersSnapshot.docs.map(async (sellerDoc, index) => {
+        const sellerData = sellerDoc.data();
+        const sellerId = sellerData.userId || sellerData.uid || sellerDoc.id;
+        
+        console.log(`📧 Creating notification ${index + 1} for seller:`, {
+          sellerId: sellerId,
+          sellerEmail: sellerData.email,
+          sellerName: sellerData.name || sellerData.displayName
+        });
+        
+        const sellerNotification = {
+          ...baseNotification,
+          userId: sellerId,
+          sellerId: sellerId,
+          recipientType: 'seller'
+        };
+        
+        return addDoc(collection(db, 'notifications'), sellerNotification);
+      });
+      
+      // Execute all notification creations
+      const results = await Promise.all(notificationPromises);
+      
+      console.log(`✅ Price update notifications sent to ${sellersSnapshot.docs.length} sellers for ${product.productName} (${unit})`);
+      console.log(`📧 Notification details:`, {
+        productName: product.productName,
+        unit: unit,
+        priceType: priceType,
+        oldPrice: oldPrice,
+        newPrice: newPrice,
+        priceChangeDirection: priceChangeDirection,
+        recipientCount: sellersSnapshot.docs.length,
+        notificationIds: results.map(result => result.id)
+      });
+      
+    } catch (error) {
+      console.error('Error sending automatic price update notifications:', error);
+      // Don't throw the error to avoid disrupting the price update process
+    }
+  };
+
+  // Send notifications for new product pricing
+  const sendNewProductNotifications = async (product, unit, pricing) => {
+    try {
+      // Get all sellers/farmers from the users collection
+      const sellersQuery = query(collection(db, 'users'), where('role', '==', 'seller'));
+      const sellersSnapshot = await getDocs(sellersQuery);
+      
+      // Create notification message for new product
+      const notificationTitle = 'New D.A. price reference';
+      const notificationMessage = `New D.A. price reference for "${product.productName}" has been set. Review the pricing guidelines for your products.`;
+      
+      // Create the base notification object
+      const baseNotification = {
+        type: 'price_update',
+        category: 'new-product',
+        productId: product.id || null,
+        productName: product.productName,
+        productCategory: product.category,
+        unit: unit,
+        title: notificationTitle,
+        message: notificationMessage,
+        priceDetails: {
+          unit: unit,
+          minPrice: pricing.minPrice || 0,
+          maxPrice: pricing.maxPrice || 0,
+          isNewProduct: true
+        },
+        createdAt: serverTimestamp(),
+        timestamp: serverTimestamp(),
+        read: false,
+        sentBy: 'admin',
+        source: 'price_management'
+      };
+      
+      // Send notification to each seller/farmer
+      const notificationPromises = sellersSnapshot.docs.map(async (sellerDoc) => {
+        const sellerData = sellerDoc.data();
+        const sellerId = sellerData.userId || sellerDoc.id;
+        
+        const sellerNotification = {
+          ...baseNotification,
+          userId: sellerId,
+          sellerId: sellerId,
+          recipientType: 'seller'
+        };
+        
+        return addDoc(collection(db, 'notifications'), sellerNotification);
+      });
+      
+      // Execute all notification creations
+      await Promise.all(notificationPromises);
+      
+      console.log(`✅ New product notifications sent to ${sellersSnapshot.docs.length} sellers for ${product.productName} (${unit})`);
+      console.log(`📧 New product notification details:`, {
+        productName: product.productName,
+        unit: unit,
+        minPrice: pricing.minPrice || 0,
+        maxPrice: pricing.maxPrice || 0,
+        recipientCount: sellersSnapshot.docs.length
+      });
+      
+    } catch (error) {
+      console.error('Error sending new product notifications:', error);
+      // Don't throw the error to avoid disrupting the product creation process
+    }
+  };
+
+  // NEW: Combined notification function to avoid redundancy
+  const sendCombinedPriceUpdateNotification = async (product, unit, oldPricing, newPricing) => {
+    try {
+      console.log('🔔 Starting combined notification process...', {
+        product: product.productName,
+        unit: unit,
+        oldPricing: oldPricing,
+        newPricing: newPricing
+      });
+
+      // Get all sellers/farmers from the users collection
+      const sellersQuery = query(collection(db, 'users'), where('role', '==', 'seller'));
+      const sellersSnapshot = await getDocs(sellersQuery);
+      
+      console.log(`📊 Found ${sellersSnapshot.docs.length} sellers in database`);
+      
+      if (sellersSnapshot.docs.length === 0) {
+        console.warn('⚠️ No sellers found in users collection');
+        return;
+      }
+
+      // Determine what prices changed
+      const oldMin = oldPricing.minPrice || 0;
+      const oldMax = oldPricing.maxPrice || 0;
+      const newMin = newPricing.minPrice || 0;
+      const newMax = newPricing.maxPrice || 0;
+      
+      const minChanged = oldMin !== newMin;
+      const maxChanged = oldMax !== newMax;
+      
+      // Create intelligent notification message
+      let notificationMessage = '';
+      let priceDetails = {};
+      
+      if (minChanged && maxChanged) {
+        // Both prices changed
+        notificationMessage = `🔔 PRICE UPDATE: "${product.productName}" min & max prices have been updated from ₱${oldMin.toFixed(2)} to ₱${newMin.toFixed(2)} & ₱${oldMax.toFixed(2)} to ₱${newMax.toFixed(2)} per ${unit}. This is the current D.A. reference price. Please review your prices within 48 hours to avoid flags.`;
+        priceDetails = {
+          updateType: 'both',
+          minPrice: { old: oldMin, new: newMin },
+          maxPrice: { old: oldMax, new: newMax }
+        };
+      } else if (minChanged) {
+        // Only min price changed
+        notificationMessage = `🔔 PRICE UPDATE: "${product.productName}" minimum price has been updated from ₱${oldMin.toFixed(2)} to ₱${newMin.toFixed(2)} per ${unit}. This is the current D.A. reference price. Please review your prices within 48 hours to avoid flags.`;
+        priceDetails = {
+          updateType: 'min_only',
+          minPrice: { old: oldMin, new: newMin },
+          maxPrice: { old: oldMax, new: newMax }
+        };
+      } else if (maxChanged) {
+        // Only max price changed
+        notificationMessage = `🔔 PRICE UPDATE: "${product.productName}" maximum price has been updated from ₱${oldMax.toFixed(2)} to ₱${newMax.toFixed(2)} per ${unit}. This is the current D.A. reference price. Please review your prices within 48 hours to avoid flags.`;
+        priceDetails = {
+          updateType: 'max_only',
+          minPrice: { old: oldMin, new: newMin },
+          maxPrice: { old: oldMax, new: newMax }
+        };
+      } else {
+        // No prices changed (shouldn't happen, but handle gracefully)
+        console.log('🤔 No price changes detected, skipping notification');
+        return;
+      }
+      
+      // Create the base notification object
+      const baseNotification = {
+        type: 'price_update',
+        category: 'price-update',
+        productId: product.id,
+        productName: product.productName,
+        productCategory: product.category,
+        unit: unit,
+        title: 'Product Price Update Notice',
+        message: notificationMessage,
+        priceDetails: {
+          unit: unit,
+          updateType: priceDetails.updateType,
+          minPrice: priceDetails.minPrice,
+          maxPrice: priceDetails.maxPrice,
+          priceChangeDirection: minChanged || maxChanged ? 'updated' : 'no_change'
+        },
+        createdAt: serverTimestamp(),
+        timestamp: serverTimestamp(),
+        read: false,
+        sentBy: 'admin',
+        source: 'price_management'
+      };
+      
+      // Send notification to each seller/farmer
+      const notificationPromises = sellersSnapshot.docs.map(async (sellerDoc, index) => {
+        const sellerData = sellerDoc.data();
+        const sellerId = sellerData.userId || sellerData.uid || sellerDoc.id;
+        
+        console.log(`📧 Creating combined notification ${index + 1} for seller:`, {
+          sellerId: sellerId,
+          sellerEmail: sellerData.email,
+          sellerName: sellerData.name || sellerData.displayName
+        });
+        
+        const sellerNotification = {
+          ...baseNotification,
+          userId: sellerId,
+          sellerId: sellerId,
+          recipientType: 'seller'
+        };
+        
+        return addDoc(collection(db, 'notifications'), sellerNotification);
+      });
+      
+      // Execute all notification creations
+      const results = await Promise.all(notificationPromises);
+      
+      console.log(`✅ Combined price update notification sent to ${sellersSnapshot.docs.length} sellers for ${product.productName} (${unit})`);
+      console.log(`📧 Combined notification details:`, {
+        productName: product.productName,
+        unit: unit,
+        updateType: priceDetails.updateType,
+        oldMin: oldMin,
+        newMin: newMin,
+        oldMax: oldMax,
+        newMax: newMax,
+        recipientCount: sellersSnapshot.docs.length,
+        notificationIds: results.map(result => result.id)
+      });
+      
+    } catch (error) {
+      console.error('Error sending combined price update notification:', error);
+      // Don't throw the error to avoid disrupting the price update process
+    }
+  };
+
+  // ============================================
+  // MAINTENANCE FUNCTIONS (Not exposed in UI)
+  // These functions are available for database maintenance but hidden from regular users
+  // To use: Call from browser console: window.fixEmptyOldPrices() or window.cleanupLegacyPriceFields()
+  // ============================================
+
+  // Function to fix empty old price values in existing products
+  const fixEmptyOldPrices = async () => {
+    try {
+      console.log('🔧 Starting to fix empty old price values...');
+      
+      const snapshot = await getDocs(collection(db, 'productPrices'));
+      console.log(`📊 Found ${snapshot.docs.length} products to check`);
+      
+      let fixedCount = 0;
+      
+      for (const docSnapshot of snapshot.docs) {
+        const data = docSnapshot.data();
+        if (data.unitPricing) {
+          let needsUpdate = false;
+          const updateData = {};
+          
+          // Check each unit in unitPricing
+          for (const [unit, pricing] of Object.entries(data.unitPricing)) {
+            let unitNeedsUpdate = false;
+            
+            // Fix empty oldMinPrice
+            if (pricing.oldMinPrice === "" || pricing.oldMinPrice === null || pricing.oldMinPrice === undefined) {
+              const fallbackValue = pricing.newMinPrice || pricing.minPrice || 0;
+              updateData[`unitPricing.${unit}.oldMinPrice`] = Number(fallbackValue);
+              unitNeedsUpdate = true;
+              console.log(`🔧 Fixing oldMinPrice for ${data.productName} - ${unit}: ${fallbackValue}`);
+            }
+            
+            // Fix empty oldMaxPrice
+            if (pricing.oldMaxPrice === "" || pricing.oldMaxPrice === null || pricing.oldMaxPrice === undefined) {
+              const fallbackValue = pricing.newMaxPrice || pricing.maxPrice || 0;
+              updateData[`unitPricing.${unit}.oldMaxPrice`] = Number(fallbackValue);
+              unitNeedsUpdate = true;
+              console.log(`🔧 Fixing oldMaxPrice for ${data.productName} - ${unit}: ${fallbackValue}`);
+            }
+            
+            if (unitNeedsUpdate) {
+              needsUpdate = true;
+            }
+          }
+          
+          if (needsUpdate) {
+            await updateDoc(doc(db, 'productPrices', docSnapshot.id), updateData);
+            fixedCount++;
+            console.log(`✅ Fixed empty old prices for ${data.productName} (${docSnapshot.id})`);
+          }
+        }
+      }
+      
+      console.log(`🎉 Fix complete! Updated ${fixedCount} products`);
+      alert(`Fix complete! Updated empty old prices for ${fixedCount} products.`);
+      
+      // Refresh the products list
+      await fetchProducts();
+      
+    } catch (error) {
+      console.error('❌ Error fixing empty old prices:', error);
+      alert('Error fixing empty old prices: ' + error.message);
+    }
+  };
+
+  // Function to clean up legacy price fields from all products
+  const cleanupLegacyPriceFields = async () => {
+    try {
+      console.log('🧹 Starting cleanup of legacy price fields (minPrice, maxPrice)...');
+      
+      const snapshot = await getDocs(collection(db, 'productPrices'));
+      console.log(`📊 Found ${snapshot.docs.length} products to check`);
+      
+      let updatedCount = 0;
+      
+      for (const docSnapshot of snapshot.docs) {
+        const data = docSnapshot.data();
+        if (data.unitPricing) {
+          let needsUpdate = false;
+          const updateData = {};
+          
+          // Check each unit in unitPricing
+          for (const [unit, pricing] of Object.entries(data.unitPricing)) {
+            if (pricing.minPrice !== undefined || pricing.maxPrice !== undefined) {
+              needsUpdate = true;
+              console.log(`🔧 Removing legacy fields from ${data.productName} - ${unit}`);
+              
+              // Use deleteField to remove the legacy fields
+              updateData[`unitPricing.${unit}.minPrice`] = deleteField();
+              updateData[`unitPricing.${unit}.maxPrice`] = deleteField();
+            }
+          }
+          
+          if (needsUpdate) {
+            await updateDoc(doc(db, 'productPrices', docSnapshot.id), updateData);
+            updatedCount++;
+            console.log(`✅ Updated ${data.productName} (${docSnapshot.id})`);
+          }
+        }
+      }
+      
+      console.log(`🎉 Cleanup complete! Updated ${updatedCount} products`);
+      alert(`Cleanup complete! Removed legacy fields from ${updatedCount} products.`);
+      
+    } catch (error) {
+      console.error('❌ Error during cleanup:', error);
+      alert('Error during cleanup: ' + error.message);
+    }
+  };
+
+  // Test function for debugging notifications - can be called from browser console
+  const testNotificationSystem = async () => {
+    try {
+      console.log('🧪 Testing notification system...');
+      
+      // First, let's check what users exist
+      console.log('👥 Checking users in database...');
+      const allUsersSnapshot = await getDocs(collection(db, 'users'));
+      console.log(`📊 Found ${allUsersSnapshot.docs.length} total users`);
+      
+      // Log first few users for inspection
+      allUsersSnapshot.docs.slice(0, 5).forEach((doc, index) => {
+        const userData = doc.data();
+        console.log(`👤 User ${index + 1}:`, {
+          id: doc.id,
+          email: userData.email,
+          role: userData.role,
+          userType: userData.userType,
+          name: userData.name || userData.displayName
+        });
+      });
+      
+      // Check sellers specifically
+      const sellersQuery = query(collection(db, 'users'), where('role', '==', 'seller'));
+      const sellersSnapshot = await getDocs(sellersQuery);
+      console.log(`🏪 Found ${sellersSnapshot.docs.length} users with role='seller'`);
+      
+      // Check farmers as alternative
+      const farmersQuery = query(collection(db, 'users'), where('role', '==', 'farmer'));
+      const farmersSnapshot = await getDocs(farmersQuery);
+      console.log(`🚜 Found ${farmersSnapshot.docs.length} users with role='farmer'`);
+      
+      // Get current user for testing
+      const auth = getAuth();
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        console.error('❌ No authenticated user for testing');
+        return;
+      }
+      
+      console.log('🔐 Current user:', {
+        uid: currentUser.uid,
+        email: currentUser.email
+      });
+      
+      // Create a test notification
+      const testNotification = {
+        type: 'price_update',
+        category: 'test',
+        productId: 'test-product-id',
+        productName: 'Test Product',
+        productCategory: 'Test Category',
+        unit: 'kg',
+        title: 'Test D.A. price update notice',
+        message: 'This is a test notification to verify the notification system is working.',
+        priceDetails: {
+          unit: 'kg',
+          priceType: 'Min Price',
+          oldPrice: 10.00,
+          newPrice: 12.00,
+          priceChangeDirection: 'increased',
+          minPrice: 12.00,
+          maxPrice: 15.00
+        },
+        createdAt: serverTimestamp(),
+        timestamp: serverTimestamp(),
+        read: false,
+        sentBy: 'admin',
+        source: 'test'
+      };
+
+      // Send test notification to current user
+      const userNotification = {
+        ...testNotification,
+        userId: currentUser.uid,
+        sellerId: currentUser.uid,
+        recipientType: 'seller'
+      };
+
+      const docRef = await addDoc(collection(db, 'notifications'), userNotification);
+      console.log('✅ Test notification sent successfully! Notification ID:', docRef.id);
+      
+      // Also try to send to all sellers if any exist
+      if (sellersSnapshot.docs.length > 0) {
+        console.log(`📢 Sending test notifications to all ${sellersSnapshot.docs.length} sellers...`);
+        const sellerPromises = sellersSnapshot.docs.map(async (sellerDoc) => {
+          const sellerData = sellerDoc.data();
+          const sellerId = sellerData.userId || sellerData.uid || sellerDoc.id;
+          
+          const sellerNotification = {
+            ...testNotification,
+            userId: sellerId,
+            sellerId: sellerId,
+            recipientType: 'seller',
+            message: `Test notification sent to seller: ${sellerData.email || sellerId}`
+          };
+          
+          return addDoc(collection(db, 'notifications'), sellerNotification);
+        });
+        
+        const results = await Promise.all(sellerPromises);
+        console.log(`✅ Sent ${results.length} test notifications to sellers`);
+      }
+      
+    } catch (error) {
+      console.error('❌ Error testing notification system:', error);
+    }
+  };
+
+  // Make test function available globally for console access
+  if (typeof window !== 'undefined') {
+    window.testNotificationSystem = testNotificationSystem;
+  }
+
+  // Simple function to manually send a notification to all sellers (for testing)
+  const sendTestNotificationToAllSellers = async () => {
+    try {
+      console.log('📢 Sending test notification to all sellers...');
+      
+      // Get all sellers
+      const sellersQuery = query(collection(db, 'users'), where('role', '==', 'seller'));
+      const sellersSnapshot = await getDocs(sellersQuery);
+      
+      if (sellersSnapshot.docs.length === 0) {
+        console.log('⚠️ No sellers found with role="seller"');
+        return;
+      }
+      
+      const testNotification = {
+        type: 'price_update',
+        category: 'manual-test',
+        productId: 'test-product-123',
+        productName: 'Test Product',
+        productCategory: 'Test Category',
+        unit: 'kg',
+        title: 'Manual Test Notification',
+        message: '🧪 This is a manual test notification to verify the automatic notification system is working properly.',
+        priceDetails: {
+          unit: 'kg',
+          priceType: 'Test Price',
+          oldPrice: 15.00,
+          newPrice: 18.00,
+          priceChangeDirection: 'increased',
+          minPrice: 18.00,
+          maxPrice: 22.00
+        },
+        createdAt: serverTimestamp(),
+        timestamp: serverTimestamp(),
+        read: false,
+        sentBy: 'admin',
+        source: 'manual_test'
+      };
+
+      const notificationPromises = sellersSnapshot.docs.map(async (sellerDoc) => {
+        const sellerData = sellerDoc.data();
+        const sellerId = sellerData.userId || sellerData.uid || sellerDoc.id;
+        
+        const sellerNotification = {
+          ...testNotification,
+          userId: sellerId,
+          sellerId: sellerId,
+          recipientType: 'seller'
+        };
+        
+        return addDoc(collection(db, 'notifications'), sellerNotification);
+      });
+      
+      const results = await Promise.all(notificationPromises);
+      console.log(`✅ Sent ${results.length} test notifications to sellers successfully!`);
+      
+    } catch (error) {
+      console.error('❌ Error sending test notifications:', error);
+    }
+  };
+
+  // Test function to verify old price rolling logic
+  const testPriceRollingLogic = async () => {
+    try {
+      console.log('🧪 Testing price rolling logic...');
+      
+      if (products.value.length === 0) {
+        console.log('❌ No products found for testing');
+        return;
+      }
+      
+      const testProduct = products.value[0];
+      const testUnit = Object.keys(testProduct.unitPricing || {})[0] || 'kg';
+      
+      console.log(`📊 Testing with product: ${testProduct.productName}, unit: ${testUnit}`);
+      
+      // Get current pricing
+      const currentPricing = testProduct.unitPricing?.[testUnit] || {};
+      console.log('💰 Current pricing:', currentPricing);
+      
+      // Simulate price update - this should demonstrate the old price rolling
+      const newMin = 25;
+      const newMax = 35;
+      
+      console.log(`🔄 Simulating price update: ${newMin} - ${newMax}`);
+      console.log(`📋 Expected behavior:`);
+      console.log(`   - oldMinPrice should become: ${currentPricing.newMinPrice || currentPricing.minPrice || 0}`);
+      console.log(`   - oldMaxPrice should become: ${currentPricing.newMaxPrice || currentPricing.maxPrice || 0}`);
+      console.log(`   - newMinPrice should become: ${newMin}`);
+      console.log(`   - newMaxPrice should become: ${newMax}`);
+      
+      // Test the inline edit logic (saveEdit function)
+      await saveEdit(testProduct, testUnit, 'newMinPrice', newMin);
+      console.log('✅ Min price update completed');
+      
+      await saveEdit(testProduct, testUnit, 'newMaxPrice', newMax);
+      console.log('✅ Max price update completed');
+      
+      // Refresh product data to see the result
+      await fetchProducts();
+      const updatedProduct = products.value.find(p => p.id === testProduct.id);
+      const updatedPricing = updatedProduct?.unitPricing?.[testUnit];
+      
+      console.log('📊 Updated pricing result:', updatedPricing);
+      console.log('🎉 Price rolling test completed!');
+      
+    } catch (error) {
+      console.error('❌ Error in price rolling test:', error);
+    }
+  };
+
+  // Make manual test function available globally
+  if (typeof window !== 'undefined') {
+    window.sendTestNotificationToAllSellers = sendTestNotificationToAllSellers;
+    window.testPriceRollingLogic = testPriceRollingLogic;
+    window.fixEmptyOldPrices = fixEmptyOldPrices; // Maintenance function for fixing empty old prices
+    window.cleanupLegacyPriceFields = cleanupLegacyPriceFields; // Maintenance function for cleaning legacy fields
+    window.testModalUpdateNotification = () => {
+      console.log('🧪 Testing modal update notification...');
+      if (products.value.length > 0) {
+        const testProduct = products.value[0];
+        console.log('📤 Simulating modal update for product:', testProduct.productName);
+        
+        // Simulate a modal update notification
+        const testUnit = Object.keys(testProduct.unitPricing || {})[0] || 'kg';
+        const testPricing = testProduct.unitPricing?.[testUnit] || { minPrice: 15, maxPrice: 20 };
+        
+        sendAutomaticPriceUpdateNotifications(
+          testProduct, 
+          testUnit, 
+          { minPrice: testPricing.minPrice || 15, maxPrice: testPricing.maxPrice || 20 }, 
+          { minPrice: testPricing.minPrice || 15, maxPrice: testPricing.maxPrice || 20 }, 
+          'minPrice'
+        );
+      } else {
+        console.log('❌ No products found for testing');
+      }
+    };
+  }
 
   const sendPriceUpdateNotification = async () => {
     if (!notificationProduct.value) return;
@@ -1446,72 +2388,105 @@ try {
     isSendingNotification.value = true;
     
     try {
-      // Standardized notification schema
-      const baseNotification = {
-        type: 'price_update',
-        productId: notificationProduct.value.id,
-        productName: notificationProduct.value.productName,
-        category: notificationProduct.value.category,
-        oldMinPrice: notificationOldPrice.value.minPrice,
-        newMinPrice: notificationProduct.value.minPrice,
-        oldMaxPrice: notificationOldPrice.value.maxPrice,
-        newMaxPrice: notificationProduct.value.maxPrice,
-        title: 'D.A. Price Updated',
-        message: notificationMessage.value || `D.A. price reference updated for ${notificationProduct.value.productName}`,
-        // Use createdAt to align with seller Notifications.vue
-        createdAt: serverTimestamp(),
-        // Keep timestamp for backward compatibility with other widgets
-        timestamp: serverTimestamp(),
-        read: false,
-        sentBy: 'admin'
-      };
+      // Get all units for this product
+      const units = Object.keys(notificationProduct.value.unitPricing || {});
       
-      // Send notifications to sellers if enabled
-      if (notificationSettings.value.notifySellers) {
-        // Get all sellers who might have this product
-        const sellersSnapshot = await getDocs(collection(db, 'sellers'));
-        const sellerNotifications = sellersSnapshot.docs.map(sellerDoc => {
-          const sellerData = sellerDoc.data() || {};
-          // Prefer the auth userId stored on the seller profile; fall back to doc id
-          const targetSellerId = sellerData.userId || sellerDoc.id;
-          return {
-            ...baseNotification,
-            sellerId: targetSellerId,
-            recipientType: 'seller'
-          };
-        });
+      for (const unit of units) {
+        const pricing = notificationProduct.value.unitPricing[unit];
         
-        // Add notifications for all sellers
-        for (const notification of sellerNotifications) {
-          await addDoc(collection(db, 'notifications'), notification);
-        }
-      }
-      
-      // Send notifications to customers if enabled
-      if (notificationSettings.value.notifyCustomers) {
-        // Get customers who have this product in favorites or recent orders
-        const customersSnapshot = await getDocs(collection(db, 'customers'));
-        const customerNotifications = [];
+        // Create notification message similar to your example
+        const notificationTitle = 'D.A. price update notice';
+        const customMessage = notificationMessage.value?.trim();
+        const defaultMessage = `"${notificationProduct.value.productName}" price reference has been updated. Please review your price within 48 hours to avoid flags.`;
+        const finalMessage = customMessage || defaultMessage;
         
-        for (const customerDoc of customersSnapshot.docs) {
-          const customerData = customerDoc.data();
-          // Check if customer has this product in favorites or recent orders
-          if (customerData.favoriteProducts?.includes(notificationProduct.value.id) ||
-              customerData.recentOrders?.some(order => 
-                order.items?.some(item => item.productId === notificationProduct.value.id)
-              )) {
-            customerNotifications.push({
-              ...baseNotification,
-              customerId: customerDoc.id,
-              recipientType: 'customer',
-              title: 'Price Update Alert'
-            });
+        // Create the base notification object
+        const baseNotification = {
+          type: 'price_update',
+          category: 'price-update',
+          productId: notificationProduct.value.id,
+          productName: notificationProduct.value.productName,
+          productCategory: notificationProduct.value.category,
+          unit: unit,
+          title: notificationTitle,
+          message: finalMessage,
+          priceDetails: {
+            unit: unit,
+            minPrice: pricing.minPrice || 0,
+            maxPrice: pricing.maxPrice || 0,
+            isManualNotification: true
+          },
+          timestamp: serverTimestamp(),
+          read: false,
+          sentBy: 'admin',
+          source: 'manual_notification'
+        };
+        
+        // Send notifications to sellers if enabled
+        if (notificationSettings.value.notifySellers) {
+          console.log('Sending notifications to sellers...');
+          
+          // Get all sellers/farmers from the users collection
+          const sellersQuery = query(collection(db, 'users'), where('role', '==', 'seller'));
+          const sellersSnapshot = await getDocs(sellersQuery);
+          
+          console.log(`Found ${sellersSnapshot.docs.length} sellers`);
+          
+          if (sellersSnapshot.empty) {
+            console.log('No sellers found in the database');
+            throw new Error('No sellers found to notify');
           }
+          
+          // Send notification to each seller/farmer
+          const sellerNotificationPromises = sellersSnapshot.docs.map(async (sellerDoc) => {
+            const sellerData = sellerDoc.data();
+            const sellerId = sellerData.userId || sellerDoc.id;
+            
+            console.log(`Creating notification for seller: ${sellerId}`);
+            
+            const sellerNotification = {
+              ...baseNotification,
+              userId: sellerId,
+              sellerId: sellerId,
+              recipientType: 'seller'
+            };
+            
+            return addDoc(collection(db, 'notifications'), sellerNotification);
+          });
+          
+          await Promise.all(sellerNotificationPromises);
+          console.log(`Successfully sent notifications to ${sellersSnapshot.docs.length} sellers for ${unit}`);
         }
         
-        // Add notifications for relevant customers
-        for (const notification of customerNotifications) {
-          await addDoc(collection(db, 'notifications'), notification);
+        // Send notifications to customers if enabled
+        if (notificationSettings.value.notifyCustomers) {
+          console.log('Sending notifications to customers...');
+          
+          // Get all customers from users collection
+          const customersQuery = query(collection(db, 'users'), where('role', '==', 'customer'));
+          const customersSnapshot = await getDocs(customersQuery);
+          
+          console.log(`Found ${customersSnapshot.docs.length} customers`);
+          
+          if (!customersSnapshot.empty) {
+            const customerNotificationPromises = customersSnapshot.docs.map(async (customerDoc) => {
+              const customerData = customerDoc.data();
+              const customerId = customerData.userId || customerDoc.id;
+              
+              const customerNotification = {
+                ...baseNotification,
+                userId: customerId,
+                customerId: customerId,
+                recipientType: 'customer',
+                title: 'Price Update Alert'
+              };
+              
+              return addDoc(collection(db, 'notifications'), customerNotification);
+            });
+            
+            await Promise.all(customerNotificationPromises);
+            console.log(`Successfully sent notifications to ${customersSnapshot.docs.length} customers for ${unit}`);
+          }
         }
       }
       
@@ -1520,7 +2495,7 @@ try {
       notificationMessage.value = '';
     } catch (error) {
       console.error('Error sending notifications:', error);
-      showNotification('Failed to send notifications', 'error');
+      showNotification(`Failed to send notifications: ${error.message}`, 'error');
     } finally {
       isSendingNotification.value = false;
     }
@@ -1586,6 +2561,7 @@ try {
     getSelectedUnit,
     updateSelectedUnit,
     getSelectedUnitPricing,
+    formatPrice,
     closeNotification,
     fetchProducts,
     fetchCategories,
@@ -1595,6 +2571,7 @@ try {
     openAddProductModal,
     editProduct,
     openPriceHistoryModal,
+    openNotificationModal,
     closeModal,
     checkForDuplicateProduct,
     updateUnitPricing,
@@ -1606,6 +2583,9 @@ try {
     startEditing,
     saveEdit,
     sendPriceUpdateNotification,
+    sendCombinedPriceUpdateNotification,
+    sendTestNotificationToAllSellers,
+    testPriceRollingLogic,
     setEditInputRef
   };
 }
@@ -1732,6 +2712,12 @@ font-size: 1.75rem;
 font-weight: 700;
 color: #2c3e50;
 margin: 0;
+}
+
+.header-buttons {
+display: flex;
+gap: 0.75rem;
+align-items: center;
 }
 
 .add-btn {
@@ -2023,6 +3009,7 @@ gap: 0.5rem;
 }
 
 .history-btn,
+.notification-btn,
 .edit-btn,
 .delete-btn {
 display: flex;
@@ -2043,6 +3030,15 @@ color: #3b82f6;
 
 .history-btn:hover {
 background-color: #dbeafe;
+}
+
+.notification-btn {
+background-color: #f3f4f6;
+color: #f59e0b;
+}
+
+.notification-btn:hover {
+background-color: #fef3c7;
 }
 
 .edit-btn {
@@ -2548,6 +3544,111 @@ font-size: 0.875rem;
 margin-top: 0.5rem;
 }
 
+/* Notification Preview Styles */
+.notification-preview {
+border: 1px solid #e5e7eb;
+border-radius: 8px;
+padding: 16px;
+background-color: #f9fafb;
+margin-top: 8px;
+}
+
+.preview-header {
+display: flex;
+align-items: flex-start;
+gap: 12px;
+margin-bottom: 8px;
+}
+
+.preview-icon {
+width: 32px;
+height: 32px;
+background-color: #d1fae5;
+color: #059669;
+border-radius: 6px;
+display: flex;
+align-items: center;
+justify-content: center;
+flex-shrink: 0;
+}
+
+.preview-content {
+flex: 1;
+}
+
+.preview-title {
+font-size: 0.95rem;
+font-weight: 600;
+color: #111827;
+margin-bottom: 2px;
+}
+
+.preview-time {
+font-size: 0.8rem;
+color: #6b7280;
+}
+
+.preview-actions {
+display: flex;
+gap: 8px;
+color: #6b7280;
+}
+
+.preview-message {
+font-size: 0.9rem;
+color: #4b5563;
+line-height: 1.4;
+margin-bottom: 12px;
+background-color: white;
+padding: 12px;
+border-radius: 6px;
+border-left: 3px solid #059669;
+}
+
+.preview-pricing {
+background-color: #d1fae5;
+padding: 12px;
+border-radius: 6px;
+}
+
+.price-history-hint {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+.pricing-row {
+display: flex;
+justify-content: space-between;
+align-items: center;
+margin-bottom: 4px;
+}
+
+.pricing-row:last-child {
+margin-bottom: 0;
+}
+
+.pricing-label {
+font-weight: 500;
+color: #111827;
+}
+
+.pricing-range {
+font-weight: 600;
+color: #059669;
+}
+
+.price-unit-row {
+display: flex;
+gap: 12px;
+align-items: center;
+margin-bottom: 8px;
+}
+
+.price-unit-row:last-child {
+margin-bottom: 0;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
 .dashboard-container {
@@ -2602,6 +3703,14 @@ margin-top: 0.5rem;
 .pagination-container {
   flex-direction: column;
   gap: 1rem;
+}
+
+/* Price history hint */
+.price-history-hint {
+  font-size: 0.75rem;
+  color: #6b7280;
+  margin-top: 0.25rem;
+  font-style: italic;
 }
 
 .pagination-controls {

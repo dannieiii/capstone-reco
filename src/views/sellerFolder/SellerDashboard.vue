@@ -566,6 +566,8 @@ align-items: center;
 margin-bottom: 20px;
 padding: 10px 0;
 border-bottom: 1px solid #e5e7eb;
+  position: relative; /* create stacking context */
+  z-index: 2000; /* sit above map and content */
 }
 
 .search-container {
@@ -696,7 +698,7 @@ width: 280px;
 background-color: #fff;
 border-radius: 10px;
 box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-z-index: 100;
+  z-index: 2100; /* above leaflet popups */
 overflow: hidden;
 }
 

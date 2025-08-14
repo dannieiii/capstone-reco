@@ -11,17 +11,27 @@
           </div>
         </div>
         
-        <div class="user-profile" @click="navigateToEditProfile">
-          <div class="notification-icon">
-            <Bell size="20" />
-            <span class="notification-badge">5</span>
+        <div class="header-actions">
+          <!-- Notification System -->
+      <div class="notification-wrapper">
+            <NotificationSystem 
+              ref="notificationSystem" 
+              :userId="currentUserId" 
+              :showAbsoluteTime="true"
+        @notification-count-update="updateNotificationCount"
+        @new-notification="handleNewNotification"
+            />
           </div>
-          <div class="avatar">
-            <UserCircle size="24" class="profile-icon" />
-          </div>
-          <div class="user-info">
-            <h3>{{ adminData ? `${adminData.firstName} ${adminData.lastName}` : 'Loading...' }}</h3>
-            <p>{{ adminData ? adminData.email : 'Loading...' }}</p>
+          
+          <!-- User Profile -->
+          <div class="user-profile" @click="navigateToEditProfile">
+            <div class="avatar">
+              <UserCircle size="24" class="profile-icon" />
+            </div>
+            <div class="user-info">
+              <h3>{{ adminData ? `${adminData.firstName} ${adminData.lastName}` : 'Loading...' }}</h3>
+              <p>{{ adminData ? adminData.email : 'Loading...' }}</p>
+            </div>
           </div>
         </div>
       </header>
@@ -148,16 +158,29 @@
         <!-- Recent Activity -->
         <RecentActivity />
       </div>
+      <!-- Pop-out toast notification -->
+      <Notification 
+        :title="toastTitle"
+        :message="toastMessage" 
+        :timeText="toastTime"
+        :actionText="toastAction"
+        :type="toastType" 
+        :visible="showToast" 
+        :sticky="toastSticky"
+        :duration="toastDuration"
+        :clickable="!!toastLink"
+        @action="handleToastAction"
+        @close="closeToast"
+      />
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useRouter } from 'vue-router';
 import { 
   Search, 
-  Bell, 
   Info, 
   Calendar,
   ChevronDown,
@@ -176,19 +199,36 @@ import RecentActivity from '@/components/admindashboard/RecentActivity.vue';
 import ForecastingOverview from '@/components/admindashboard/ForecastingOverview.vue';
 import OrientalMindoroMap from '@/components/admindashboard/OrientalMindoroMap.vue';
 import TopSellersChart from '@/components/admindashboard/TopSellersChart.vue';
+import NotificationSystem from '@/components/NotificationSystem.vue';
+import Notification from '@/components/Notification.vue';
 import { db } from '@/firebase/firebaseConfig';
-import { collection, getDocs, query, where } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
+import { collection, getDocs, query, where, serverTimestamp, doc, getDoc, setDoc } from "firebase/firestore";
+import { getAuth, onAuthStateChanged } from "firebase/auth";
 
 const auth = getAuth();
 const router = useRouter();
 const adminData = ref(null);
+const currentUserId = ref(null);
+const notificationSystem = ref(null);
+const notificationCount = ref(0);
+const showToast = ref(false);
+const toastMessage = ref('');
+const toastType = ref('info');
+const toastSticky = ref(false);
+const toastDuration = ref(4000);
+const toastTitle = ref('');
+const toastTime = ref('');
+const toastAction = ref('click to view');
+const toastLink = ref('');
+// Track scheduled timeout IDs so we can clear them on unmount
+const reminderTimeouts = [];
 
 const fetchAdminData = async () => {
   try {
     const user = auth.currentUser;
     if (user) {
       const userId = user.uid;
+      currentUserId.value = userId;
       const adminsQuery = query(collection(db, "admins"), where("userId", "==", userId));
       const adminsSnapshot = await getDocs(adminsQuery);
       if (!adminsSnapshot.empty) {
@@ -198,6 +238,118 @@ const fetchAdminData = async () => {
   } catch (error) {
     console.error("Error fetching admin data:", error);
   }
+};
+
+const updateNotificationCount = (count) => {
+  notificationCount.value = count;
+};
+
+// Pop-out toast when a new notification arrives
+const handleNewNotification = (n) => {
+  // Only toast for alerts and messages for admin
+  toastType.value = n.type === 'alert' ? 'info' : 'success';
+  toastTitle.value = n.title || 'Notification';
+  toastMessage.value = n.message || '';
+  // absolute time under it
+  const d = n.timestamp?.toDate ? n.timestamp.toDate() : (n.timestamp ? new Date(n.timestamp) : new Date());
+  const m = d.getMonth() + 1;
+  const day = d.getDate();
+  const yy = String(d.getFullYear()).slice(-2);
+  let h = d.getHours();
+  const mer = h >= 12 ? 'P.M' : 'A.M';
+  h = h % 12 || 12;
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  toastTime.value = `${m}-${day}-${yy} ${h}:${mm}${mer}`;
+  toastAction.value = 'click to view';
+  toastLink.value = n.link || '';
+  // Make price reminders sticky until closed (shows X)
+  toastSticky.value = (n.category === 'price-reminder' || /price/i.test(n.title || ''));
+  toastDuration.value = toastSticky.value ? 0 : 4000;
+  showToast.value = true;
+};
+
+const closeToast = () => {
+  showToast.value = false;
+  toastSticky.value = false;
+};
+
+const handleToastAction = () => {
+  if (toastLink.value) {
+    router.push(toastLink.value);
+    closeToast();
+  }
+};
+
+// Create a price reminder for a specific time slot (idempotent per day/slot)
+const createPriceReminderForSlot = async (slotLabel) => {
+  try {
+    const uid = currentUserId.value;
+    if (!uid) return;
+    const now = new Date();
+    const dateKey = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
+    const docId = `${uid}_${dateKey}_${slotLabel.replace(':','')}_pricereminder`;
+    const nref = doc(db, 'notifications', docId);
+    const exists = await getDoc(nref);
+    if (exists.exists()) {
+      return; // already created for this slot today
+    }
+
+    const title = 'Reminder to Check Product Prices';
+    const message = 'It’s time to review your product prices. Check if you need to increase or decrease based on current market trends.';
+
+    await setDoc(nref, {
+      userId: uid,
+      title,
+      message,
+      type: 'alert',
+      category: 'price-reminder',
+      read: false,
+      timestamp: serverTimestamp(),
+      link: '/admin',
+      scheduleSlot: slotLabel,
+      dateKey
+    });
+    // Force refresh so bell updates immediately
+    try { notificationSystem.value?.refreshNotifications?.(); } catch {}
+  } catch (err) {
+    console.error('Error creating scheduled price reminder:', err);
+  }
+};
+
+// Schedule reminders: 6:00, 9:00, 12:00, 14:00, 17:00 local time
+const scheduleDailyPriceReminders = () => {
+  const slots = [
+    { h: 6, m: 0, label: '06:00' },
+    { h: 9, m: 0, label: '09:00' },
+    { h: 12, m: 0, label: '12:00' },
+    { h: 14, m: 0, label: '14:00' },
+    { h: 17, m: 0, label: '17:00' },
+  ];
+  slots.forEach(({ h, m, label }) => scheduleSlot(h, m, label));
+};
+
+const msUntilNext = (hour, minute) => {
+  const now = new Date();
+  const next = new Date();
+  next.setHours(hour, minute, 0, 0);
+  if (next <= now) {
+    next.setDate(next.getDate() + 1);
+  }
+  return next.getTime() - now.getTime();
+};
+
+const scheduleSlot = (hour, minute, label) => {
+  const delay = msUntilNext(hour, minute);
+  const tid = setTimeout(async () => {
+    try {
+      await createPriceReminderForSlot(label);
+    } finally {
+      // Reschedule same slot for the next day (~24h later)
+      const tid2 = setTimeout(() => scheduleSlot(hour, minute, label), 24 * 60 * 60 * 1000);
+      reminderTimeouts.push(tid2);
+    }
+  }, delay);
+  reminderTimeouts.push(tid);
 };
 
 const currentDate = computed(() => {
@@ -241,9 +393,25 @@ const navigateToEditProfile = () => {
 };
 
 onMounted(async () => {
-  await fetchAdminData();
-  await fetchData();
+  onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      currentUserId.value = user.uid;
+      await fetchAdminData();
+      // Start daily schedule for reminders at fixed times
+      scheduleDailyPriceReminders();
+    }
+    await fetchData();
+  });
 });
+
+onBeforeUnmount(() => {
+  // Clear all scheduled timeouts when leaving this view
+  while (reminderTimeouts.length) {
+    const t = reminderTimeouts.pop();
+    try { clearTimeout(t); } catch {}
+  }
+});
+
 </script>
 
 <style scoped>
@@ -293,6 +461,17 @@ onMounted(async () => {
   font-size: 0.9rem;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.notification-wrapper {
+  display: flex;
+  align-items: center;
+}
+
 .user-profile {
   display: flex;
   align-items: center;
@@ -306,35 +485,6 @@ onMounted(async () => {
 .user-profile:hover {
   background-color: #f3f4f6;
   transform: translateY(-1px);
-}
-
-.notification-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background-color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #6b7280;
-  cursor: pointer;
-  border: 1px solid #e5e7eb;
-  position: relative;
-}
-
-.notification-badge {
-  position: absolute;
-  top: -5px;
-  right: -5px;
-  background-color: #ef4444;
-  color: white;
-  border-radius: 50%;
-  width: 18px;
-  height: 18px;
-  font-size: 0.7rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .avatar {
@@ -388,6 +538,8 @@ onMounted(async () => {
   color: #111827;
   margin: 0;
 }
+
+/* removed test push button styles */
 
 .date-filter {
   display: flex;

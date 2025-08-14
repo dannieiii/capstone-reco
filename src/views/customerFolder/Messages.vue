@@ -1,7 +1,7 @@
 <template>
   <div class="messages-page">
     <div class="header">
-      <button class="back-button" @click="$emit('navigate', 'HomePage')">
+  <button class="back-button" @click="goHome">
         <ChevronLeft size="22" />
       </button>
       <h1>Messages</h1>
@@ -213,6 +213,7 @@ import {
   getDocs
 } from "firebase/firestore";
 import { db, auth } from "@/firebase/firebaseConfig";
+import { useRouter } from 'vue-router';
 
 export default {
   name: 'MessagesPage',
@@ -227,6 +228,7 @@ export default {
     Bell
   },
   setup() {
+  const router = useRouter();
     const activeTab = ref("all");
     const selectedConversation = ref(null);
     const newMessage = ref("");
@@ -777,6 +779,7 @@ export default {
     });
 
     return {
+  goHome: () => router.push({ name: 'homeview' }),
       activeTab,
       conversations,
       filteredConversations,

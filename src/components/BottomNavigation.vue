@@ -3,7 +3,7 @@
     <button 
       class="nav-item" 
       :class="{ active: isActive('/') }"
-      @click="navigate('/')"
+      @click="navigate('/', 'Home')"
     >
       <Home :size="iconSize" :fill="isActive('/') ? '#2e5c31' : 'none'" :stroke="isActive('/') ? '#2e5c31' : '#2e5c31'" stroke-width="2" />
       <span>Home</span>
@@ -11,7 +11,7 @@
     <button 
       class="nav-item" 
       :class="{ active: isActive('/community') }"
-      @click="navigate('/community')"
+      @click="navigate('/community', 'Community')"
     >
       <MessagesSquare :size="iconSize" :fill="isActive('/community') ? '#2e5c31' : 'none'" :stroke="isActive('/community') ? '#2e5c31' : '#2e5c31'" stroke-width="2" />
       <span>Community</span>
@@ -19,7 +19,7 @@
     <button 
       class="nav-item" 
       :class="{ active: isActive('/messages') }"
-      @click="navigate('/messages')"
+      @click="navigate('/messages', 'Messages')"
     >
       <MessageCircle :size="iconSize" :fill="isActive('/messages') ? '#2e5c31' : 'none'" :stroke="isActive('/messages') ? '#2e5c31' : '#2e5c31'" stroke-width="2" />
       <span>Messages</span>
@@ -27,7 +27,7 @@
     <button 
       class="nav-item" 
       :class="{ active: isActive('/customer/orders') || isActive('/orders') }"
-      @click="navigate('/customer/orders')"
+      @click="navigate('/customer/orders', 'Orders')"
     >
       <Package :size="iconSize" :fill="(isActive('/customer/orders') || isActive('/orders')) ? '#2e5c31' : 'none'" :stroke="(isActive('/customer/orders') || isActive('/orders')) ? '#2e5c31' : '#2e5c31'" stroke-width="2" />
       <span>Orders</span>
@@ -35,16 +35,22 @@
     <button 
       class="nav-item" 
       :class="{ active: isActive('/customer/notifications') }"
-      @click="navigate('/customer/notifications')"
+      @click="navigate('/customer/notifications', 'Notifications')"
     >
       <Bell :size="iconSize" :fill="isActive('/customer/notifications') ? '#2e5c31' : 'none'" :stroke="isActive('/customer/notifications') ? '#2e5c31' : '#2e5c31'" stroke-width="2" />
       <span>Notifications</span>
     </button>
+
+    <!-- Top-right login alert toast -->
+    <div v-if="toastVisible" class="nav-toast" role="status" aria-live="polite">
+      {{ toastMessage }}
+    </div>
   </div>
 </template>
 
 <script>
 import { Home, MessagesSquare, MessageCircle, Package, Bell } from 'lucide-vue-next';
+import { auth } from '@/firebase/firebaseConfig';
 
 export default {
   components: {
@@ -56,11 +62,23 @@ export default {
   },
   data() {
     return {
-      iconSize: 24
+      iconSize: 24,
+      toastVisible: false,
+      toastMessage: '',
+      toastTimer: null
     };
   },
   methods: {
-    navigate(path) {
+    navigate(path, label) {
+      // Allow Home for everyone
+      const requiresAuth = path !== '/';
+      const isLoggedIn = !!auth.currentUser;
+
+      if (requiresAuth && !isLoggedIn) {
+        this.showLoginAlert(label);
+        return;
+      }
+
       if (this.$route.path !== path) {
         this.$router.push(path);
       }
@@ -70,6 +88,16 @@ export default {
         return this.$route.path === '/';
       }
       return this.$route.path.startsWith(path);
+    },
+    showLoginAlert(label) {
+      const name = label || 'this section';
+      this.toastMessage = `You cannot open ${name}. Please log in first.`;
+      this.toastVisible = true;
+      if (this.toastTimer) clearTimeout(this.toastTimer);
+      this.toastTimer = setTimeout(() => {
+        this.toastVisible = false;
+        this.toastTimer = null;
+      }, 3500);
     }
   }
 }
@@ -131,5 +159,25 @@ export default {
   height: 6px;
   background-color: #2e5c31;
   border-radius: 50%;
+}
+
+/* Top-right toast for unauthenticated navigation */
+.nav-toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: #2e5c31;
+  color: #fff;
+  padding: 10px 14px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-size: 13px;
+  z-index: 1000;
+  animation: navToastIn 0.2s ease-out;
+}
+
+@keyframes navToastIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 </style>
