@@ -621,6 +621,44 @@ const getUnitDisplay = (unit) => {
   return unitDisplayMap[unit] || unit || 'Unit';
 };
 
+// Normalize various image URL formats (relative paths, protocol-less, gs://) into usable URLs
+const normalizeImageUrl = (raw) => {
+  if (!raw || typeof raw !== 'string') return '';
+  let url = raw.trim();
+  if (!url) return '';
+
+  // Already a data URI
+  if (url.startsWith('data:image/')) return url;
+
+  // Firebase Storage gs:// -> https
+  if (url.startsWith('gs://')) {
+    // gs://<bucket>/<path>
+    try {
+      const withoutScheme = url.replace('gs://', '');
+      const firstSlash = withoutScheme.indexOf('/');
+      const bucket = firstSlash === -1 ? withoutScheme : withoutScheme.slice(0, firstSlash);
+      const path = firstSlash === -1 ? '' : withoutScheme.slice(firstSlash + 1);
+      const encodedPath = encodeURIComponent(path);
+      return `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodedPath}?alt=media`;
+    } catch (e) {
+      return '';
+    }
+  }
+
+  // Protocol-relative URLs //example.com/img.png
+  if (url.startsWith('//')) return `https:${url}`;
+
+  // Relative URLs or root-based assets are fine for the browser
+  if (url.startsWith('/') || url.startsWith('./') || url.startsWith('../')) return url;
+
+  // Bare filenames like "banana.jpg" -> treat as root-relative
+  const looksLikeFilename = /\.[a-zA-Z0-9]+$/.test(url) && !url.includes(' ');
+  if (looksLikeFilename) return `/${url}`;
+
+  // Otherwise return as-is (likely http/https)
+  return url;
+};
+
 // Enhanced helper function to get product image with proper fallback
 const getProductImage = (product) => {
   if (!product) {
@@ -630,31 +668,47 @@ const getProductImage = (product) => {
   // Priority order for image fields
   const imageFields = [
     'image',
-    'productImage', 
+    'productImage',
+    'imageUrl',
+    'imageURL',
     'images',
+    'photos',
+    'gallery',
     'thumbnail',
     'photo'
   ];
 
   for (const field of imageFields) {
     const imageValue = product[field];
-    
-    if (imageValue) {
-      // Handle array of images
-      if (Array.isArray(imageValue) && imageValue.length > 0) {
-        const firstImage = imageValue[0];
-        if (typeof firstImage === 'string' && firstImage.trim() !== '' && isValidImageUrl(firstImage.trim())) {
-          return firstImage.trim();
+    if (!imageValue) continue;
+
+    // Handle array of images (strings or objects)
+    if (Array.isArray(imageValue) && imageValue.length > 0) {
+      for (const item of imageValue) {
+        let candidate = '';
+        if (typeof item === 'string') candidate = item;
+        else if (item && typeof item === 'object') {
+          candidate = item.url || item.downloadURL || item.src || '';
         }
-      }
-      
-      // Handle single image string
-      if (typeof imageValue === 'string' && imageValue.trim() !== '' && isValidImageUrl(imageValue.trim())) {
-        return imageValue.trim();
+        const normalized = normalizeImageUrl(candidate);
+        if (normalized && isValidImageUrl(normalized)) return normalized;
       }
     }
+
+    // Handle object with url property
+    if (typeof imageValue === 'object' && !Array.isArray(imageValue)) {
+      const candidate = imageValue.url || imageValue.downloadURL || imageValue.src || '';
+      const normalized = normalizeImageUrl(candidate);
+      if (normalized && isValidImageUrl(normalized)) return normalized;
+    }
+
+    // Handle single image string
+    if (typeof imageValue === 'string') {
+      const normalized = normalizeImageUrl(imageValue);
+      if (normalized && isValidImageUrl(normalized)) return normalized;
+    }
   }
-  
+
   // Return data URI placeholder if no valid image found
   return createPlaceholderImage();
 };
@@ -662,12 +716,14 @@ const getProductImage = (product) => {
 // Helper function to validate image URL
 const isValidImageUrl = (url) => {
   try {
-    // Check if it's a data URI
-    if (url.startsWith('data:image/')) {
-      return true;
-    }
-    
-    // Check if it's a valid HTTP/HTTPS URL
+    if (!url) return false;
+    // Allow data URIs
+    if (url.startsWith('data:image/')) return true;
+    // Allow blob URLs
+    if (url.startsWith('blob:')) return true;
+    // Allow relative paths
+    if (url.startsWith('/') || url.startsWith('./') || url.startsWith('../')) return true;
+    // Must be http/https otherwise
     const urlObj = new URL(url);
     return urlObj.protocol === 'http:' || urlObj.protocol === 'https:';
   } catch {
@@ -1274,12 +1330,18 @@ const fetchProducts = async () => {
 // Calculate top selling products based on sales
 const calculateTopProducts = () => {
   const productSales = {};
+
+  const norm = (v) => (v || '').toString().trim().toLowerCase();
   
   salesData.value.forEach(sale => {
-    const productName = sale.productName;
-    if (!productSales[productName]) {
-      productSales[productName] = {
-        productName: productName,
+    const saleName = sale.productName || sale.name || '';
+    const saleId = sale.productId || sale.productID || sale.product_id || '';
+    const key = saleId ? `id:${saleId}` : `name:${norm(saleName)}`;
+
+    if (!productSales[key]) {
+      productSales[key] = {
+        productId: saleId || '',
+        productName: saleName,
         category: sale.category || 'Other',
         unitPrice: sale.price || 0,
         unit: sale.unit || 'piece',
@@ -1292,19 +1354,22 @@ const calculateTopProducts = () => {
     }
     
     // Add quantity sold
-    productSales[productName].sold += sale.quantity || 0;
+    productSales[key].sold += sale.quantity || 0;
     
     // Add profit (simplified calculation)
-    const salePrice = sale.totalPrice || (sale.price * sale.quantity) || 0;
-    productSales[productName].profit += salePrice * 0.3; // Assume 30% profit margin
+    const salePrice = sale.totalPrice || (sale.price * (sale.quantity || 0)) || 0;
+    productSales[key].profit += salePrice * 0.3; // Assume 30% profit margin
   });
   
   // Enhance with actual product data for better image handling
   Object.values(productSales).forEach(productSale => {
-    const actualProduct = products.value.find(p => 
-      p.productName === productSale.productName || 
-      p.name === productSale.productName
-    );
+    const byId = productSale.productId
+      ? products.value.find(p => p.id === productSale.productId)
+      : null;
+    const byName = !byId
+      ? products.value.find(p => norm(p.productName || p.name) === norm(productSale.productName))
+      : null;
+    const actualProduct = byId || byName || null;
     
     if (actualProduct) {
       // Use actual product data for images and other details
@@ -1316,7 +1381,7 @@ const calculateTopProducts = () => {
       
       // Add more product details if available
       productSale.description = actualProduct.description || '';
-      productSale.productId = actualProduct.id || '';
+      productSale.productId = actualProduct.id || productSale.productId || '';
     }
   });
   

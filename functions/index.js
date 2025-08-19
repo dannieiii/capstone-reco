@@ -13,9 +13,9 @@ const webhookToken = defineSecret('WEBHOOK_TOKEN');
 
 // Xendit configuration - Updated for Firebase Functions v2
 const XENDIT_API_URL = 'https://api.xendit.co/v2';
-// IMPORTANT: Set this to your deployed frontend URL in Firebase config (functions:config:set) or env
-// Fallbacks to localhost for local development
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:8080';
+// IMPORTANT: FRONTEND_URL is used for Xendit redirect URLs
+// Priority: environment variable -> Firebase runtime config (functions:config:set app.frontend_url=...) -> localhost
+const FRONTEND_URL = process.env.FRONTEND_URL || (functions.config().app && functions.config().app.frontend_url) || 'http://localhost:8080';
 
 // Create GCash payment function (using onCall for better integration with Vue)
 exports.createGcashPayment = functions.https.onCall({
@@ -32,7 +32,7 @@ exports.createGcashPayment = functions.https.onCall({
         throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
       }
 
-      const { amount, orderCode, customerName, customerEmail } = data;
+  const { amount, orderCode, customerName, customerEmail, paymentType, metadata } = data;
 
       // Validate required fields
       if (!amount || !orderCode || !customerName || !customerEmail) {
@@ -78,6 +78,10 @@ exports.createGcashPayment = functions.https.onCall({
           invoice_reminder: ['email'],
           invoice_paid: ['email'],
           invoice_expired: ['email']
+        },
+        metadata: {
+          ...(metadata || {}),
+          ...(paymentType ? { paymentType } : {})
         }
       };
 
@@ -144,7 +148,7 @@ exports.createGcashPaymentHttp = functions.https.onRequest({
           return res.status(405).json({ error: 'Method not allowed' });
         }
 
-        const { amount, orderCode, customerName, customerEmail } = req.body;
+  const { amount, orderCode, customerName, customerEmail, paymentType, metadata } = req.body;
 
         // Validate required fields
         if (!amount || !orderCode || !customerName || !customerEmail) {
@@ -172,7 +176,11 @@ exports.createGcashPaymentHttp = functions.https.onRequest({
           success_redirect_url: `${FRONTEND_URL}/payment/success?order=${orderCode}`,
           failure_redirect_url: `${FRONTEND_URL}/payment/failed?order=${orderCode}`,
           payment_methods: ['GCASH'],
-          currency: 'PHP'
+          currency: 'PHP',
+          metadata: {
+            ...(metadata || {}),
+            ...(paymentType ? { paymentType } : {})
+          }
         };
 
         const response = await axios.post(
@@ -237,7 +245,7 @@ exports.xenditWebhook = functions.https.onRequest({
         return res.status(200).send('Webhook OK');
       }
 
-  const { external_id, status, payment_method, paid_amount, payment_channel } = req.body;
+  const { external_id, status, payment_method, paid_amount, payment_channel, metadata } = req.body;
 
   if (!external_id) {
         return res.status(400).send('Missing external_id');
@@ -257,22 +265,40 @@ exports.xenditWebhook = functions.https.onRequest({
         return res.status(200).send('No matching order; acknowledged');
       }
 
-      const batch = admin.firestore().batch();
+  const batch = admin.firestore().batch();
+  const isPreorderDeposit = metadata && (metadata.paymentType === 'preorder_deposit' || metadata.type === 'preorder_deposit');
       
       orderSnapshot.docs.forEach(orderDoc => {
-        const updateData = {
-          paymentStatus: status === 'PAID' ? 'paid' : status.toLowerCase(),
+        const order = orderDoc.data();
+        const updateData = {};
+        const common = {
           paymentMethod: payment_channel || payment_method || 'gcash',
           paymentUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
         };
 
-        if (status === 'PAID') {
-          updateData.payStatus = 'paid';
-          updateData.paidAmount = paid_amount;
-          updateData.paidAt = admin.firestore.FieldValue.serverTimestamp();
+        if (isPreorderDeposit) {
+          // For deposit payments, only update deposit-related fields
+          updateData.depositStatus = status === 'PAID' ? 'paid' : status.toLowerCase();
+          if (status === 'PAID') {
+            updateData.depositPaidAmount = paid_amount;
+            updateData.depositPaidAt = admin.firestore.FieldValue.serverTimestamp();
+          }
+          // If the order is marked as pre-order, keep main payment fields untouched
+          // Mark order status to Reserved upon deposit payment
+          if (order.isPreOrder === true && status === 'PAID') {
+            updateData.status = order.status && order.status !== 'Cancelled' ? 'Reserved' : order.status;
+          }
+        } else {
+          // Regular full payment update
+          updateData.paymentStatus = status === 'PAID' ? 'paid' : status.toLowerCase();
+          if (status === 'PAID') {
+            updateData.payStatus = 'paid';
+            updateData.paidAmount = paid_amount;
+            updateData.paidAt = admin.firestore.FieldValue.serverTimestamp();
+          }
         }
 
-        batch.update(orderDoc.ref, updateData);
+        batch.update(orderDoc.ref, { ...common, ...updateData });
       });
 
       // Also update sales records linked by groupOrderCode or orderCode
@@ -283,10 +309,15 @@ exports.xenditWebhook = functions.https.onRequest({
       }
       
       salesSnapshot.docs.forEach(saleDoc => {
-        batch.update(saleDoc.ref, {
-          paymentStatus: status === 'PAID' ? 'paid' : status.toLowerCase(),
+        const updateData = {
           paymentUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
-        });
+        };
+        if (isPreorderDeposit) {
+          updateData.depositStatus = status === 'PAID' ? 'paid' : status.toLowerCase();
+        } else {
+          updateData.paymentStatus = status === 'PAID' ? 'paid' : status.toLowerCase();
+        }
+        batch.update(saleDoc.ref, updateData);
       });
 
       await batch.commit();
@@ -483,7 +514,7 @@ exports.createGcashPaymentPublic = functions.https.onRequest({
         return res.status(405).json({ error: 'Method not allowed' });
       }
 
-      const { amount, orderCode, customerName, customerEmail, items = [] } = req.body;
+  const { amount, orderCode, customerName, customerEmail, items = [], paymentType, metadata } = req.body;
 
       // Validate required fields
       if (!amount || !orderCode || !customerName || !customerEmail) {
@@ -527,7 +558,11 @@ exports.createGcashPaymentPublic = functions.https.onRequest({
           quantity: item.quantity || 1,
           price: item.price || 0,
           category: item.category || 'General'
-        }))
+        })),
+        metadata: {
+          ...(metadata || {}),
+          ...(paymentType ? { paymentType } : {})
+        }
       };
 
       console.log('Sending to Xendit:', JSON.stringify(xenditData, null, 2));

@@ -224,8 +224,11 @@
           <div class="separator"></div>
           
           <div class="total-row final">
-            <span>Total</span>
-            <span>₱{{ total.toFixed(2) }}</span>
+            <span>{{ (hasPreOrderItems && !hasMixedPreOrder) ? 'Total due now' : 'Total' }}</span>
+            <span>₱{{ (hasPreOrderItems && !hasMixedPreOrder) ? totalDueNow.toFixed(2) : total.toFixed(2) }}</span>
+          </div>
+          <div v-if="hasPreOrderItems && !hasMixedPreOrder" class="deposit-note">
+            Pre-order deposit due now. Remaining balance will be collected when your order is ready.
           </div>
         </div>
       </div>
@@ -494,9 +497,13 @@ export default {
     const route = useRoute();
     const router = useRouter();
     
-    // Initialize order data
-    const orderItems = ref([]);
-    const isBuyNow = ref(false);
+  // Initialize order data
+  const orderItems = ref([]);
+  const isBuyNow = ref(false);
+
+  // Pre-order deposit defaults (can be overridden per product)
+  const DEFAULT_DEPOSIT_PERCENT = 0.2; // 20%
+  const MIN_DEPOSIT = 50; // PHP minimum deposit
     
     const canCancel = ref(true);
     
@@ -749,6 +756,23 @@ export default {
           
           // Debug the validated items
           await debugOrderItems();
+
+          // Augment items with pre-order flags from product docs
+          try {
+            const productSnaps = await Promise.all(
+              orderItems.value.map(it => getDoc(doc(db, 'products', it.productId)))
+            );
+            orderItems.value = orderItems.value.map((it, idx) => {
+              const snap = productSnaps[idx];
+              const pdata = snap?.exists() ? snap.data() : {};
+              const isPreOrder = !!(pdata?.preOrders === true || pdata?.preOrder === true);
+              const depositType = typeof pdata?.depositType === 'string' ? pdata.depositType : 'percent';
+              const depositValue = typeof pdata?.depositValue === 'number' ? pdata.depositValue : DEFAULT_DEPOSIT_PERCENT;
+              return { ...it, isPreOrder, depositType, depositValue };
+            });
+          } catch (augmentErr) {
+            console.warn('Pre-order flag augmentation skipped:', augmentErr?.message || augmentErr);
+          }
         }
       } catch (error) {
         console.error('Error parsing order items:', error);
@@ -1179,6 +1203,21 @@ export default {
       return Math.round(totalAmount * 100) / 100; // Round to exactly 2 decimal places
     });
 
+    // Pre-order helpers and totals
+    const hasPreOrderItems = computed(() => orderItems.value.some(i => i.isPreOrder));
+    const hasMixedPreOrder = computed(() => hasPreOrderItems.value && orderItems.value.some(i => !i.isPreOrder));
+    const computeItemDeposit = (item) => {
+      if (!item?.isPreOrder) return 0;
+      const itemTotal = (Number(item.unitPrice) || 0) * (Number(item.quantity) || 0);
+      if (item.depositType === 'fixed') {
+        return Math.max(Number(item.depositValue) || 0, MIN_DEPOSIT);
+      }
+      const pct = typeof item.depositValue === 'number' ? item.depositValue : DEFAULT_DEPOSIT_PERCENT;
+      return Math.max(Math.round(itemTotal * pct), MIN_DEPOSIT);
+    };
+    const depositTotal = computed(() => orderItems.value.reduce((sum, it) => sum + computeItemDeposit(it), 0));
+    const totalDueNow = computed(() => (hasPreOrderItems.value && !hasMixedPreOrder.value) ? depositTotal.value : total.value);
+
     // Enhanced place order function with better validation
     const functions = getFunctions();
     const createGcashPayment = httpsCallable(functions, 'createGcashPayment');
@@ -1195,6 +1234,18 @@ export default {
         return;
       }
       
+      // Block mixed carts (pre-order + regular) to simplify deposit handling
+      if (hasMixedPreOrder.value) {
+        showNotificationMessage('Please checkout pre-order items separately from regular items so we can collect the deposit correctly.', 'error');
+        return;
+      }
+
+      // Enforce GCash for pre-orders
+      if (hasPreOrderItems.value && paymentMethod.value !== 'gcash') {
+        showNotificationMessage('Pre-order requires an initial payment via GCash. Please select GCash.', 'error');
+        return;
+      }
+
       if (paymentMethod.value === 'gcash' && !gcashDetails.value.number) {
         showNotificationMessage('Please enter your GCash number', 'error');
         return;
@@ -1394,6 +1445,14 @@ export default {
                   };
                 }
 
+                // Pre-order deposit computation
+                const productIsPreOrder = !!(productData?.preOrders === true || productData?.preOrder === true);
+                const prodDepositType = typeof productData?.depositType === 'string' ? productData.depositType : 'percent';
+                const prodDepositValue = typeof productData?.depositValue === 'number' ? productData.depositValue : DEFAULT_DEPOSIT_PERCENT;
+                const depositAmount = productIsPreOrder
+                  ? (prodDepositType === 'fixed' ? Math.max(Number(prodDepositValue) || 0, MIN_DEPOSIT) : Math.max(Math.round(itemPrice * (prodDepositValue || DEFAULT_DEPOSIT_PERCENT)), MIN_DEPOSIT))
+                  : 0;
+
                 // Create order document with complete financial information
                 const orderRef = doc(collection(db, 'orders'));
                 
@@ -1428,6 +1487,13 @@ export default {
                   status: 'Pending', // Explicitly set to Pending
                   payStatus: 'unpaid',
                   paymentStatus: 'unpaid',
+                  // Pre-order fields
+                  isPreOrder: productIsPreOrder,
+                  depositRequired: productIsPreOrder,
+                  depositType: prodDepositType,
+                  depositValue: prodDepositValue,
+                  depositAmount: depositAmount,
+                  depositStatus: productIsPreOrder ? 'unpaid' : null,
                   createdAt: serverTimestamp(),
                   lastUpdated: serverTimestamp(),
                   userId: auth.currentUser.uid,
@@ -1459,6 +1525,10 @@ export default {
                   groupOrderCode: groupOrderCode,
                   isBuyNow: isBuyNow.value,
                   paymentStatus: 'unpaid',
+                  // Pre-order fields
+                  isPreOrder: productIsPreOrder,
+                  depositAmount: depositAmount,
+                  depositStatus: productIsPreOrder ? 'unpaid' : null,
                   // Multi-seller order metadata
                   isMultiSellerOrder: sellerIds.length > 1,
                   totalSellersCount: sellerIds.length
@@ -1516,8 +1586,10 @@ export default {
         // PHASE 4: Handle Payment
         if (paymentMethod.value === 'gcash') {
           try {
+            const amountToCharge = totalDueNow.value;
+            const isDeposit = hasPreOrderItems.value && !hasMixedPreOrder.value;
             console.log('Creating GCash payment with:', {
-              amount: total.value,
+              amount: amountToCharge,
               orderCode: groupOrderCode,
               customerName: username,
               customerEmail: email
@@ -1528,11 +1600,13 @@ export default {
             // Try Firebase Callable function first
             try {
               paymentResult = await createGcashPayment({
-                amount: total.value,
+                amount: amountToCharge,
                 orderCode: groupOrderCode,
                 customerName: username,
                 customerEmail: email,
-                bypassAuth: true // Temporary bypass for authentication issues
+                bypassAuth: true, // Temporary bypass for authentication issues
+                paymentType: isDeposit ? 'preorder_deposit' : 'full_payment',
+                metadata: { type: isDeposit ? 'preorder_deposit' : 'full_payment' }
               });
               console.log('Callable function success:', paymentResult);
             } catch (callableError) {
@@ -1540,16 +1614,18 @@ export default {
               
               // Try the new public GCash payment endpoint
               try {
-                const response = await fetch('https://us-central1-farmxpress-965bb.cloudfunctions.net/createGcashPaymentPublic', {
+        const response = await fetch('https://us-central1-farmxpress-965bb.cloudfunctions.net/createGcashPaymentPublic', {
                   method: 'POST',
                   headers: {
                     'Content-Type': 'application/json',
                   },
                   body: JSON.stringify({
-                    amount: total.value,
+          amount: amountToCharge,
                     orderCode: groupOrderCode,
                     customerName: username,
-                    customerEmail: email,
+          customerEmail: email,
+          paymentType: isDeposit ? 'preorder_deposit' : 'full_payment',
+          metadata: { type: isDeposit ? 'preorder_deposit' : 'full_payment' },
                     items: orderItems.value.map(item => ({
                       name: item.productName,
                       quantity: item.quantity,
@@ -1570,13 +1646,13 @@ export default {
                 console.warn('Public GCash endpoint failed, trying test endpoint:', publicError);
                 
                 // Final fallback to test endpoint
-                const response = await fetch('https://us-central1-farmxpress-965bb.cloudfunctions.net/testGcashPayment', {
+        const response = await fetch('https://us-central1-farmxpress-965bb.cloudfunctions.net/testGcashPayment', {
                   method: 'POST',
                   headers: {
                     'Content-Type': 'application/json',
                   },
                   body: JSON.stringify({
-                    amount: total.value,
+          amount: amountToCharge,
                     orderCode: groupOrderCode,
                     customerName: username,
                     customerEmail: email
@@ -1608,7 +1684,7 @@ export default {
                   `This is a payment simulation. Choose:\n\n` +
                   `• OK: Simulate successful payment and stay here\n` +
                   `• Cancel: Go to demo payment page\n\n` +
-                  `Order: ${orderCode}\nAmount: ₱${total.value}`
+      `Order: ${groupOrderCode}\nAmount: ₱${amountToCharge}`
                 );
                 
                 if (userChoice) {
@@ -1620,11 +1696,13 @@ export default {
                         'Content-Type': 'application/json',
                       },
                       body: JSON.stringify({
-                        amount: total.value,
-                        orderCode: groupOrderCode,
+        amount: amountToCharge,
+        orderCode: groupOrderCode,
                         customerName: username,
                         customerEmail: email,
-                        simulate: true,
+        simulate: true,
+        paymentType: isDeposit ? 'preorder_deposit' : 'full_payment',
+        metadata: { type: isDeposit ? 'preorder_deposit' : 'full_payment' },
                         items: orderItems.value.map(item => ({
                           name: item.productName,
                           quantity: item.quantity,
@@ -1875,6 +1953,10 @@ export default {
       expressDeliveryFee,
       tax,
       total,
+  totalDueNow,
+  hasPreOrderItems,
+  hasMixedPreOrder,
+  depositTotal,
       placeOrder,
       placeholderImage,
       increaseQuantity,
