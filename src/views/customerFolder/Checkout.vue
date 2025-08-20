@@ -726,6 +726,8 @@ export default {
               continue;
             }
               const unitPrice = Number(item.unitPrice) || Number(item.price) || Number(item.pricePerKg) || 0;
+              // Preserve orderType if provided from ProductDetails/Cart; fallback later if needed
+              const orderType = typeof item.orderType === 'string' ? item.orderType : undefined;
             
             validatedItems.push({
               productId: item.productId,
@@ -736,7 +738,8 @@ export default {
               quantity: Number(item.quantity) || 1,
               unit: item.unit || item.packagingType || 'piece',
               totalPrice: unitPrice * (Number(item.quantity) || 1),
-              cartItemId: item.cartItemId
+              cartItemId: item.cartItemId,
+              orderType
             });
           }
           
@@ -768,7 +771,15 @@ export default {
               const isPreOrder = !!(pdata?.preOrders === true || pdata?.preOrder === true);
               const depositType = typeof pdata?.depositType === 'string' ? pdata.depositType : 'percent';
               const depositValue = typeof pdata?.depositValue === 'number' ? pdata.depositValue : DEFAULT_DEPOSIT_PERCENT;
-              return { ...it, isPreOrder, depositType, depositValue };
+              // Infer orderType if not provided
+              let inferredType = it.orderType;
+              if (!inferredType) {
+                if (isPreOrder) inferredType = 'preorder';
+                // Simple wholesale heuristic: check for wholesale flags/fields on product
+                else if (pdata?.wholesaleAvailable === true || Number(pdata?.wholesalePrice) > 0) inferredType = 'wholesale';
+                else inferredType = 'normal';
+              }
+              return { ...it, isPreOrder, depositType, depositValue, orderType: inferredType };
             });
           } catch (augmentErr) {
             console.warn('Pre-order flag augmentation skipped:', augmentErr?.message || augmentErr);
@@ -1474,6 +1485,8 @@ export default {
                   unitPrice: item.unitPrice,
                   quantity: item.quantity,
                   unit: item.unit,
+                  // Explicit order type for seller visibility
+                  orderType: item.orderType || (productIsPreOrder ? 'preorder' : 'normal'),
                   itemPrice: itemPrice,
                   paymentMethod: paymentMethod.value,
                   gcashNumber: paymentMethod.value === 'gcash' ? gcashDetails.value.number : null,
@@ -1529,6 +1542,8 @@ export default {
                   isPreOrder: productIsPreOrder,
                   depositAmount: depositAmount,
                   depositStatus: productIsPreOrder ? 'unpaid' : null,
+                  // Order type for reporting
+                  orderType: item.orderType || (productIsPreOrder ? 'preorder' : 'normal'),
                   // Multi-seller order metadata
                   isMultiSellerOrder: sellerIds.length > 1,
                   totalSellersCount: sellerIds.length

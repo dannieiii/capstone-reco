@@ -47,12 +47,20 @@
       </div>
       
       <div class="price-section">
-        <h3 class="price">₱{{ defaultPrice }}</h3>
+        <div>
+          <h3 class="price">₱{{ defaultPrice }}</h3>
+          <div v-if="selectedPurchaseType !== 'normal'" class="price-mode-note">
+            <small v-if="selectedPurchaseType === 'preorder'">Pre-Order Price</small>
+            <small v-else-if="selectedPurchaseType === 'wholesale'">Wholesale Price</small>
+          </div>
+        </div>
         <p class="stock" :class="{ 'out-of-stock': isOutOfStock(defaultUnit) }">
           {{ isOutOfStock(defaultUnit) ? 'Out of Stock' : `Available: ${defaultStock} ${defaultUnit}` }}
         </p>
       </div>
       
+  <!-- Purchase Type Selection removed as requested -->
+
       <!-- Unit Selection -->
       <div class="unit-selection" v-if="availableUnits.length > 1">
         <div class="unit-options">
@@ -135,6 +143,8 @@
           {{ isOutOfStock(defaultUnit) ? 'Out of Stock' : 'Buy Now' }}
         </button>
       </div>
+
+      <!-- Purchase Type Selection removed by request -->
       
       <!-- Farm Store Information -->
       <div class="farm-store-info">
@@ -548,10 +558,39 @@ export default {
       loginPassword: '',
       rememberMe: false,
       showPassword: false,
-      isLoggingIn: false
+      isLoggingIn: false,
+      selectedPurchaseType: 'normal'
     };
   },
   computed: {
+    forcedPurchaseType() {
+      const mode = this.$route?.query?.mode;
+      return mode === 'preorder' || mode === 'wholesale' ? mode : null;
+    },
+    showPurchaseTypeSelector() {
+      return this.availablePurchaseTypes.length > 1 && !this.forcedPurchaseType;
+    },
+    isPreOrderProduct() {
+      return this.product?.preOrders === true || this.product?.isPreOrder === true;
+    },
+    isWholesaleProduct() {
+      return this.product?.wholesaleAvailable === true;
+    },
+    availablePurchaseTypes() {
+      const types = ['normal'];
+      if (this.isPreOrderProduct) types.push('preorder');
+      if (this.isWholesaleProduct) types.push('wholesale');
+      return types;
+    },
+    wholesaleMinQty() {
+      // Support multiple possible field names
+      const vals = [
+        Number(this.product?.whominWholesaleQty), // as seen in HomeView
+        Number(this.product?.minWholesaleQty),
+        Number(this.product?.minimumWholesaleQty)
+      ].filter(v => !isNaN(v) && v > 0);
+      return vals.length ? vals[0] : 1;
+    },
     productName() {
       return this.product ? this.product.productName : 'Loading...';
     },
@@ -574,20 +613,8 @@ export default {
     },
     defaultPrice() {
       if (!this.product) return '0.00';
-      
-      let unitPrice = 0;
-      switch(this.defaultUnit) {
-        case 'kg': unitPrice = this.product.pricePerKilo; break;
-        case 'sack': unitPrice = this.product.pricePerSack; break;
-        case 'tali': unitPrice = this.product.pricePerTali; break;
-        case 'kaing': unitPrice = this.product.pricePerKaing; break;
-        case 'bundle': unitPrice = this.product.pricePerBundle; break;
-        case 'tray': unitPrice = this.product.pricePerTray; break;
-        case 'piece': unitPrice = this.product.pricePerPiece; break;
-        default: unitPrice = 0;
-      }
-      
-      return (unitPrice * this.quantity).toFixed(2);
+      const unitPrice = this.getUnitPrice(this.defaultUnit);
+      return (Number(unitPrice || 0) * this.quantity).toFixed(2);
     },
     defaultStock() {
       if (!this.product) return 0;
@@ -638,6 +665,10 @@ export default {
       }
     },
     getDisplayPrice(product) {
+      // Prefer wholesale price for related cards when available
+      if (product.wholesaleAvailable && Number(product.wholesalePrice) > 0) {
+        return Number(product.wholesalePrice).toFixed(2) + '/kg';
+      }
       if (product.pricePerKilo > 0) return product.pricePerKilo.toFixed(2) + '/kg';
       if (product.pricePerSack > 0) return product.pricePerSack.toFixed(2) + '/sack';
       if (product.pricePerTali > 0) return product.pricePerTali.toFixed(2) + '/tali';
@@ -651,6 +682,13 @@ export default {
       this.selectedUnit = unit;
       this.quantity = 1;
     },
+    selectPurchaseType(type) {
+      this.selectedPurchaseType = type;
+      // Adjust quantity for wholesale minimums
+      if (type === 'wholesale') {
+        if (this.quantity < this.wholesaleMinQty) this.quantity = this.wholesaleMinQty;
+      }
+    },
     increaseQuantity() {
       if (this.quantity < this.defaultStock) {
         this.quantity++;
@@ -659,56 +697,62 @@ export default {
       }
     },
     decreaseQuantity() {
-      if (this.quantity > 1) {
+      if (this.selectedPurchaseType === 'wholesale') {
+        if (this.quantity > this.wholesaleMinQty) {
+          this.quantity--;
+        } else {
+          this.quantity = this.wholesaleMinQty;
+        }
+      } else if (this.quantity > 1) {
         this.quantity--;
       }
     },
     handleRatingUpdate(rating) {
       this.averageRating = rating;
     },
-   async fetchProduct() {
-  try {
-    const productDocRef = doc(db, 'products', this.productId);
-    const productDoc = await getDoc(productDocRef);
-    
-    if (productDoc.exists()) {
-      this.product = productDoc.data();
-      console.log('Full product data:', this.product);
-      
-      // Check sellerId field specifically
-      this.sellerId = this.product.sellerId;
-      console.log('Raw sellerId from product:', this.sellerId);
-      console.log('Type of sellerId:', typeof this.sellerId);
-      console.log('sellerId length:', this.sellerId ? this.sellerId.length : 'undefined');
-      
-      if (!this.sellerId) {
-        console.warn('Product has no sellerId field');
-      } else {
-        // Clean the sellerId (remove any whitespace)
-        this.sellerId = this.sellerId.trim();
-        console.log('Cleaned sellerId:', this.sellerId);
+    async fetchProduct() {
+      try {
+        const productDocRef = doc(db, 'products', this.productId);
+        const productDoc = await getDoc(productDocRef);
+        
+        if (productDoc.exists()) {
+          this.product = productDoc.data();
+          console.log('Full product data:', this.product);
+          
+          // Check sellerId field specifically
+          this.sellerId = this.product.sellerId;
+          console.log('Raw sellerId from product:', this.sellerId);
+          console.log('Type of sellerId:', typeof this.sellerId);
+          console.log('sellerId length:', this.sellerId ? this.sellerId.length : 'undefined');
+          
+          if (!this.sellerId) {
+            console.warn('Product has no sellerId field');
+          } else {
+            // Clean the sellerId (remove any whitespace)
+            this.sellerId = this.sellerId.trim();
+            console.log('Cleaned sellerId:', this.sellerId);
+          }
+          
+          // Determine available units
+          this.availableUnits = [];
+          if (this.product.pricePerKilo > 0) this.availableUnits.push('kg');
+          if (this.product.pricePerSack > 0) this.availableUnits.push('sack');
+          if (this.product.pricePerTali > 0) this.availableUnits.push('tali');
+          if (this.product.pricePerKaing > 0) this.availableUnits.push('kaing');
+          if (this.product.pricePerBundle > 0) this.availableUnits.push('bundle');
+          if (this.product.pricePerTray > 0) this.availableUnits.push('tray');
+          if (this.product.pricePerPiece > 0) this.availableUnits.push('piece');
+          
+          // Set default unit
+          this.selectedUnit = this.defaultUnit;
+        } else {
+          console.error('Product document does not exist');
+          this.showNotificationMessage('Product not found', 'error');
+        }
+      } catch (error) {
+        console.error('Error fetching product:', error);
+        this.showNotificationMessage('Failed to load product details', 'error');
       }
-      
-      // Determine available units
-      this.availableUnits = [];
-      if (this.product.pricePerKilo > 0) this.availableUnits.push('kg');
-      if (this.product.pricePerSack > 0) this.availableUnits.push('sack');
-      if (this.product.pricePerTali > 0) this.availableUnits.push('tali');
-      if (this.product.pricePerKaing > 0) this.availableUnits.push('kaing');
-      if (this.product.pricePerBundle > 0) this.availableUnits.push('bundle');
-      if (this.product.pricePerTray > 0) this.availableUnits.push('tray');
-      if (this.product.pricePerPiece > 0) this.availableUnits.push('piece');
-      
-      // Set default unit
-      this.selectedUnit = this.defaultUnit;
-    } else {
-      console.error('Product document does not exist');
-      this.showNotificationMessage('Product not found', 'error');
-    }
-  } catch (error) {
-    console.error('Error fetching product:', error);
-    this.showNotificationMessage('Failed to load product details', 'error');
-  }
 },
    async fetchFarmDetails() {
   if (!this.sellerId) {
@@ -808,14 +852,64 @@ export default {
       }
     },
     getUnitPrice(unit) {
+      // Pre-Order mode
+      if (this.selectedPurchaseType === 'preorder' && this.isPreOrderProduct) {
+        const preOrderUnitMap = {
+          kg: ['preOrderPricePerKilo', 'preorderPricePerKilo'],
+          sack: ['preOrderPricePerSack', 'preorderPricePerSack'],
+          tali: ['preOrderPricePerTali', 'preorderPricePerTali'],
+          kaing: ['preOrderPricePerKaing', 'preorderPricePerKaing'],
+          bundle: ['preOrderPricePerBundle', 'preorderPricePerBundle'],
+          tray: ['preOrderPricePerTray', 'preorderPricePerTray'],
+          piece: ['preOrderPricePerPiece', 'preorderPricePerPiece']
+        };
+        const specificKeys = preOrderUnitMap[unit] || [];
+        for (const key of specificKeys) {
+          const val = Number(this.product?.[key]);
+          if (!isNaN(val) && val > 0) return val;
+        }
+        const genericPreOrder = [
+          Number(this.product?.preOrderPrice),
+          Number(this.product?.preorderPrice),
+          Number(this.product?.price)
+        ].find(v => !isNaN(v) && v > 0);
+        if (genericPreOrder) return genericPreOrder;
+      }
+
+  // Wholesale mode
+  if (this.selectedPurchaseType === 'wholesale' && this.isWholesaleProduct) {
+        // Optional unit-specific wholesale fields (support if present)
+        const wholesaleUnitMap = {
+          kg: ['wholesalePricePerKilo', 'wholesalePricePerKg'],
+          sack: ['wholesalePricePerSack'],
+          tali: ['wholesalePricePerTali'],
+          kaing: ['wholesalePricePerKaing'],
+          bundle: ['wholesalePricePerBundle'],
+          tray: ['wholesalePricePerTray'],
+          piece: ['wholesalePricePerPiece']
+        };
+        const wKeys = wholesaleUnitMap[unit] || [];
+        for (const key of wKeys) {
+          const val = Number(this.product?.[key]);
+          if (!isNaN(val) && val > 0) return val;
+        }
+        // Generic wholesale price (commonly per kg)
+        const genericWholesale = Number(this.product?.wholesalePrice);
+        if (!isNaN(genericWholesale) && genericWholesale > 0) {
+          // If selected unit is kg or unit-specific not set, apply generic wholesale
+          return genericWholesale;
+        }
+      }
+
+      // Regular pricing per unit (fallback)
       switch(unit) {
-        case 'kg': return this.product.pricePerKilo;
-        case 'sack': return this.product.pricePerSack;
-        case 'tali': return this.product.pricePerTali;
-        case 'kaing': return this.product.pricePerKaing;
-        case 'bundle': return this.product.pricePerBundle;
-        case 'tray': return this.product.pricePerTray;
-        case 'piece': return this.product.pricePerPiece;
+        case 'kg': return Number(this.product.pricePerKilo) || 0;
+        case 'sack': return Number(this.product.pricePerSack) || 0;
+        case 'tali': return Number(this.product.pricePerTali) || 0;
+        case 'kaing': return Number(this.product.pricePerKaing) || 0;
+        case 'bundle': return Number(this.product.pricePerBundle) || 0;
+        case 'tray': return Number(this.product.pricePerTray) || 0;
+        case 'piece': return Number(this.product.pricePerPiece) || 0;
         default: return 0;
       }
     },
@@ -839,7 +933,7 @@ export default {
       }
       
       this.modalSelectedUnit = this.defaultUnit;
-      this.modalQuantity = 1;
+  this.modalQuantity = this.selectedPurchaseType === 'wholesale' ? Math.max(1, this.wholesaleMinQty) : 1;
       this.showAddToCartModalVisible = true;
     },
     showBuyNowModal() {
@@ -850,7 +944,7 @@ export default {
       }
       
       this.modalSelectedUnit = this.defaultUnit;
-      this.modalQuantity = 1;
+  this.modalQuantity = this.selectedPurchaseType === 'wholesale' ? Math.max(1, this.wholesaleMinQty) : 1;
       this.showBuyNowModalVisible = true;
     },
     closeAddToCartModal() {
@@ -1261,6 +1355,8 @@ export default {
           price: unitPrice,
           farmName: this.farmName,
           sellerId: this.sellerId,
+          // Persist the intended order type so checkout/seller can identify it
+          orderType: this.selectedPurchaseType || 'normal',
           cartStatus: false,
           createdAt: serverTimestamp()
         };
@@ -1309,6 +1405,8 @@ async handleBuyNowConfirm() {
         price: unitPrice,
         unit: this.modalSelectedUnit,
         quantity: this.modalQuantity,
+        // Pass along the intended purchase type to checkout
+        orderType: this.selectedPurchaseType || 'normal',
         isBuyNow: true
       };
 
@@ -1337,6 +1435,13 @@ async handleBuyNowConfirm() {
         message: `This item is currently out of stock`
       };
     }
+    // Enforce wholesale minimum
+    if (this.selectedPurchaseType === 'wholesale' && quantity < this.wholesaleMinQty) {
+      return {
+        isValid: false,
+        message: `Minimum wholesale order is ${this.wholesaleMinQty} ${unit}`
+      };
+    }
     
     if (quantity > availableStock) {
       return {
@@ -1351,6 +1456,10 @@ async handleBuyNowConfirm() {
   // Add method to validate modal quantity input
   validateModalQuantity() {
     const maxStock = this.getMaxQuantity(this.modalSelectedUnit);
+    // Wholesale minimums
+    if (this.selectedPurchaseType === 'wholesale' && this.modalQuantity < this.wholesaleMinQty) {
+      this.modalQuantity = this.wholesaleMinQty;
+    }
     if (this.modalQuantity > maxStock) {
       this.modalQuantity = maxStock;
       this.showNotificationMessage(`Maximum available stock is ${maxStock} ${this.modalSelectedUnit}`, 'error');
@@ -1373,6 +1482,14 @@ async handleBuyNowConfirm() {
   
   await this.fetchProduct();
   console.log('Product fetched. Seller ID:', this.sellerId);
+  // Apply forced mode from route if valid
+  const mode = this.$route?.query?.mode;
+  if (mode === 'preorder' && this.isPreOrderProduct) {
+    this.selectedPurchaseType = 'preorder';
+  } else if (mode === 'wholesale' && this.isWholesaleProduct) {
+    this.selectedPurchaseType = 'wholesale';
+    if (this.quantity < this.wholesaleMinQty) this.quantity = this.wholesaleMinQty;
+  }
   
   if (this.sellerId) {
     console.log('Fetching farm details for seller:', this.sellerId);

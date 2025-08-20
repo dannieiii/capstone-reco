@@ -165,6 +165,7 @@
                 <th>Order Code</th>
                 <th>Customer</th>
                 <th>Product</th>
+                <th>Type</th>
                 <th>Unit & Quantity</th>
                 <th>Location</th>
                 <th>Date</th>
@@ -181,6 +182,9 @@
                   <div class="product-info">
                     <span class="product-name">{{ order.productName }}</span>
                   </div>
+                </td>
+                <td>
+                  <span :class="['type-badge', orderTypeClass(order.orderType, order.isPreOrder)]">{{ orderTypeLabel(order.orderType, order.isPreOrder) }}</span>
                 </td>
                 <td>
                   <div class="unit-quantity">
@@ -284,6 +288,7 @@
               <div class="info-group">
                 <h3>Order Details</h3>
                 <p><strong>Date:</strong> {{ formatDateTime(selectedOrder.timestamp || selectedOrder.createdAt) }}</p>
+                <p><strong>Type:</strong> <span :class="['type-badge', orderTypeClass(selectedOrder.orderType, selectedOrder.isPreOrder)]">{{ orderTypeLabel(selectedOrder.orderType, selectedOrder.isPreOrder) }}</span></p>
                 <p><strong>Status:</strong> 
                   <span :class="['status-badge', normalizeStatusClass(selectedOrder.status)]">
                     {{ selectedOrder.status }}
@@ -443,6 +448,20 @@ const getUnitPrice = (order) => {
     return order.totalPrice / order.quantity;
   }
   return 0;
+};
+
+// Order type helpers
+const orderTypeLabel = (type, isPreOrderFlag) => {
+  const t = (type || '').toLowerCase();
+  if (t === 'preorder' || isPreOrderFlag) return 'Pre-Order';
+  if (t === 'wholesale') return 'Wholesale';
+  return 'Normal';
+};
+const orderTypeClass = (type, isPreOrderFlag) => {
+  const t = (type || '').toLowerCase();
+  if (t === 'preorder' || isPreOrderFlag) return 'type-preorder';
+  if (t === 'wholesale') return 'type-wholesale';
+  return 'type-normal';
 };
 
 // Real-time orders listener
@@ -1153,7 +1172,7 @@ const exportOrders = (format) => {
 // Export as CSV
 const exportAsCSV = () => {
   // Create CSV content
-  const headers = ['Order Code', 'Customer', 'Product', 'Unit', 'Quantity', 'Unit Price', 'Location', 'Date', 'Total', 'Status'];
+  const headers = ['Order Code', 'Customer', 'Product', 'Type', 'Unit', 'Quantity', 'Unit Price', 'Location', 'Date', 'Total', 'Status'];
   
   const csvContent = [
     headers.join(','),
@@ -1161,6 +1180,7 @@ const exportAsCSV = () => {
       order.orderCode ? `#${order.orderCode}` : 'N/A',
       order.username || 'Unknown',
       order.productName || 'N/A',
+      orderTypeLabel(order.orderType, order.isPreOrder),
       getUnitDisplay(order.unit),
       order.quantity || 0,
       `₱${getUnitPrice(order).toFixed(2)}`,
@@ -1239,6 +1259,7 @@ const exportAsPDF = () => {
             <th>Order Code</th>
             <th>Customer</th>
             <th>Product</th>
+            <th>Type</th>
             <th>Unit & Qty</th>
             <th>Location</th>
             <th>Date</th>
@@ -1254,6 +1275,7 @@ const exportAsPDF = () => {
                 <td>${escapeHtml(order.orderCode ? `#${order.orderCode}` : 'N/A')}</td>
                 <td>${escapeHtml(order.username || 'Unknown')}</td>
                 <td>${escapeHtml(order.productName || 'N/A')}</td>
+                <td>${escapeHtml(orderTypeLabel(order.orderType, order.isPreOrder))}</td>
                 <td>${order.quantity || 0} ${getUnitDisplay(order.unit)}</td>
                 <td>${escapeHtml(getAddressDisplay(order.Location))}</td>
                 <td>${escapeHtml(formatDateTime(order.timestamp || order.createdAt))}</td>
@@ -1357,6 +1379,18 @@ const exportAsPDF = () => {
   color: #666;
   font-weight: 500;
 }
+
+/* Order type badges */
+.type-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.type-preorder { background-color: #e0f2fe; color: #0369a1; }
+.type-wholesale { background-color: #ede9fe; color: #5b21b6; }
+.type-normal { background-color: #f3f4f6; color: #374151; }
 
 .dashboard-container {
   display: flex;

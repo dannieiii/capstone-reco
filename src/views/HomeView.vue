@@ -357,7 +357,7 @@
         <button class="clear-all-filters" @click="resetAllFilters">Clear All</button>
       </div>
       
-      <div class="section-header">
+  <div v-if="!showPreOrderSection && !showWholesaleSection" class="section-header">
         <h2>{{ selectedCategory || 'All Products' }}</h2>
         <div class="section-actions">
           <span class="product-count">{{ filteredProducts.length }} products</span>
@@ -401,7 +401,7 @@
       </div>
 
       
- <div class="products-grid">
+ <div v-if="!showPreOrderSection && !showWholesaleSection" class="products-grid">
       <div v-if="isLoading" class="loading-state">
         <div class="spinner"></div>
         <p>Loading products...</p>
@@ -426,11 +426,10 @@
               <span v-else-if="product.ribbon === 'organic'">ORGANIC</span>
               <span v-else-if="product.ribbon === 'limited'">LIMITED</span>
             </div>
-            <div class="product-badge" v-if="product.isOrganic && !product.ribbon">Organic</div>
-            
-            <div class="pre-order-badge" v-if="product.preOrders">
-              <Calendar size="12" />
-              Pre-Order
+            <!-- ProductManagement-style top badges row: left status, right type -->
+            <div :class="['pm-top-badges', { 'has-ribbon': !!product.ribbon }]">
+              <div v-if="getBadgeText(product)" class="product-status active">{{ getBadgeText(product) }}</div>
+              <div v-if="product.wholesaleAvailable" class="product-badge wholesale">Wholesale</div>
             </div>
             
             <div class="trending-badge" v-if="product.isTrending">
@@ -569,11 +568,9 @@
                 <span v-else-if="product.ribbon === 'organic'">ORGANIC</span>
                 <span v-else-if="product.ribbon === 'limited'">LIMITED</span>
               </div>
-              <div class="product-badge" v-if="product.isOrganic && !product.ribbon">Organic</div>
-              
-              <div class="wholesale-badge" v-if="product.wholesaleAvailable">
-                <Package size="12" />
-                Wholesale
+              <div :class="['pm-top-badges', { 'has-ribbon': !!product.ribbon }]">
+                <div v-if="getBadgeText(product)" class="product-status active">{{ getBadgeText(product) }}</div>
+                <div v-if="product.wholesaleAvailable" class="product-badge wholesale">Wholesale</div>
               </div>
               
               <div class="trending-badge" v-if="product.isTrending">
@@ -668,11 +665,9 @@
                 <span v-else-if="product.ribbon === 'organic'">ORGANIC</span>
                 <span v-else-if="product.ribbon === 'limited'">LIMITED</span>
               </div>
-              <div class="product-badge" v-if="product.isOrganic && !product.ribbon">Organic</div>
-              
-              <div class="pre-order-badge" v-if="product.preOrders">
-                <Calendar size="12" />
-                Pre-Order
+              <div :class="['pm-top-badges', { 'has-ribbon': !!product.ribbon }]">
+                <div v-if="getBadgeText(product)" class="product-status active">{{ getBadgeText(product) }}</div>
+                <div v-if="product.wholesaleAvailable" class="product-badge wholesale">Wholesale</div>
               </div>
               
               <div class="trending-badge" v-if="product.isTrending">
@@ -699,7 +694,7 @@
                 </div>
               </div>
               <div class="price">
-                <span>₱{{ formatPrice(product.price) }}</span>
+                <span>₱{{ formatPrice(getPreOrderDisplayPrice(product)) }}</span>
                 <span v-if="product.preOrderMessage && product.preOrders" class="pre-order-message">
                   {{ product.preOrderMessage }}
                 </span>
@@ -960,13 +955,14 @@ const filteredProducts = computed(() => {
       // Apply type filter
       if (typeFilter.value.length > 0) {
         result = result.filter(product => {
+          const isPreOrder = product.preOrders === true || product.isPreOrder === true;
           return (
             (typeFilter.value.includes('organic') && product.isOrganic) ||
             (typeFilter.value.includes('new') && product.ribbon === 'new') ||
             (typeFilter.value.includes('sale') && product.ribbon === 'sale') ||
             (typeFilter.value.includes('trending') && product.isTrending) ||
             (typeFilter.value.includes('wholesale') && product.wholesaleAvailable) ||
-            (typeFilter.value.includes('pre-order') && product.preOrders)
+            (typeFilter.value.includes('pre-order') && isPreOrder)
           );
         });
       }
@@ -1025,19 +1021,12 @@ const filteredProducts = computed(() => {
     });
 
     // Watch for price changes to validate min/max relationship
-    watch(minPrice, (newValue) => {
-      if (newValue > maxPrice.value) {
-        maxPrice.value = newValue;
-      }
-    });
-
     watch(maxPrice, (newValue) => {
       if (newValue < minPrice.value) {
         minPrice.value = newValue;
       }
     });
 
-    // Handle image loading errors for products
     const handleProductImageError = (event, product) => {
       // Use category-specific product image or default
       const category = product.category || 'default';
@@ -1188,6 +1177,8 @@ const fetchProducts = async () => {
         
         const allProducts = querySnapshot.docs.map((doc) => {
           const productData = doc.data();
+          // Normalize pre-order flag across possible field names
+          const preOrderFlag = productData.preOrders === true || productData.isPreOrder === true || productData['pre-order'] === true;
           
           // Calculate if this is a trending product
           const views = parseInt(productData.views || 0);
@@ -1200,8 +1191,17 @@ const fetchProducts = async () => {
           let ribbon = productData.ribbon;
           
           if (!hasExistingRibbon) {
-            const ribbonTypes = ['new', 'sale', 'pre-order', 'organic', 'limited', null, null];
-            ribbon = ribbonTypes[Math.floor(Math.random() * ribbonTypes.length)];
+            // Prefer a meaningful ribbon when flags exist
+            if (preOrderFlag) {
+              ribbon = 'pre-order';
+            } else if (productData.isOnSale) {
+              ribbon = 'sale';
+            } else if (productData.isOrganic) {
+              ribbon = 'organic';
+            } else {
+              const ribbonTypes = ['new', 'limited', null, null];
+              ribbon = ribbonTypes[Math.floor(Math.random() * ribbonTypes.length)];
+            }
           }
           
           return {
@@ -1237,8 +1237,9 @@ const fetchProducts = async () => {
             wholesaleAvailable: productData.wholesaleAvailable || false,
             wholesalePrice: productData.wholesalePrice || 0,
             whominWholesaleQty: productData.whominWholesaleQty || 0,
-            // Pre-order fields
-            preOrders: productData.preOrders || false,
+            // Pre-order fields (normalized)
+            preOrders: preOrderFlag,
+            isPreOrder: preOrderFlag,
             preorderDays: productData.preorderDays || 0,
             preOrderMessage: productData.preOrderMessage || '',
             preOrderLimit: productData.preOrderLimit || 0
@@ -1260,7 +1261,7 @@ const fetchProducts = async () => {
 
     // Add computed property for pre-order products
     const preOrderProducts = computed(() => {
-      return products.value.filter(product => product.preOrders === true);
+      return products.value.filter(product => product.preOrders === true || product.isPreOrder === true);
     });
 
     // Add method to filter by wholesale
@@ -1361,8 +1362,40 @@ const fetchProducts = async () => {
     };
   },
   methods: {
+    // Dynamic text for the green badge on product cards
+    // Priority: product.badgeText -> product.statusText -> 'Available' if active -> 'Organic' if organic -> ''
+    getBadgeText(product) {
+      if (!product) return '';
+      const txt = (product.badgeText || product.statusText || '').toString().trim();
+      if (txt) return txt;
+      if (product.isActive === true || product.active === true || product.status === 'Active') {
+        return 'Available';
+      }
+      if (product.isOrganic) return 'Organic';
+      return '';
+    },
     formatPrice(price) {
       return parseFloat(price).toFixed(2);
+    },
+
+    // Compute the display price for pre-order products (prefer per-unit pre-order, then generic)
+    getPreOrderDisplayPrice(product) {
+      const unitCandidates = [
+        product.preOrderPricePerKilo, product.preorderPricePerKilo,
+        product.preOrderPricePerSack, product.preorderPricePerSack,
+        product.preOrderPricePerTali, product.preorderPricePerTali,
+        product.preOrderPricePerKaing, product.preorderPricePerKaing,
+        product.preOrderPricePerBundle, product.preorderPricePerBundle,
+        product.preOrderPricePerTray, product.preorderPricePerTray,
+        product.preOrderPricePerPiece, product.preorderPricePerPiece
+      ];
+      for (const val of unitCandidates) {
+        const n = Number(val);
+        if (!isNaN(n) && n > 0) return n;
+      }
+      const generic = [Number(product.preOrderPrice), Number(product.preorderPrice), Number(product.price)]
+        .find(v => !isNaN(v) && v > 0);
+      return generic || 0;
     },
 
     formatDate(dateString) {
@@ -1452,7 +1485,10 @@ const fetchProducts = async () => {
         console.error('Product ID is undefined. Cannot navigate to product details.');
         return;
       }
-      this.$router.push({ path: `/product/${productId}` });
+      const query = {};
+      if (this.showWholesaleSection) query.mode = 'wholesale';
+      if (this.showPreOrderSection) query.mode = 'preorder';
+      this.$router.push({ path: `/product/${productId}`, query });
     },
     handleTabChange(tab) {
       console.log(`Changed to tab: ${tab}`);
@@ -2724,17 +2760,52 @@ watch: {
   transform: scale(1.05);
 }
 
-.product-badge {
+/* ProductManagement-style top badges row */
+.pm-top-badges {
   position: absolute;
-  top: 10px;
-  left: 10px;
-  background-color: #4caf50;
-  color: white;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 2;
+}
+.pm-top-badges.has-ribbon {
+  top: 32px; /* push down when ribbon is present */
+}
+
+/* Elegant pill badges (match ProductManagement look) */
+.product-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
   font-size: 11px;
-  font-weight: 600;
-  padding: 4px 8px;
-  border-radius: 12px;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  font-weight: 700;
+  color: #fff;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.10);
+  backdrop-filter: saturate(1.2);
+}
+.product-status.active {
+  background-color: #10b981; /* emerald */
+}
+.product-status.inactive {
+  background-color: #ef4444; /* red */
+}
+
+.product-badge.wholesale {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background-color: #3b82f6; /* blue */
+  box-shadow: 0 4px 10px rgba(0,0,0,0.10);
 }
 
 .product-ribbon {
@@ -2796,6 +2867,8 @@ watch: {
   display: -webkit-box;
   border-bottom: 2px solid #2e5c31; /* Changed from yellow to green */
   -webkit-box-orient: vertical;
+  line-clamp: 1;
+  -webkit-line-clamp: 1; /* Prevent multi-line repetition */
   line-height: 1.3;
   min-height: 36px;
 }
@@ -2898,17 +2971,21 @@ watch: {
 
 /* Responsive Design */
 @media (max-width: 320px) {
-  .category-icon {
-    width: 45px;
-    height: 45px;
-  }
-  
   .category span {
-    font-size: 11px;
-  }
-  
-  .product-image {
-    height: 120px;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    margin-top: 8px;
+    text-align: center;
+    display: inline-block;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 2px 8px;
+    border-radius: 12px;
+    background: rgba(0,0,0,0.35); /* improve readability in app mode */
+    text-shadow: 0 1px 2px rgba(0,0,0,0.45);
   }
   
   .delivery-card {

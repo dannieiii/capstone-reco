@@ -320,6 +320,8 @@ export default {
         cartItemId: item.id, // Map the Firestore document ID to cartItemId for checkout
         unitPrice: item.price || item.unitPrice || 0, // Ensure unitPrice field exists
         productImage: item.image || item.productImage, // Handle different image field names
+        // Pass along any stored orderType to checkout (if cart captured it)
+        orderType: item.orderType
       }));
       
       console.log('Cart items being sent to checkout:', checkoutItems);
