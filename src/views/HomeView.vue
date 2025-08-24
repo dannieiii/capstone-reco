@@ -279,12 +279,7 @@
             <span>{{ category.category }}</span>
           </div>
         </div>
-        <!-- Debug info - remove this in production -->
-        <div class="debug-info" style="padding: 10px; background: #f0f0f0; font-size: 12px;">
-          <p>Total categories: {{ categories.length }}</p>
-          <p>Displayed categories: {{ displayedCategories.length }}</p>
-          <p>Remaining categories: {{ remainingCategories.length }}</p>
-        </div>
+
       </div>
     </div>
     </div>
@@ -296,7 +291,6 @@
           <div class="delivery-content">
             <h3>Pre-Order</h3>
             <p>Reserve products in advance</p>
-            <p class="free">Special pricing for pre-orders</p>
             <button class="shop-now-btn">Shop Now</button>
           </div>
           <img 
@@ -310,7 +304,6 @@
           <div class="delivery-content">
             <h3>Wholesale</h3>
             <p>Bulk orders at better prices</p>
-            <p class="free">Free delivery by 1:30pm</p>
             <button class="shop-now-btn">Shop Now</button>
           </div>
           <img 
@@ -381,9 +374,24 @@
                 :alt="product.productName || product.name"
                 @error="handleProductImageError($event, product)"
               >
-              <div class="trending-badge">
-                <TrendingUp size="12" />
-                Trending
+              <!-- Applied same ribbon reorganization to featured products -->
+              <div v-if="getTopPriorityRibbon(product)" :class="['product-ribbon', `ribbon-${getTopPriorityRibbon(product).type}`]">
+                <span>{{ getTopPriorityRibbon(product).text }}</span>
+              </div>
+              <div :class="['pm-top-badges', { 'has-ribbon': !!getTopPriorityRibbon(product) }]">
+                <div v-if="getBadgeText(product)" class="product-status active">{{ getBadgeText(product) }}</div>
+                <div v-if="product.wholesaleAvailable" class="product-badge wholesale">Wholesale</div>
+              </div>
+              
+              <div class="bottom-badges">
+                <div class="trending-badge" v-if="product.isTrending">
+                  <TrendingUp size="12" />
+                  Trending
+                </div>
+                <div class="hot-seller-badge" v-if="product.isHotSeller && !product.isTrending">
+                  <Flame size="12" />
+                  Hot Seller
+                </div>
               </div>
             </div>
             <div class="product-slide-info">
@@ -419,27 +427,32 @@
               :alt="product.productName || product.name"
               @error="handleProductImageError($event, product)"
             >
-            <div v-if="product.ribbon" :class="['product-ribbon', `ribbon-${product.ribbon}`]">
-              <span v-if="product.ribbon === 'new'">NEW</span>
-              <span v-else-if="product.ribbon === 'sale'">{{ product.discountPercentage }}% OFF</span>
-              <span v-else-if="product.ribbon === 'pre-order'">PRE-ORDER</span>
-              <span v-else-if="product.ribbon === 'organic'">ORGANIC</span>
-              <span v-else-if="product.ribbon === 'limited'">LIMITED</span>
-            </div>
-            <!-- ProductManagement-style top badges row: left status, right type -->
-            <div :class="['pm-top-badges', { 'has-ribbon': !!product.ribbon }]">
-              <div v-if="getBadgeText(product)" class="product-status active">{{ getBadgeText(product) }}</div>
-              <div v-if="product.wholesaleAvailable" class="product-badge wholesale">Wholesale</div>
-            </div>
-            
-            <div class="trending-badge" v-if="product.isTrending">
-              <TrendingUp size="12" />
-              Trending
-            </div>
-            
-            <div class="hot-seller-badge" v-if="product.isHotSeller && !product.isTrending">
-              <Flame size="12" />
-              Hot Seller
+            <!-- Reorganized badge system to prevent overlapping -->
+            <!-- Priority ribbon system: only show the most important ribbon -->
+            <!-- Improved badge system to prevent overlapping by stacking badges vertically -->
+            <div class="badge-container">
+              <!-- Top ribbon (highest priority) -->
+              <div v-if="getTopPriorityRibbon(product)" :class="['product-ribbon', `ribbon-${getTopPriorityRibbon(product).type}`]">
+                <span>{{ getTopPriorityRibbon(product).text }}</span>
+              </div>
+              
+              <!-- Second row badges (status and wholesale) -->
+              <div class="secondary-badges">
+                <div v-if="getBadgeText(product)" class="product-status active">{{ getBadgeText(product) }}</div>
+                <div v-if="product.wholesaleAvailable" class="product-badge wholesale">Wholesale</div>
+              </div>
+              
+              <!-- Third row badges (trending/hot seller) -->
+              <div class="tertiary-badges">
+                <div class="trending-badge" v-if="product.isTrending">
+                  <TrendingUp size="12" />
+                  Trending
+                </div>
+                <div class="hot-seller-badge" v-if="product.isHotSeller && !product.isTrending">
+                  <Flame size="12" />
+                  Hot Seller
+                </div>
+              </div>
             </div>
           </div>
           <div class="product-info">
@@ -457,55 +470,77 @@
             </div>
             
             <!-- Display available unit prices -->
+            <!-- Switched positions: discounted price first, then original price crossed out -->
             <div class="unit-prices">
               <div v-if="product.pricePerKilo > 0" class="price-tag">
-                <span class="price">₱{{ formatPrice(product.pricePerKilo) }}</span>
+                <div v-if="product.isOnSale" class="price-with-sale">
+                  <span class="sale-price">₱{{ formatPrice(calculateSalePrice(product.pricePerKilo, product.discountPercentage)) }}</span>
+                  <span class="original-price">₱{{ formatPrice(product.pricePerKilo) }}</span>
+                </div>
+                <div v-else>
+                  <span class="price">₱{{ formatPrice(product.pricePerKilo) }}</span>
+                </div>
                 <span class="unit">/kg</span>
-                <span v-if="product.isOnSale" class="sale-price">
-                  ₱{{ formatPrice(calculateSalePrice(product.pricePerKilo, product.discountPercentage)) }}
-                </span>
               </div>
               <div v-if="product.pricePerSack > 0" class="price-tag">
-                <span class="price">₱{{ formatPrice(product.pricePerSack) }}</span>
+                <div v-if="product.isOnSale" class="price-with-sale">
+                  <span class="sale-price">₱{{ formatPrice(calculateSalePrice(product.pricePerSack, product.discountPercentage)) }}</span>
+                  <span class="original-price">₱{{ formatPrice(product.pricePerSack) }}</span>
+                </div>
+                <div v-else>
+                  <span class="price">₱{{ formatPrice(product.pricePerSack) }}</span>
+                </div>
                 <span class="unit">/sack</span>
-                <span v-if="product.isOnSale" class="sale-price">
-                  ₱{{ formatPrice(calculateSalePrice(product.pricePerSack, product.discountPercentage)) }}
-                </span>
               </div>
               <div v-if="product.pricePerTali > 0" class="price-tag">
-                <span class="price">₱{{ formatPrice(product.pricePerTali) }}</span>
+                <div v-if="product.isOnSale" class="price-with-sale">
+                  <span class="sale-price">₱{{ formatPrice(calculateSalePrice(product.pricePerTali, product.discountPercentage)) }}</span>
+                  <span class="original-price">₱{{ formatPrice(product.pricePerTali) }}</span>
+                </div>
+                <div v-else>
+                  <span class="price">₱{{ formatPrice(product.pricePerTali) }}</span>
+                </div>
                 <span class="unit">/tali</span>
-                <span v-if="product.isOnSale" class="sale-price">
-                  ₱{{ formatPrice(calculateSalePrice(product.pricePerTali, product.discountPercentage)) }}
-                </span>
               </div>
               <div v-if="product.pricePerKaing > 0" class="price-tag">
-                <span class="price">₱{{ formatPrice(product.pricePerKaing) }}</span>
+                <div v-if="product.isOnSale" class="price-with-sale">
+                  <span class="sale-price">₱{{ formatPrice(calculateSalePrice(product.pricePerKaing, product.discountPercentage)) }}</span>
+                  <span class="original-price">₱{{ formatPrice(product.pricePerKaing) }}</span>
+                </div>
+                <div v-else>
+                  <span class="price">₱{{ formatPrice(product.pricePerKaing) }}</span>
+                </div>
                 <span class="unit">/kaing</span>
-                <span v-if="product.isOnSale" class="sale-price">
-                  ₱{{ formatPrice(calculateSalePrice(product.pricePerKaing, product.discountPercentage)) }}
-                </span>
               </div>
               <div v-if="product.pricePerBundle > 0" class="price-tag">
-                <span class="price">₱{{ formatPrice(product.pricePerBundle) }}</span>
+                <div v-if="product.isOnSale" class="price-with-sale">
+                  <span class="sale-price">₱{{ formatPrice(calculateSalePrice(product.pricePerBundle, product.discountPercentage)) }}</span>
+                  <span class="original-price">₱{{ formatPrice(product.pricePerBundle) }}</span>
+                </div>
+                <div v-else>
+                  <span class="price">₱{{ formatPrice(product.pricePerBundle) }}</span>
+                </div>
                 <span class="unit">/bundle</span>
-                <span v-if="product.isOnSale" class="sale-price">
-                  ₱{{ formatPrice(calculateSalePrice(product.pricePerBundle, product.discountPercentage)) }}
-                </span>
               </div>
               <div v-if="product.pricePerTray > 0" class="price-tag">
-                <span class="price">₱{{ formatPrice(product.pricePerTray) }}</span>
+                <div v-if="product.isOnSale" class="price-with-sale">
+                  <span class="sale-price">₱{{ formatPrice(calculateSalePrice(product.pricePerTray, product.discountPercentage)) }}</span>
+                  <span class="original-price">₱{{ formatPrice(product.pricePerTray) }}</span>
+                </div>
+                <div v-else>
+                  <span class="price">₱{{ formatPrice(product.pricePerTray) }}</span>
+                </div>
                 <span class="unit">/tray</span>
-                <span v-if="product.isOnSale" class="sale-price">
-                  ₱{{ formatPrice(calculateSalePrice(product.pricePerTray, product.discountPercentage)) }}
-                </span>
               </div>
               <div v-if="product.pricePerPiece > 0" class="price-tag">
-                <span class="price">₱{{ formatPrice(product.pricePerPiece) }}</span>
+                <div v-if="product.isOnSale" class="price-with-sale">
+                  <span class="sale-price">₱{{ formatPrice(calculateSalePrice(product.pricePerPiece, product.discountPercentage)) }}</span>
+                  <span class="original-price">₱{{ formatPrice(product.pricePerPiece) }}</span>
+                </div>
+                <div v-else>
+                  <span class="price">₱{{ formatPrice(product.pricePerPiece) }}</span>
+                </div>
                 <span class="unit">/piece</span>
-                <span v-if="product.isOnSale" class="sale-price">
-                  ₱{{ formatPrice(calculateSalePrice(product.pricePerPiece, product.discountPercentage)) }}
-                </span>
               </div>
             </div>
           </div>
@@ -561,26 +596,23 @@
                 :alt="product.productName || product.name"
                 @error="handleProductImageError($event, product)"
               >
-              <div v-if="product.ribbon" :class="['product-ribbon', `ribbon-${product.ribbon}`]">
-                <span v-if="product.ribbon === 'new'">NEW</span>
-                <span v-else-if="product.ribbon === 'sale'">{{ product.discount }}% OFF</span>
-                <span v-else-if="product.ribbon === 'pre-order'">PRE-ORDER</span>
-                <span v-else-if="product.ribbon === 'organic'">ORGANIC</span>
-                <span v-else-if="product.ribbon === 'limited'">LIMITED</span>
+              <div v-if="getTopPriorityRibbon(product)" :class="['product-ribbon', `ribbon-${getTopPriorityRibbon(product).type}`]">
+                <span>{{ getTopPriorityRibbon(product).text }}</span>
               </div>
-              <div :class="['pm-top-badges', { 'has-ribbon': !!product.ribbon }]">
+              <div :class="['pm-top-badges', { 'has-ribbon': !!getTopPriorityRibbon(product) }]">
                 <div v-if="getBadgeText(product)" class="product-status active">{{ getBadgeText(product) }}</div>
                 <div v-if="product.wholesaleAvailable" class="product-badge wholesale">Wholesale</div>
               </div>
               
-              <div class="trending-badge" v-if="product.isTrending">
-                <TrendingUp size="12" />
-                Trending
-              </div>
-              
-              <div class="hot-seller-badge" v-if="product.isHotSeller && !product.isTrending">
-                <Flame size="12" />
-                Hot Seller
+              <div class="bottom-badges">
+                <div class="trending-badge" v-if="product.isTrending">
+                  <TrendingUp size="12" />
+                  Trending
+                </div>
+                <div class="hot-seller-badge" v-if="product.isHotSeller && !product.isTrending">
+                  <Flame size="12" />
+                  Hot Seller
+                </div>
               </div>
             </div>
             <div class="product-info">
@@ -658,26 +690,23 @@
                 :alt="product.productName || product.name"
                 @error="handleProductImageError($event, product)"
               >
-              <div v-if="product.ribbon" :class="['product-ribbon', `ribbon-${product.ribbon}`]">
-                <span v-if="product.ribbon === 'new'">NEW</span>
-                <span v-else-if="product.ribbon === 'sale'">{{ product.discount }}% OFF</span>
-                <span v-else-if="product.ribbon === 'pre-order'">PRE-ORDER</span>
-                <span v-else-if="product.ribbon === 'organic'">ORGANIC</span>
-                <span v-else-if="product.ribbon === 'limited'">LIMITED</span>
+              <div v-if="getTopPriorityRibbon(product)" :class="['product-ribbon', `ribbon-${getTopPriorityRibbon(product).type}`]">
+                <span>{{ getTopPriorityRibbon(product).text }}</span>
               </div>
-              <div :class="['pm-top-badges', { 'has-ribbon': !!product.ribbon }]">
+              <div :class="['pm-top-badges', { 'has-ribbon': !!getTopPriorityRibbon(product) }]">
                 <div v-if="getBadgeText(product)" class="product-status active">{{ getBadgeText(product) }}</div>
                 <div v-if="product.wholesaleAvailable" class="product-badge wholesale">Wholesale</div>
               </div>
               
-              <div class="trending-badge" v-if="product.isTrending">
-                <TrendingUp size="12" />
-                Trending
-              </div>
-              
-              <div class="hot-seller-badge" v-if="product.isHotSeller && !product.isTrending">
-                <Flame size="12" />
-                Hot Seller
+              <div class="bottom-badges">
+                <div class="trending-badge" v-if="product.isTrending">
+                  <TrendingUp size="12" />
+                  Trending
+                </div>
+                <div class="hot-seller-badge" v-if="product.isHotSeller && !product.isTrending">
+                  <Flame size="12" />
+                  Hot Seller
+                </div>
               </div>
             </div>
             <div class="product-info">
@@ -1296,6 +1325,26 @@ const fetchProducts = async () => {
       }
     });
 
+    const getTopPriorityRibbon = (product) => {
+      // Priority order: sale > limited > pre-order > new > organic
+      if (product.ribbon === 'sale') {
+        return { type: 'sale', text: `${product.discountPercentage || product.discount}% OFF` };
+      }
+      if (product.ribbon === 'limited') {
+        return { type: 'limited', text: 'LIMITED' };
+      }
+      if (product.ribbon === 'pre-order') {
+        return { type: 'pre-order', text: 'PRE-ORDER' };
+      }
+      if (product.ribbon === 'new') {
+        return { type: 'new', text: 'NEW' };
+      }
+      if (product.ribbon === 'organic') {
+        return { type: 'organic', text: 'ORGANIC' };
+      }
+      return null;
+    };
+
     return {
       router,
       showProfileMenu,
@@ -1347,7 +1396,8 @@ const fetchProducts = async () => {
       filterByWholesale,
       showPreOrderSection,
       preOrderProducts,
-      filterByPreOrder
+      filterByPreOrder,
+      getTopPriorityRibbon
     };
   },
   data() {
@@ -1655,6 +1705,7 @@ watch: {
   gap: 10px;
   margin-bottom: 15px;
   width: 100%;
+  box-sizing: border-box;
 }
 
 /* Filter Button Styles */
@@ -1718,6 +1769,11 @@ watch: {
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: background-color 0.2s ease;
+}
+
+.close-filter:hover {
+  background-color: #e9ecef;
 }
 
 .filter-section {
@@ -2196,7 +2252,7 @@ watch: {
   color: white;
   font-size: 12px;
   font-weight: 500;
-  margin-top: 8px;
+  margin-top: 2px;
   text-align: center;
   display: block;
   max-width: 100%;
@@ -2895,11 +2951,28 @@ watch: {
   font-size: 11px;
 }
 
-.sale-price {
+.price-with-sale {
+  /* Changed from vertical to horizontal layout for prices side by side */
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.original-price {
+  /* Changed original price color to red and kept strikethrough */
   color: #e74c3c;
   font-size: 11px;
   text-decoration: line-through;
-  margin-left: 4px;
+  line-height: 1.2;
+}
+
+.sale-price {
+  /* Changed discounted price color to green and removed strikethrough */
+  color: #10b981;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .product-meta {
@@ -2975,17 +3048,13 @@ watch: {
     color: #fff;
     font-size: 12px;
     font-weight: 700;
-    margin-top: 8px;
+    margin-top: 1px;
     text-align: center;
     display: inline-block;
     max-width: 100%;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    padding: 2px 8px;
-    border-radius: 12px;
-    background: rgba(0,0,0,0.35); /* improve readability in app mode */
-    text-shadow: 0 1px 2px rgba(0,0,0,0.45);
   }
   
   .delivery-card {
@@ -3325,5 +3394,232 @@ html {
   .pre-order-info {
     grid-template-columns: 1fr;
   }
+}
+
+/* Mobile Styles */
+@media (max-width: 767px) {
+  .hero-section {
+    height: 250px;
+    padding: 0 15px;
+  }
+  
+  .hero-content h1 {
+    font-size: 24px;
+    margin-bottom: 8px;
+  }
+  
+  .hero-content p {
+    font-size: 14px;
+    margin-bottom: 15px;
+  }
+  
+  .search-container {
+    max-width: 100%;
+    margin: 0 15px;
+  }
+  
+  .categories {
+    gap: 8px;
+    padding: 0 10px;
+  }
+  
+  .category-icon {
+    width: 50px;
+    height: 50px;
+  }
+  
+  .category-name {
+    font-size: 11px;
+  }
+  
+  .products-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    padding: 0 10px;
+  }
+  
+  .product-card {
+    padding: 8px;
+  }
+  
+  .product-image {
+    height: 120px;
+  }
+  
+  .hero-overlay {
+    background: rgba(0,0,0,0.35); /* improve readability in app mode */
+    text-shadow: 0 1px 2px rgba(0,0,0,0.45);
+  }
+  
+  .delivery-card {
+    height: 110px;
+    padding: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: stretch;
+  }
+  
+  .delivery-content {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    flex: 1;
+    min-height: 100%;
+    padding-right: 8px;
+  }
+  
+  .delivery-card h3 {
+    font-size: 16px;
+    margin: 0 0 4px 0;
+  }
+  
+  .delivery-card p {
+    font-size: 12px;
+    margin: 0 0 auto 0;
+    flex-grow: 1;
+  }
+  
+  .shop-now-btn {
+    margin-top: auto;
+    align-self: flex-start;
+  }
+  
+  .delivery-image {
+    width: 60px;
+    height: 60px;
+    flex-shrink: 0;
+    align-self: center;
+  }
+  
+  .product-info h3 {
+    font-size: 13px;
+  }
+  
+  .filter-dropdown {
+    width: 260px;
+  }
+  
+  .price-inputs {
+    flex-direction: column;
+  }
+
+  .modal-categories {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 767px) {
+  .category span {
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    margin-top: 1px;
+    text-align: center;
+    display: inline-block;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+/* Repositioned trending and hot seller badges to bottom-right */
+.bottom-badges {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 2;
+}
+
+.trending-badge {
+  background-color: rgba(233, 30, 99, 0.9);
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 6px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+/* Hot Seller Badge */
+.hot-seller-badge {
+  background-color: rgba(255, 87, 34, 0.9);
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 6px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+/* Updated CSS for new badge container system */
+.badge-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.product-ribbon {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 15;
+}
+
+.secondary-badges {
+  position: absolute;
+  top: 32px;
+  left: 8px;
+  right: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 12;
+}
+
+.tertiary-badges {
+  position: absolute;
+  top: 60px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  z-index: 11;
+}
+
+/* Fixed pricing styles to properly show original price crossed out */
+.price-with-sale {
+  /* Changed from vertical to horizontal layout for prices side by side */
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.original-price {
+  /* Changed original price color to red and kept strikethrough */
+  color: #e74c3c;
+  font-size: 11px;
+  text-decoration: line-through;
+  line-height: 1.2;
+}
+
+.sale-price {
+  /* Changed discounted price color to green and removed strikethrough */
+  color: #10b981;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
 }
 </style>
