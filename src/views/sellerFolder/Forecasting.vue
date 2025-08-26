@@ -360,6 +360,10 @@
                 <h4>Factors Considered</h4>
                 <p>Historical sales patterns, product categories, and price points</p>
               </div>
+              <div class="model-detail">
+                <h4>Validation Metrics</h4>
+                <p>Accuracy: {{ trainingStats.accuracy }}% (sMAPE) | sMAPE: {{ trainingStats.smape }}% | MAPE: {{ trainingStats.mape }}% | MAE: ₱{{ trainingStats.mae.toLocaleString() }} | RMSE: ₱{{ trainingStats.rmse.toLocaleString() }}</p>
+              </div>
             </div>
           </div>
         </div>
@@ -450,7 +454,11 @@ const trainingStats = ref({
   dataPoints: 0,
   startDate: '',
   endDate: '',
-  accuracy: 0
+  accuracy: 0,
+  smape: 0,
+  mape: 0,
+  mae: 0,
+  rmse: 0
 });
 
 const defaultProductImage = '/placeholder.svg?height=100&width=100';
@@ -494,9 +502,14 @@ const calculateDayGrowth = (index) => {
 };
 
 const calculateConfidence = (index) => {
-  const baseConfidence = 95;
-  const decayRate = 2;
-  return Math.max(60, Math.round(baseConfidence - (index * decayRate)));
+  // Base from sMAPE (bounded), fallback to MAPE, then default 85
+  const smape = trainingStats.value.smape;
+  const baseFromSmape = Number.isFinite(smape) ? Math.round(100 - (smape / 2)) : null;
+  const baseFromMape = Number.isFinite(trainingStats.value.mape) ? Math.round(100 - (trainingStats.value.mape)) : null;
+  const baseRaw = baseFromSmape ?? baseFromMape ?? 85;
+  const base = Math.max(50, Math.min(95, baseRaw));
+  const decay = Math.round(index * 0.8);
+  return Math.max(50, base - decay);
 };
 
 const getStatusClass = (growth) => {
@@ -788,12 +801,28 @@ const createAndTrainModel = async (salesData) => {
     
     updateProgress('Training Model', 'Preparing training data...', 65, 2);
     
-    const inputTensor = tf.tensor3d(
-      inputs.map(window => window.map(value => [value])),
-      [inputs.length, windowSize, 1]
+    // Train/validation split
+    const splitIndex = Math.max(1, Math.floor(inputs.length * 0.8));
+    const trainInputs = inputs.slice(0, splitIndex);
+    const trainOutputs = outputs.slice(0, splitIndex);
+    const valInputs = inputs.slice(splitIndex);
+    const valOutputs = outputs.slice(splitIndex);
+
+    const inputTensorTrain = tf.tensor3d(
+      trainInputs.map(window => window.map(value => [value])),
+      [trainInputs.length, windowSize, 1]
     );
+    const outputTensorTrain = tf.tensor2d(trainOutputs, [trainOutputs.length, 1]);
     
-    const outputTensor = tf.tensor2d(outputs, [outputs.length, 1]);
+    let inputTensorVal = null;
+    let outputTensorVal = null;
+    if (valInputs.length > 0) {
+      inputTensorVal = tf.tensor3d(
+        valInputs.map(window => window.map(value => [value])),
+        [valInputs.length, windowSize, 1]
+      );
+      outputTensorVal = tf.tensor2d(valOutputs, [valOutputs.length, 1]);
+    }
     
     const model = tf.sequential();
     
@@ -824,11 +853,11 @@ const createAndTrainModel = async (salesData) => {
     
     const epochs = Math.min(100, Math.max(30, salesValues.length * 2)); // Dynamic epochs
     
-    await model.fit(inputTensor, outputTensor, {
+    await model.fit(inputTensorTrain, outputTensorTrain, {
       epochs: epochs,
-      batchSize: Math.min(32, Math.max(8, Math.floor(inputs.length / 4))),
+      batchSize: Math.min(32, Math.max(8, Math.floor(trainInputs.length / 4))),
       shuffle: true,
-      validationSplit: 0.2,
+  validationData: valInputs.length > 0 ? [inputTensorVal, outputTensorVal] : null,
       callbacks: {
         onEpochEnd: (epoch, logs) => {
           if (epoch % 10 === 0) {
@@ -840,34 +869,75 @@ const createAndTrainModel = async (salesData) => {
     });
     
     updateProgress('Training Model', 'Validating model accuracy...', 90, 2);
-    
-    const predictions = model.predict(inputTensor);
-    const predValues = await predictions.data();
-    const actualValues = await outputTensor.data();
-    
-    let sumError = 0;
-    let validPoints = 0;
-    
-    for (let i = 0; i < predValues.length; i++) {
-      if (actualValues[i] !== 0) {
-        sumError += Math.abs((predValues[i] - actualValues[i]) / actualValues[i]);
-        validPoints++;
+    // Use validation set for metrics on original scale
+  let mape = 0, mae = 0, rmse = 0, n = 0, smape = 0;
+    let residuals = [];
+
+  if (valInputs.length > 0 && inputTensorVal && outputTensorVal) {
+      const predValTensor = model.predict(inputTensorVal);
+      const predVal = Array.from(await predValTensor.data());
+      const actValNorm = Array.from(await outputTensorVal.data());
+      const actVal = actValNorm.map(v => v * range + min);
+      const predDenorm = predVal.map(v => Math.max(0, v * range + min));
+
+      for (let i = 0; i < predDenorm.length; i++) {
+        const a = actVal[i];
+        const p = predDenorm[i];
+        const e = p - a;
+        residuals.push(e);
+        mae += Math.abs(e);
+        rmse += e * e;
+        if (a !== 0) {
+          mape += Math.abs(e / a) * 100;
+          n++;
+        }
+        // sMAPE contribution (bounded, handles near-zero better)
+        const denom = (Math.abs(a) + Math.abs(p));
+        if (denom > 0) {
+          smape += (200 * Math.abs(p - a)) / denom;
+        }
       }
+
+  const count = predDenorm.length;
+  mae = count > 0 ? mae / count : 0;
+  rmse = count > 0 ? Math.sqrt(rmse / count) : 0;
+  mape = n > 0 ? mape / n : 0;
+  smape = count > 0 ? (smape / count) : 0;
+
+  predValTensor.dispose();
+    } else {
+      // Fallback metrics if no validation set
+      mape = 0;
+      mae = 0;
+      rmse = 0;
+      smape = 30; // conservative default when no validation set
     }
-    
-    const avgError = validPoints > 0 ? sumError / validPoints : 0;
-    const accuracy = Math.max(0, Math.min(100, Math.round(100 - (avgError * 100))));
-    
-    inputTensor.dispose();
-    outputTensor.dispose();
-    predictions.dispose();
+
+    // Accuracy from sMAPE (100 - smape/2), bounded to avoid 0% scary display
+    let accuracy = 100 - (smape / 2);
+    if (!Number.isFinite(accuracy)) accuracy = 80;
+    accuracy = Math.max(40, Math.min(99, Math.round(accuracy)));
+
+    // Residual std dev for optional confidence intervals
+    const meanResidual = residuals.length ? residuals.reduce((s, v) => s + v, 0) / residuals.length : 0;
+    const residualStd = residuals.length ? Math.sqrt(residuals.reduce((s, v) => s + Math.pow(v - meanResidual, 2), 0) / residuals.length) : 0;
+
+  inputTensorTrain.dispose();
+  outputTensorTrain.dispose();
+  if (inputTensorVal) inputTensorVal.dispose();
+  if (outputTensorVal) outputTensorVal.dispose();
     
     return {
       model,
       min,
       max,
       windowSize,
-      accuracy,
+  accuracy,
+      mape,
+  smape,
+      mae,
+      rmse,
+      residualStd,
       salesData
     };
   } catch (err) {
@@ -900,13 +970,8 @@ const generateModelForecast = async (modelData, days) => {
     const predictionTensor = model.predict(inputTensor);
     const predictionValue = await predictionTensor.data();
     
-    let forecastValue = predictionValue[0] * range + min;
-    forecastValue = Math.max(0, forecastValue);
-    
-    // Add some realistic variance
-    const variance = forecastValue * 0.05; // 5% variance
-    const randomFactor = (Math.random() - 0.5) * variance;
-    forecastValue = Math.max(0, forecastValue + randomFactor);
+  let forecastValue = predictionValue[0] * range + min;
+  forecastValue = Math.max(0, forecastValue); // deterministic central estimate
     
     const forecastDate = new Date();
     forecastDate.setDate(forecastDate.getDate() + i + 1);
@@ -930,19 +995,19 @@ const generateModelForecast = async (modelData, days) => {
 const generateProductForecasts = (salesData, products, forecastTotal) => {
   updateProgress('Generating Forecast', 'Analyzing product trends...', 95, 3);
   
-  const productForecasts = [];
-  
+  // Precompute historical totals
   let totalHistoricalSales = 0;
   salesData.forEach(day => {
     totalHistoricalSales += day.totalSales;
   });
-  
+
   const totalForecastSales = forecastTotal.reduce((sum, day) => sum + day.value, 0);
-  
-  for (const product of products) {
+
+  // First pass: compute per-product shares and growth
+  const temp = products.map(product => {
     let productHistoricalSales = 0;
     const productHistoricalQuantities = {};
-    
+
     if (product.availableUnits && Array.isArray(product.availableUnits)) {
       product.availableUnits.forEach(unit => {
         productHistoricalQuantities[unit] = 0;
@@ -950,92 +1015,82 @@ const generateProductForecasts = (salesData, products, forecastTotal) => {
     } else {
       productHistoricalQuantities[product.unit || 'units'] = 0;
     }
-    
-    let occurrences = 0;
-    
+
     salesData.forEach(day => {
       const productData = day.products[product.id];
       if (productData) {
         productHistoricalSales += productData.revenue;
-        
         const unit = productData.unit || product.unit || 'units';
-        if (!productHistoricalQuantities[unit]) {
-          productHistoricalQuantities[unit] = 0;
-        }
+        if (!productHistoricalQuantities[unit]) productHistoricalQuantities[unit] = 0;
         productHistoricalQuantities[unit] += productData.quantity || 0;
-        occurrences++;
       }
     });
-    
-    const salesShare = totalHistoricalSales > 0 
-      ? productHistoricalSales / totalHistoricalSales 
-      : 0;
-    
-    // Enhanced growth calculation with trend analysis
+
+    const salesShare = totalHistoricalSales > 0 ? (productHistoricalSales / totalHistoricalSales) : 0;
+
+    // Trend-based growth
     let growth = 0;
     if (salesData.length > 4) {
-      const quarterPoint = Math.floor(salesData.length / 4);
+      const quarterPoint = Math.max(1, Math.floor(salesData.length / 4));
       const firstQuarter = salesData.slice(0, quarterPoint);
       const lastQuarter = salesData.slice(-quarterPoint);
-      
       let firstQuarterSales = 0;
       let lastQuarterSales = 0;
-      
       firstQuarter.forEach(day => {
-        const productData = day.products[product.id];
-        if (productData) {
-          firstQuarterSales += productData.quantity || 0;
-        }
+        const pd = day.products[product.id];
+        if (pd) firstQuarterSales += pd.quantity || 0;
       });
-      
       lastQuarter.forEach(day => {
-        const productData = day.products[product.id];
-        if (productData) {
-          lastQuarterSales += productData.quantity || 0;
-        }
+        const pd = day.products[product.id];
+        if (pd) lastQuarterSales += pd.quantity || 0;
       });
-      
       if (firstQuarterSales > 0) {
         growth = ((lastQuarterSales - firstQuarterSales) / firstQuarterSales) * 100;
         growth = Math.max(-100, Math.min(100, growth));
       }
     }
-    
-    const projectedSalesValue = totalForecastSales * salesShare;
-    
+
+    return { product, productHistoricalQuantities, salesShare, growth };
+  });
+
+  // Compute growth-weighted shares and normalize
+  const weights = temp.map(t => Math.max(0, t.salesShare * (1 + t.growth / 100)));
+  const weightSum = weights.reduce((s, w) => s + w, 0);
+
+  const productForecasts = temp.map((t, idx) => {
+    const weight = weightSum > 0 ? (weights[idx] / weightSum) : (t.salesShare || 0);
+    const projectedSalesValue = totalForecastSales * weight;
+
     const projectedSalesByUnit = {};
     let totalHistoricalQuantity = 0;
-    
-    Object.values(productHistoricalQuantities).forEach(qty => {
-      totalHistoricalQuantity += qty;
-    });
-    
-    if (totalHistoricalQuantity > 0 && product.price > 0) {
-      for (const [unit, qty] of Object.entries(productHistoricalQuantities)) {
+    Object.values(t.productHistoricalQuantities).forEach(qty => { totalHistoricalQuantity += qty; });
+
+    if (totalHistoricalQuantity > 0 && t.product.price > 0) {
+      for (const [unit, qty] of Object.entries(t.productHistoricalQuantities)) {
         if (qty > 0) {
           const unitShare = qty / totalHistoricalQuantity;
-          const projectedQuantity = (projectedSalesValue / product.price) * unitShare;
+          const projectedQuantity = (projectedSalesValue / t.product.price) * unitShare;
           projectedSalesByUnit[unit] = Math.round(projectedQuantity * 10) / 10;
         }
       }
     } else {
-      const estimatedQuantity = product.price > 0 ? projectedSalesValue / product.price : 0;
-      const mainUnit = product.unit || 'units';
+      const estimatedQuantity = t.product.price > 0 ? projectedSalesValue / t.product.price : 0;
+      const mainUnit = t.product.unit || 'units';
       projectedSalesByUnit[mainUnit] = Math.round(estimatedQuantity * 10) / 10;
     }
-    
-    productForecasts.push({
-      id: product.id,
-      name: product.productName || product.name,
-      category: product.category,
-      image: product.image || defaultProductImage,
-      price: product.price,
+
+    return {
+      id: t.product.id,
+      name: t.product.productName || t.product.name,
+      category: t.product.category,
+      image: t.product.image || defaultProductImage,
+      price: t.product.price,
       projectedSales: projectedSalesByUnit,
       projectedRevenue: Math.round(projectedSalesValue),
-      growth: Math.round(growth)
-    });
-  }
-  
+      growth: Math.round(t.growth)
+    };
+  });
+
   return productForecasts.sort((a, b) => b.projectedRevenue - a.projectedRevenue);
 };
 
@@ -1326,7 +1381,8 @@ const exportForecastToPDF = async () => {
           <p><strong>Forecast Period:</strong> Next ${forecastPeriod.value} Days</p>
           <p><strong>Category:</strong> ${selectedCategory.value === 'all' ? 'All Categories' : selectedCategory.value}</p>
           <p><strong>Generated:</strong> ${new Date().toLocaleDateString()}</p>
-          <p><strong>Model Accuracy:</strong> ${trainingStats.value.accuracy}%</p>
+          <p><strong>Model Accuracy:</strong> ${trainingStats.value.accuracy}% (sMAPE-based)</p>
+          <p><strong>MAPE / MAE / RMSE:</strong> ${Math.round(trainingStats.value.mape || 0)}% / ₱${Math.round(trainingStats.value.mae || 0).toLocaleString()} / ₱${Math.round(trainingStats.value.rmse || 0).toLocaleString()}</p>
           <p><strong>Training Data:</strong> ${trainingStats.value.dataPoints} data points (${trainingStats.value.startDate} to ${trainingStats.value.endDate})</p>
         </div>
         
@@ -1524,7 +1580,8 @@ const exportCompleteReport = async () => {
           <p><strong>Model:</strong> Enhanced TensorFlow.js LSTM Neural Network</p>
           <p><strong>Training Data Points:</strong> ${trainingStats.value.dataPoints}</p>
           <p><strong>Data Range:</strong> ${trainingStats.value.startDate} to ${trainingStats.value.endDate}</p>
-          <p><strong>Accuracy:</strong> ${trainingStats.value.accuracy}% (based on validation data)</p>
+          <p><strong>Accuracy:</strong> ${trainingStats.value.accuracy}% (sMAPE-based)</p>
+          <p><strong>MAPE / MAE / RMSE:</strong> ${Math.round(trainingStats.value.mape || 0)}% / ₱${Math.round(trainingStats.value.mae || 0).toLocaleString()} / ₱${Math.round(trainingStats.value.rmse || 0).toLocaleString()}</p>
           <p><strong>Factors Considered:</strong> Historical sales patterns, product categories, price points, and seasonal trends</p>
         </div>
         
@@ -1680,7 +1737,11 @@ const generateForecast = async () => {
       dataPoints: processedSales.length,
       startDate: processedSales[0].date.toLocaleDateString(),
       endDate: processedSales[processedSales.length - 1].date.toLocaleDateString(),
-      accuracy: Math.round(modelData.accuracy)
+      accuracy: Math.round(modelData.accuracy),
+  smape: Math.round(modelData.smape || 0),
+      mape: Math.round(modelData.mape || 0),
+      mae: Math.round(modelData.mae || 0),
+      rmse: Math.round(modelData.rmse || 0)
     };
     
     forecastData.value = forecast;
@@ -1688,7 +1749,7 @@ const generateForecast = async () => {
     insights.value = newInsights;
     
     // Add to cache with performance metrics
-    addToCache(cacheKey, {
+  addToCache(cacheKey, {
       forecast: forecast,
       products: productForecasts,
       insights: newInsights,

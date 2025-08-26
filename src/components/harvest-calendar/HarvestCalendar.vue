@@ -625,8 +625,21 @@ import {
   setDoc  // Add this import
 } from 'firebase/firestore'
 
-// Enhanced environment variable handling
-const WEATHER_API_KEY = process.env.VUE_APP_WEATHER_API_KEY || process.env.VITE_WEATHER_API_KEY || ''
+// Enhanced environment variable handling with runtime overrides
+const WEATHER_API_KEY = (
+  (typeof window !== 'undefined' && (window.OWM_API_KEY || localStorage.getItem('WEATHER_API_KEY'))) ||
+  process.env.VUE_APP_WEATHER_API_KEY ||
+  process.env.VITE_WEATHER_API_KEY ||
+  ''
+).trim()
+
+// Env/runtime switch to disable One Call and avoid 401s on plans without access
+const DISABLE_ONE_CALL = (
+  (typeof window !== 'undefined' && (window.OWM_DISABLE_ONECALL || localStorage.getItem('OWM_DISABLE_ONECALL'))) ||
+  process.env.VUE_APP_OWM_DISABLE_ONECALL ||
+  process.env.VITE_OWM_DISABLE_ONECALL ||
+  false
+)
 
 console.log('Weather API Configuration:', {
   nodeEnv: process.env.NODE_ENV,
@@ -655,16 +668,8 @@ const upcomingHarvests = ref([])
 const sellerLocation = ref({})
 const currentSellerId = ref('')
 
-// Weather forecast data
-const weatherForecast = ref([
-  { date: 'Jan 5', condition: 'sunny', high: 29, low: 22, rain: 0 },
-  { date: 'Jan 6', condition: 'partly-cloudy', high: 31, low: 24, rain: 10 },
-  { date: 'Jan 7', condition: 'cloudy', high: 28, low: 21, rain: 30 },
-  { date: 'Jan 8', condition: 'rainy', high: 26, low: 19, rain: 80 },
-  { date: 'Jan 9', condition: 'partly-cloudy', high: 30, low: 23, rain: 20 },
-  { date: 'Jan 10', condition: 'sunny', high: 32, low: 25, rain: 0 },
-  { date: 'Jan 11', condition: 'sunny', high: 33, low: 26, rain: 5 }
-])
+// Weather forecast data (populated from API; fallback to generated demo)
+const weatherForecast = ref([])
 
 // Oriental Mindoro coordinates (Calapan City as default)
 const ORIENTAL_MINDORO_COORDS = {
@@ -862,10 +867,10 @@ const getWeatherIcon = (condition) => {
     'sunny': Sun,
     'clear': Sun,
     'partly-cloudy': CloudSun,
-    'cloudy': Cloud,
+  'cloudy': Cloud,
     'overcast': Cloud,
-    'rainy': CloudRain,
-    'rain': CloudRain
+  'rainy': CloudRain,
+  'rain': CloudRain
   }
   return iconMap[condition] || CloudSun
 }
@@ -875,7 +880,7 @@ const fetchWeatherData = async (lat, lon) => {
   // Validate API key first
   if (!WEATHER_API_KEY || WEATHER_API_KEY.trim() === '' || WEATHER_API_KEY === 'demo_mode') {
     console.warn('Weather API key not configured. Using demo weather data.')
-    setDemoWeatherData()
+  setDemoWeatherData()
     return
   }
 
@@ -907,10 +912,13 @@ const fetchWeatherData = async (lat, lon) => {
       description: data.weather[0].description,
       windSpeed: data.wind?.speed || 0,
       location: data.name || 'Unknown Location',
-      condition: mapWeatherCondition(data.weather[0].main)
+      condition: mapWeatherCondition(data.weather[0].main, data.weather[0].description)
     }
     
     console.log('Weather data fetched successfully:', currentWeather.value)
+
+    // Fetch 7-day forecast after current weather
+    await fetchForecastData(lat, lon)
   } catch (error) {
     console.error('Error fetching weather data:', error)
     
@@ -941,6 +949,30 @@ const setDemoWeatherData = (locationName = 'Oriental Mindoro', errorReason = 'AP
     location: `${locationName} (Demo - ${errorReason})`,
     condition: 'partly-cloudy'
   }
+  // Also set a demo forecast for completeness
+  setDemoForecastData(baseTemp)
+}
+// Generate a plausible 7-day forecast without modifying currentWeather
+const setDemoForecastData = (baseTemp = 28) => {
+  const today = new Date()
+  weatherForecast.value = Array.from({ length: 7 }).map((_, i) => {
+    const d = new Date(today)
+    d.setDate(today.getDate() + i + 1)
+    const variance = (Math.random() - 0.5) * 4
+    const high = Math.round(baseTemp + variance + 2)
+    const low = Math.round(baseTemp + variance - 3)
+    const rain = Math.max(0, Math.min(100, Math.round(Math.random() * 60)))
+    const hum = Math.max(55, Math.min(90, Math.round(70 + (Math.random() - 0.5) * 20)))
+    const cond = rain > 50 ? 'rainy' : (Math.random() > 0.5 ? 'partly-cloudy' : 'sunny')
+    return {
+      date: formatShortDate(d),
+      condition: cond,
+      high,
+      low,
+      rain,
+      humidity: hum
+    }
+  })
 }
 
 const getRandomWeatherDescription = () => {
@@ -955,18 +987,91 @@ const getRandomWeatherDescription = () => {
   return descriptions[Math.floor(Math.random() * descriptions.length)]
 }
 
-const mapWeatherCondition = (condition) => {
-  const conditionMap = {
-    'Clear': 'clear',
-    'Clouds': 'clouds',
-    'Rain': 'rain',
-    'Drizzle': 'rain',
-    'Thunderstorm': 'rain',
-    'Snow': 'snow',
-    'Mist': 'clouds',
-    'Fog': 'clouds'
+const mapWeatherCondition = (main, description = '') => {
+  // Normalize OWM conditions to our icon keys
+  const desc = (description || '').toLowerCase()
+  if (main === 'Clear') return 'clear'
+  if (main === 'Clouds') {
+    if (desc.includes('few') || desc.includes('scattered')) return 'partly-cloudy'
+    return 'cloudy'
   }
-  return conditionMap[condition] || 'partly-cloudy'
+  if (main === 'Rain' || main === 'Drizzle' || main === 'Thunderstorm') return 'rainy'
+  if (main === 'Snow') return 'cloudy'
+  if (main === 'Mist' || main === 'Fog' || main === 'Haze' || main === 'Smoke') return 'cloudy'
+  return 'partly-cloudy'
+}
+
+// Fetch 7-day forecast with fallback to 5-day/3-hour aggregation
+const fetchForecastData = async (lat, lon) => {
+  try {
+    if (!DISABLE_ONE_CALL) {
+      // Prefer One Call 2.5 (available for some plans)
+      const oc2 = `https://api.openweathermap.org/data/2.5/onecall?lat=${lat}&lon=${lon}&exclude=minutely,hourly,alerts&units=metric&appid=${WEATHER_API_KEY}`
+      const res = await fetch(oc2)
+      if (res.ok) {
+        const data = await res.json()
+        if (data.daily && Array.isArray(data.daily)) {
+          weatherForecast.value = data.daily.slice(1, 8).map(d => ({
+            date: formatShortDate(new Date(d.dt * 1000)),
+            condition: mapWeatherCondition(d.weather?.[0]?.main || '', d.weather?.[0]?.description || ''),
+            high: Math.round(d.temp?.max ?? d.temp?.day ?? currentWeather.value?.temp ?? 0),
+            low: Math.round(d.temp?.min ?? (currentWeather.value?.temp ?? 0) - 3),
+            rain: Math.round(((d.pop ?? 0) * 100)),
+            humidity: Math.round(d.humidity ?? currentWeather.value?.humidity ?? 0)
+          }))
+          return
+        }
+      }
+    }
+    // Fallback to 5-day/3-hour forecast and aggregate by day
+    const forecastUrl = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${WEATHER_API_KEY}&units=metric`
+    const r2 = await fetch(forecastUrl)
+    if (!r2.ok) throw new Error(`Forecast API HTTP ${r2.status}`)
+    const fdata = await r2.json()
+    const byDay = {}
+    for (const item of fdata.list) {
+      const date = new Date(item.dt * 1000)
+      const key = date.toISOString().split('T')[0]
+  byDay[key] = byDay[key] || { highs: [], lows: [], pops: [], mains: [], descs: [], hums: [], any: date }
+      byDay[key].highs.push(item.main.temp_max)
+      byDay[key].lows.push(item.main.temp_min)
+      byDay[key].pops.push(item.pop ?? 0)
+      byDay[key].mains.push(item.weather?.[0]?.main || '')
+      byDay[key].descs.push(item.weather?.[0]?.description || '')
+  if (typeof item.main.humidity === 'number') byDay[key].hums.push(item.main.humidity)
+      if (!byDay[key].any || date < byDay[key].any) byDay[key].any = date
+    }
+    const days = Object.keys(byDay).sort().slice(1, 8)
+    weatherForecast.value = days.map(k => {
+      const d = byDay[k]
+      const high = Math.round(Math.max(...d.highs))
+      const low = Math.round(Math.min(...d.lows))
+      const rain = Math.round((d.pops.reduce((a, b) => a + b, 0) / d.pops.length) * 100)
+      const hum = d.hums.length ? Math.round(d.hums.reduce((a,b)=>a+b,0)/d.hums.length) : (currentWeather.value?.humidity ?? 0)
+      // Pick most frequent main
+      const main = d.mains.sort((a, b) => d.mains.filter(x => x === b).length - d.mains.filter(x => x === a).length)[0]
+      const desc = d.descs[0] || ''
+      return {
+        date: formatShortDate(d.any),
+        condition: mapWeatherCondition(main, desc),
+        high,
+        low,
+        rain,
+        humidity: hum
+      }
+    })
+  } catch (e) {
+    console.warn('Forecast fetch failed, using demo forecast:', e)
+    // Keep demo forecast if setDemoWeatherData ran; otherwise generate now
+    if (!weatherForecast.value || weatherForecast.value.length === 0) {
+  // Only set forecast, do not overwrite currentWeather
+  setDemoForecastData(currentWeather.value?.temp ?? 28)
+    }
+  }
+}
+
+const formatShortDate = (date) => {
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(date)
 }
 
 // Firebase and Location Methods
@@ -1046,6 +1151,25 @@ const fetchSellerLocation = async () => {
       
       // Fetch weather data with determined coordinates
       await fetchWeatherData(weatherLat, weatherLng)
+
+      // Improve address: if generic/missing, reverse-geocode and persist
+      const addr = sellerLocation.value.farmAddress || ''
+      const isGeneric = addr === 'Oriental Mindoro, Philippines' || addr.trim() === ''
+      if (isGeneric && weatherLat && weatherLng) {
+        const friendly = await reverseGeocodeAddress(weatherLat, weatherLng)
+        if (friendly) {
+          sellerLocation.value.farmAddress = friendly
+          try {
+            await updateDoc(doc(db, 'sellers', currentUser.uid), {
+              'farmDetails.farmAddress': friendly,
+              updatedAt: serverTimestamp()
+            })
+            console.log('Updated seller address from reverse geocoding')
+          } catch (addrErr) {
+            console.warn('Could not update seller address:', addrErr)
+          }
+        }
+      }
       
       // Update seller document with coordinates if not present
       if (!sellerLocation.value.coordinates) {
@@ -1158,6 +1282,18 @@ const refreshLocation = async () => {
   await fetchSellerLocation()
 }
 
+// Reverse geocode coordinates to a friendly address when missing
+const reverseGeocodeAddress = async (lat, lon) => {
+  try {
+    const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=jsonv2`)
+    if (!resp.ok) return null
+    const data = await resp.json()
+    return data.display_name || null
+  } catch {
+    return null
+  }
+}
+
 // Weather and Smart Estimation Methods
 const calculateSmartEstimation = (cropId, plantingDate) => {
   if (!cropId || !plantingDate || !currentWeather.value) return null
@@ -1169,8 +1305,10 @@ const calculateSmartEstimation = (cropId, plantingDate) => {
   let weatherAdjustment = 0
   let confidence = 85
 
-  // Temperature-based adjustments
-  const avgTemp = currentWeather.value.temp
+  // Temperature-based adjustments using forecast average if available
+  const avgTemp = weatherForecast.value.length
+    ? Math.round(weatherForecast.value.reduce((s, d) => s + ((d.high + d.low) / 2), 0) / weatherForecast.value.length)
+    : currentWeather.value.temp
   if (avgTemp < crop.optimalTemp.min) {
     const tempDiff = crop.optimalTemp.min - avgTemp
     weatherAdjustment += Math.floor(tempDiff * 0.5)
@@ -1181,8 +1319,10 @@ const calculateSmartEstimation = (cropId, plantingDate) => {
     confidence -= Math.floor(tempDiff * 1.5)
   }
 
-  // Humidity-based adjustments
-  const humidity = currentWeather.value.humidity
+  // Humidity-based adjustments using forecast average if available
+  const humidity = weatherForecast.value.length
+    ? Math.round(weatherForecast.value.reduce((s, d) => s + (d.humidity ?? currentWeather.value.humidity), 0) / weatherForecast.value.length)
+    : currentWeather.value.humidity
   if (humidity < crop.optimalHumidity.min) {
     weatherAdjustment += 2
     confidence -= 5

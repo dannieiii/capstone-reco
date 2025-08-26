@@ -100,7 +100,7 @@
       <div class="chart-header">
         <h2>Crop Season Success Predictions - Oriental Mindoro ({{ predictionPeriod }} Days)</h2>
         <div class="chart-controls">
-          <button @click="exportChartData" class="export-btn" :disabled="exporting">
+          <button @click="openExportPreview" class="export-btn" :disabled="exporting">
             <Download v-if="!exporting" size="16" />
             <Loader2 v-else size="16" class="spinner" />
             Export Chart
@@ -326,6 +326,60 @@
     </div>
   </div>
 </div>
+
+<!-- Export Preview Modal -->
+<div v-if="showExportPreview" class="modal" @click="closeExportPreview">
+  <div class="modal-content" @click.stop>
+    <div class="modal-header">
+      <h3>Preview Export: Crop Predictions ({{ predictionPeriod }} Days)</h3>
+      <button @click="closeExportPreview" class="close-btn">
+        <X size="20" />
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="table-wrapper">
+        <table class="recommendations-table">
+          <thead>
+            <tr>
+              <th>Crop</th>
+              <th>Success Rate (%)</th>
+              <th>Weather Suitability</th>
+              <th>Market Demand</th>
+              <th>Region Suitability</th>
+              <th>Planting Date</th>
+              <th>Harvest Date</th>
+              <th>Period (Days)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="crop in cropRecommendations" :key="crop.id">
+              <td>{{ crop.name }}</td>
+              <td>{{ crop.successRate }}</td>
+              <td>{{ crop.weatherSuitability }}</td>
+              <td>{{ crop.marketDemand }}</td>
+              <td>{{ crop.regionSuitability }}</td>
+              <td>{{ formatDateWithYear(crop.plantingDate) }}</td>
+              <td>{{ formatDateWithYear(crop.harvestDate) }}</td>
+              <td>{{ predictionPeriod }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="export-actions">
+        <button class="export-btn" @click="confirmExport" :disabled="exporting">
+          <Download v-if="!exporting" size="16" />
+          <Loader2 v-else size="16" class="spinner" />
+          Download CSV
+        </button>
+        <button class="export-btn" @click="exportToPDF" :disabled="exporting">
+          <span v-if="!exporting">Download PDF</span>
+          <Loader2 v-else size="16" class="spinner" />
+        </button>
+        <button class="generate-btn" style="background:#6b7280" @click="closeExportPreview">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
 </template>
 
 <script setup>
@@ -367,6 +421,7 @@ const error = ref(null);
 const predictions = ref([]);
 const cropRecommendations = ref([]);
 const statusMessage = ref(null);
+const showExportPreview = ref(false);
 const weatherError = ref(false);
 const weatherLocation = ref('Oriental Mindoro, Philippines');
 
@@ -993,6 +1048,92 @@ showModal.value = true;
 const closeModal = () => {
 showModal.value = false;
 selectedCrop.value = null;
+};
+
+// Export preview controls
+const openExportPreview = () => {
+  showExportPreview.value = true;
+};
+const closeExportPreview = () => {
+  showExportPreview.value = false;
+};
+const confirmExport = async () => {
+  await exportChartData();
+  showExportPreview.value = false;
+};
+
+// Simple PDF export similar to ProductTable behavior (print-friendly table)
+const exportToPDF = async () => {
+  try {
+    exporting.value = true;
+    // Build a minimal HTML document with the table contents
+    const title = `Oriental Mindoro Crop Predictions (${predictionPeriod.value} Days)`;
+    const rows = cropRecommendations.value.map(crop => `
+      <tr>
+        <td>${crop.name}</td>
+        <td>${crop.successRate}%</td>
+        <td>${crop.weatherSuitability}</td>
+        <td>${crop.marketDemand}</td>
+        <td>${crop.regionSuitability}</td>
+        <td>${formatDateWithYear(crop.plantingDate)}</td>
+        <td>${formatDateWithYear(crop.harvestDate)}</td>
+        <td>${predictionPeriod.value}</td>
+      </tr>
+    `).join('');
+
+    const html = `
+      <!doctype html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>${title}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 24px; }
+          h1 { font-size: 18px; margin: 0 0 12px; }
+          table { width: 100%; border-collapse: collapse; font-size: 12px; }
+          th, td { border: 1px solid #d1d5db; padding: 6px 8px; text-align: left; }
+          th { background: #f3f4f6; }
+          .meta { margin: 8px 0 16px; color: #374151; font-size: 12px; }
+          @media print { @page { size: A4; margin: 12mm; } }
+        </style>
+      </head>
+      <body>
+        <h1>${title}</h1>
+        <div class="meta">Generated: ${new Date().toLocaleString()}</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Crop</th>
+              <th>Success Rate (%)</th>
+              <th>Weather Suitability</th>
+              <th>Market Demand</th>
+              <th>Region Suitability</th>
+              <th>Planting Date</th>
+              <th>Harvest Date</th>
+              <th>Period (Days)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+          </tbody>
+        </table>
+        <script>window.onload = () => { window.print(); window.onafterprint = () => window.close(); }<\/script>
+      </body>
+      </html>
+    `;
+
+    const win = window.open('', '_blank');
+    if (win) {
+      win.document.open();
+      win.document.write(html);
+      win.document.close();
+    }
+    showStatus('success', 'PDF prepared. Use the print dialog to save as PDF.');
+  } catch (e) {
+    showStatus('error', 'Failed to prepare PDF export.');
+  } finally {
+    exporting.value = false;
+  }
 };
 
 // Chart rendering functions
@@ -1890,6 +2031,13 @@ setTimeout(() => {
   font-weight: 500;
 }
 
+.export-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
 .notification-management .notification-history h4 {
   font-size: 1rem;
   font-weight: 600;
@@ -1968,6 +2116,18 @@ setTimeout(() => {
 }
 
 /* Modal Styles */
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
 .modal-overlay {
   position: fixed;
   top: 0;

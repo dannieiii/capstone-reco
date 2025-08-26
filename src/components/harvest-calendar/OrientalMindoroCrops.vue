@@ -239,6 +239,20 @@ const calendarForm = ref({
 // Categories
 const categories = ref(['All']);
 
+// Local fallback crops to use when Firestore has few entries
+const fallbackCrops = [
+  { id: 'fb-rice', name: 'Rice', category: 'Grains', harvestTime: 120, harvestWindow: 14, notes: 'Staple grain crop.', plantingSeason: ['Jun', 'Nov'] },
+  { id: 'fb-corn', name: 'Corn', category: 'Grains', harvestTime: 90, harvestWindow: 10, notes: 'Requires well-drained soil.', plantingSeason: ['May', 'Oct'] },
+  { id: 'fb-tomato', name: 'Tomato', category: 'Vegetables', harvestTime: 75, harvestWindow: 21, notes: 'Avoid waterlogging; full sun.', plantingSeason: ['Nov', 'Dec'] },
+  { id: 'fb-eggplant', name: 'Eggplant', category: 'Vegetables', harvestTime: 80, harvestWindow: 30, notes: 'Warm-weather crop.', plantingSeason: ['Nov', 'Dec'] },
+  { id: 'fb-banana', name: 'Banana', category: 'Fruits', harvestTime: 365, harvestWindow: 60, notes: 'Needs consistent moisture.', plantingSeason: ['Year-round'] },
+  { id: 'fb-mango', name: 'Mango', category: 'Fruits', harvestTime: 365, harvestWindow: 90, notes: 'Prefers dry season flowering.', plantingSeason: ['Dec', 'Jan'] },
+  { id: 'fb-sweet-potato', name: 'Sweet Potato', category: 'Vegetables', harvestTime: 100, harvestWindow: 14, notes: 'Sandy loam soil ideal.', plantingSeason: ['May', 'Jun'] },
+  { id: 'fb-pechay', name: 'Pechay', category: 'Vegetables', harvestTime: 35, harvestWindow: 7, notes: 'Quick-maturing leafy green.', plantingSeason: ['Year-round'] },
+  { id: 'fb-cabbage', name: 'Cabbage', category: 'Vegetables', harvestTime: 90, harvestWindow: 14, notes: 'Cooler temps preferred.', plantingSeason: ['Nov', 'Dec'] },
+  { id: 'fb-okra', name: 'Okra', category: 'Vegetables', harvestTime: 55, harvestWindow: 21, notes: 'Harvest pods frequently.', plantingSeason: ['Mar', 'Apr'] }
+];
+
 // Computed properties
 const filteredCrops = computed(() => {
   return crops.value.filter(crop => {
@@ -259,13 +273,26 @@ const fetchCrops = async () => {
       ...doc.data()
     }));
     
-    crops.value = fetchedCrops;
+    // Merge with fallback crops, prefer Firestore entries when names collide
+    const byName = new Map();
+    for (const c of fetchedCrops) {
+      if (c && c.name) byName.set(c.name.toLowerCase(), c);
+    }
+    for (const f of fallbackCrops) {
+      if (!byName.has(f.name.toLowerCase())) byName.set(f.name.toLowerCase(), f);
+    }
+    crops.value = Array.from(byName.values());
     
     // Extract unique categories
-    const uniqueCategories = ['All', ...new Set(fetchedCrops.map(crop => crop.category).filter(Boolean))];
+    const uniqueCategories = ['All', ...new Set(crops.value.map(crop => crop.category).filter(Boolean))];
     categories.value = uniqueCategories;
   } catch (error) {
     console.error('Error fetching crops:', error);
+    // Fallback to local crops if Firestore fails
+    if (!crops.value || crops.value.length === 0) {
+      crops.value = [...fallbackCrops];
+      categories.value = ['All', ...new Set(fallbackCrops.map(c => c.category))];
+    }
   } finally {
     isLoading.value = false;
   }
@@ -333,26 +360,30 @@ const saveToCalendar = async () => {
   }
   
   try {
+    const crop = selectedCrop.value
     const harvestData = {
-      cropId: selectedCrop.value.id,
-      name: selectedCrop.value.name,
+      sellerId: user.uid.trim(),
+      cropId: crop.id,
+      name: crop.name,
+      category: crop.category,
       plantingDate: Timestamp.fromDate(new Date(calendarForm.value.plantingDate)),
       harvestStartDate: Timestamp.fromDate(new Date(calendarForm.value.harvestStartDate)),
       harvestEndDate: Timestamp.fromDate(new Date(calendarForm.value.harvestEndDate)),
-      status: calendarForm.value.status,
+      status: calendarForm.value.status === 'in progress' ? 'growing' : calendarForm.value.status,
       notes: calendarForm.value.notes,
-      sellerId: user.uid.trim(),
+      enableNotifications: true,
+      notificationDays: 7,
       createdAt: serverTimestamp()
     };
-    
-    await addDoc(collection(db, 'sellerCrops'), harvestData);
-    
+
+    await addDoc(collection(db, 'harvests'), harvestData);
+
     // Close modal
     showAddModal.value = false;
+    // Show success message before clearing selectedCrop
+    alert(`${crop.name} has been added to your harvest calendar.`);
     selectedCrop.value = null;
     
-    // Show success message
-    alert(`${selectedCrop.value.name} has been added to your harvest calendar.`);
   } catch (error) {
     console.error('Error saving to calendar:', error);
     alert('Failed to add to calendar. Please try again.');
