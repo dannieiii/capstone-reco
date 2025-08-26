@@ -297,6 +297,7 @@ onMounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
+  overflow: hidden; /* keep rounded edges clean on mobile */
 }
 
 .header {
@@ -358,6 +359,7 @@ onMounted(() => {
   background-color: #f9fafb;
   border-radius: 8px;
   transition: all 0.2s;
+  min-width: 0; /* allow inner text ellipsis to work */
 }
 
 .product-item:hover {
@@ -436,7 +438,7 @@ onMounted(() => {
 }
 
 .product-bar {
-  width: 100px;
+  width: 140px;
   height: 8px;
   background-color: #e5e7eb;
   border-radius: 4px;
@@ -591,6 +593,10 @@ onMounted(() => {
     justify-content: space-between;
     width: 100%;
   }
+
+  .product-name {
+    max-width: 100%;
+  }
 }
 
 @media (max-width: 480px) {
@@ -601,6 +607,15 @@ onMounted(() => {
   .product-stats {
     flex-direction: column;
     gap: 8px;
+  }
+
+  .product-image {
+    width: 44px;
+    height: 44px;
+  }
+
+  .product-bar {
+    height: 10px; /* slightly taller for touch devices */
   }
 }
 </style>

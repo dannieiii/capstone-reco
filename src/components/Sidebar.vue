@@ -240,6 +240,10 @@ const setDarkMode = () => {
 const toggleSidebar = () => {
   isCollapsed.value = !isCollapsed.value;
   localStorage.setItem('sidebarCollapsed', isCollapsed.value);
+x  // Broadcast sidebar state so pages can adjust their layout
+  try {
+    window.dispatchEvent(new CustomEvent('sidebar:toggled', { detail: { collapsed: isCollapsed.value } }));
+  } catch {}
 };
 
 const toggleMobileSidebar = () => {
@@ -262,6 +266,11 @@ onMounted(() => {
   
   // Setup notification listener
   setupNotificationListener();
+
+  // Emit initial state for consumers
+  try {
+    window.dispatchEvent(new CustomEvent('sidebar:state', { detail: { collapsed: isCollapsed.value } }));
+  } catch {}
 });
 
 onBeforeUnmount(() => {

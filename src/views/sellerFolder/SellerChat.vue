@@ -2,7 +2,7 @@
     <div class="app-container">
       <Sidebar />
       
-      <div class="chat-container">
+  <div class="chat-container" ref="chatContainerEl">
         <div class="header">
           <h1>Messages</h1>
           <div class="header-actions">
@@ -18,7 +18,8 @@
         </div>
         
         <div class="content">
-          <div class="conversations-panel">
+          <!-- Conversations list: always visible on desktop; on mobile only when no conversation is selected -->
+          <div class="conversations-panel" v-if="!isMobile || !selectedConversation">
             <div class="panel-header">
               <h2>Conversations</h2>
               <span class="conversation-count">{{ filteredConversations.length }}</span>
@@ -106,9 +107,12 @@
             </div>
           </div>
           
-          <div class="chat-panel" v-if="selectedConversation">
+      <!-- Chat panel: always visible on desktop; on mobile only when a conversation is selected -->
+      <div class="chat-panel" v-if="(!isMobile && selectedConversation) || (isMobile && selectedConversation)">
             <div class="chat-header">
-              <div class="chat-user">
+        <!-- Back button for mobile to go back to conversations list -->
+        <button v-if="isMobile" class="back-button" @click="backToList" aria-label="Back to conversations">⟵</button>
+        <div class="chat-user">
                 <div class="chat-avatar">
                   <img 
                     :src="selectedConversation.customerAvatar" 
@@ -248,7 +252,7 @@
             </div>
           </div>
           
-          <div class="empty-chat" v-else>
+          <div class="empty-chat" v-else v-show="!isMobile">
             <div class="empty-chat-content">
               <MessageSquare size="60" />
               <h2>Select a conversation</h2>
@@ -286,14 +290,16 @@
     addDoc, 
     updateDoc, 
     serverTimestamp, 
-    getDoc,
-    writeBatch
+  getDoc,
+  writeBatch,
+  setDoc,
+  increment
   } from 'firebase/firestore';
-  import { getAuth } from 'firebase/auth';
+  import { getAuth, onAuthStateChanged } from 'firebase/auth';
   
   // Firebase auth
   const auth = getAuth();
-  const sellerId = auth.currentUser?.uid;
+  const sellerIdRef = ref(null);
   
   // State
   const activeTab = ref('all');
@@ -316,6 +322,12 @@
   let globalConversationsListener = null;
   let typingListener = null;
   let cacheInterval = null;
+  const isMobile = ref(false);
+  // responsive detector (module-scope so we can remove the listener on unmount)
+  const updateIsMobile = () => {
+    isMobile.value = window.innerWidth < 768;
+    adjustChatOffset();
+  };
   
   // Customer data cache to avoid redundant fetches
   const customerCache = new Map();
@@ -504,11 +516,12 @@
   });
   // Fetch conversations for the seller
   const fetchConversations = () => {
-    console.log('Starting to fetch conversations for seller:', sellerId);
+    if (!sellerIdRef.value) return;
+    console.log('Starting to fetch conversations for seller:', sellerIdRef.value);
     
     const q = query(
       collection(db, 'conversations'),
-      where('participants', 'array-contains', sellerId),
+  where('participants', 'array-contains', sellerIdRef.value),
       orderBy('lastMessageTime', 'desc')
     );
     
@@ -525,7 +538,7 @@
       // Get all unique customer IDs first
       const customerIds = [...new Set(snapshot.docs.map(doc => {
         const data = doc.data();
-        return data.participants.find(id => id !== sellerId);
+        return data.participants.find(id => id !== sellerIdRef.value);
       }))];
 
       console.log('Fetching data for customers:', customerIds);      // Batch fetch all customer data
@@ -569,7 +582,7 @@
       // Now build conversations with cached customer data
       const convs = snapshot.docs.map(docSnapshot => {
         const data = docSnapshot.data();
-        const customerId = data.participants.find(id => id !== sellerId);
+  const customerId = data.participants.find(id => id !== sellerIdRef.value);
         const customerData = customerDataMap.get(customerId) || {};
         
         const fullName = `${customerData.firstName || ''} ${customerData.lastName || ''}`.trim();
@@ -688,14 +701,14 @@
         return {
           id: doc.id,
           ...data,
-          senderType: data.senderId === sellerId ? 'seller' : 'customer'
+          senderType: data.senderId === sellerIdRef.value ? 'seller' : 'customer'
         };
       });
       
       // Mark messages as read when loaded
       if (snapshot.docs.length > 0) {
         const unreadMessages = snapshot.docs
-          .filter(doc => doc.data().senderId !== sellerId && !doc.data().read);
+          .filter(doc => doc.data().senderId !== sellerIdRef.value && !doc.data().read);
         
         if (unreadMessages.length > 0) {
           const batch = writeBatch(db);
@@ -729,7 +742,7 @@
   
   // Handle typing indicator
   const handleTyping = () => {
-    if (!selectedConversationId.value) return;
+  if (!selectedConversationId.value) return;
     
     // Clear existing timeout
     if (typingTimeout.value) {
@@ -750,10 +763,14 @@
     if (!selectedConversationId.value) return;
     
     try {
-      await updateDoc(doc(db, 'conversations', selectedConversationId.value, 'typing', 'status'), {
-        sellerTyping: isTyping,
-        timestamp: serverTimestamp()
-      });
+      await setDoc(
+        doc(db, 'conversations', selectedConversationId.value, 'typing', 'status'),
+        {
+          sellerTyping: isTyping,
+          timestamp: serverTimestamp()
+        },
+        { merge: true }
+      );
     } catch (error) {
       console.error('Error updating typing status:', error);
     }
@@ -764,7 +781,7 @@
     
     sendingMessage.value = true;
     const message = {
-      senderId: sellerId,
+  senderId: sellerIdRef.value,
       senderType: 'seller',
       text: newMessage.value,
       timestamp: serverTimestamp(),
@@ -783,7 +800,7 @@
         lastMessage: newMessage.value,
         lastMessageTime: serverTimestamp(),
         lastMessageSender: 'seller',
-        unreadCount: 1 // Customer has unread message
+        unreadCount: increment(1) // Customer has unread message
       });
       
       // Clear typing status
@@ -877,15 +894,20 @@
   
   // Initialize on mount
   onMounted(() => {
-    if (sellerId) {
+    // responsive detector
+    updateIsMobile();
+    window.addEventListener('resize', updateIsMobile);
+    // Wait for auth to be ready
+    const init = () => {
+      if (!auth.currentUser) return;
+      sellerIdRef.value = auth.currentUser.uid;
       fetchConversations();
-      
+
       // Global listener for new messages in any conversation
       const conversationsQuery = query(
         collection(db, 'conversations'),
-        where('participants', 'array-contains', sellerId)
+        where('participants', 'array-contains', sellerIdRef.value)
       );
-      
       globalConversationsListener = onSnapshot(conversationsQuery, (snapshot) => {
         snapshot.docChanges().forEach((change) => {
           if (change.type === 'modified') {
@@ -893,13 +915,23 @@
             if (conversation.lastMessageSender === 'customer' && 
                 conversation.unreadCount > 0 &&
                 change.doc.id !== selectedConversationId.value) {
-              // You can add a notification here
               console.log('New message in conversation:', change.doc.id);
             }
           }
         });
       });
-    }
+
+      // Listen to sidebar state to adjust layout
+      window.addEventListener('sidebar:toggled', handleSidebarToggle);
+      window.addEventListener('sidebar:state', handleSidebarToggle);
+
+      // Apply initial offset based on current sidebar state
+      adjustChatOffset();
+    };
+
+  if (auth.currentUser) init();
+  else onAuthStateChanged(auth, () => init());
+
     scrollToBottom();
   });
   
@@ -923,6 +955,10 @@
     if (cacheInterval) {
       clearInterval(cacheInterval);
     }
+  window.removeEventListener('sidebar:toggled', handleSidebarToggle);
+  window.removeEventListener('sidebar:state', handleSidebarToggle);
+    // remove resize listener
+    window.removeEventListener('resize', updateIsMobile);
     customerCache.clear();
   });
   
@@ -936,9 +972,46 @@
   cacheInterval = setInterval(() => {
     clearCustomerCache();
   }, 5 * 60 * 1000); // 5 minutes
+
+  // --- Layout helpers to close responsiveness gap with sidebar ---
+  const chatContainerEl = ref(null);
+  const adjustChatOffset = () => {
+    // Default sidebar width 250px on desktop (collapsible to 70px)
+    const isMobile = window.innerWidth < 768;
+    const collapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+    const left = isMobile ? 0 : (collapsed ? 70 : 250);
+    const el = chatContainerEl.value || document.querySelector('.chat-container');
+    if (el) {
+      el.style.marginLeft = left + 'px';
+    }
+  };
+
+  const handleSidebarToggle = (e) => {
+    adjustChatOffset();
+  };
+
+  // Mobile helpers
+  const backToList = () => {
+    // Unsubscribe from messages and typing when leaving chat on mobile
+    if (messagesUnsubscribe) {
+      messagesUnsubscribe();
+      messagesUnsubscribe = null;
+    }
+    if (typingListener) {
+      typingListener();
+      typingListener = null;
+    }
+    selectedConversationId.value = null;
+    selectedConversation.value = null;
+    chatMessages.value = [];
+  };
   </script>
   
   <style scoped>
+  :root {
+    /* Fallback height for the global top app bar */
+    --topbar-height: 56px;
+  }
   .app-container {
     display: flex;
     height: 100vh;
@@ -952,7 +1025,7 @@
     flex-direction: column;
     height: 100vh;
     overflow: hidden;
-    margin-left: 230px; /* Match sidebar width */
+  margin-left: 250px; /* Match sidebar width (desktop) */
   }
   
   .header {
@@ -1274,6 +1347,19 @@
     padding: 15px 20px;
     border-bottom: 1px solid #e0e0e0;
     background-color: white;
+  }
+
+  .back-button {
+    border: none;
+    background: #f5f5f5;
+    color: #333;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: none; /* hidden by default, shown on mobile via media query */
+    align-items: center;
+    justify-content: center;
+    margin-right: 8px;
   }
   
   .chat-user {
@@ -1909,5 +1995,62 @@
     100% {
       background-position: 200% 0;
     }
+  }
+
+  /* Mobile-first responsive adjustments */
+  @media (max-width: 767.98px) {
+    .chat-container {
+  margin-left: 0 !important;
+  height: 100dvh;
+  /* Push content below the fixed green app bar */
+  padding-top: calc(var(--topbar-height, 56px) + env(safe-area-inset-top));
+    }
+    .header {
+      display: none; /* Hide secondary header to reclaim space */
+    }
+    .content {
+  flex-direction: column;
+  /* keep a small gutter; top space now comes from container padding */
+  padding: 6px 8px 0;
+      box-sizing: border-box;
+    }
+    .conversations-panel {
+      width: 100%;
+      height: 100dvh;
+      border-right: none;
+    }
+    .chat-panel {
+      width: 100%;
+      height: 100dvh;
+      padding: 6px 8px 0; /* match gutters with list view */
+      box-sizing: border-box;
+    }
+    .chat-header {
+      position: sticky;
+  /* header stays below the app bar when sticking */
+  top: env(safe-area-inset-top);
+      z-index: 2;
+      padding-left: 12px;
+      padding-right: 12px;
+    }
+    .back-button {
+      display: inline-flex;
+    }
+    .chat-user-info h3 { font-size: 15px; }
+    .chat-messages {
+      padding: 16px 12px 12px; /* nudge content slightly down */
+      gap: 10px;
+    }
+    .chat-input {
+      padding: 10px 12px;
+      padding-bottom: calc(10px + env(safe-area-inset-bottom));
+    }
+    .input-container {
+      border-radius: 14px;
+      padding: 8px 12px;
+    }
+    .conversation-item { padding: 12px; }
+    .conversation-avatar { width: 44px; height: 44px; }
+    .conversation-preview { max-width: none; }
   }
   </style>

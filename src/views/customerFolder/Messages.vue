@@ -1,7 +1,7 @@
 <template>
   <div class="messages-page">
     <div class="header">
-  <button class="back-button" @click="goHome">
+      <button class="back-button" @click="goHome">
         <ChevronLeft size="22" />
       </button>
       <h1>Messages</h1>
@@ -9,7 +9,6 @@
         <button class="icon-button" @click="toggleSearch">
           <Search size="18" />
         </button>
-        
       </div>
     </div>
 
@@ -25,27 +24,27 @@
         />
         <button class="close-search" @click="closeSearch">×</button>
       </div>
-      <div v-if="searchResults.length > 0" class="search-results">
+
+      <div v-if="searching" class="searching-state">Searching...</div>
+
+      <div v-else-if="searchResults.length > 0" class="search-results">
         <div
           v-for="result in searchResults"
-          :key="result.id"
+          :key="result.userId"
           class="search-result-item"
           @click="startNewChat(result)"
         >
-          <img :src="result.photoURL" alt="" class="result-avatar" />
+          <img :src="result.photoURL || fallbackAvatar" alt="" class="result-avatar" />
           <div class="result-info">
-            <h4>{{ result.firstName }} {{ result.lastName }}</h4>
-            <p v-if="result.farmName">{{ result.farmName }}</p>
-            <p v-else-if="result.accountName" class="account-name">{{ result.accountName }}</p>
+            <h4>{{ result.fullName || result.farmName || 'Seller' }}</h4>
+            <p class="account-name">@{{ result.username || result.userId }}</p>
             <span v-if="result.isRecent" class="recent-tag">Recent</span>
           </div>
         </div>
       </div>
+
       <div v-else-if="searchQuery && !searching" class="no-results">
         No sellers or farms found matching "{{ searchQuery }}"
-      </div>
-      <div v-if="searching" class="searching-state">
-        Searching...
       </div>
     </div>
 
@@ -94,31 +93,26 @@
           @click="openChat(conversation)"
         >
           <div class="message-avatar">
-            <img :src="conversation.sellerPhoto" :alt="conversation.sellerName" />
-            <div class="status-dot" :class="{ online: conversation.sellerOnline }"></div>
+            <img :src="conversation.sellerPhoto || fallbackAvatar" alt="avatar" />
+            <span class="status-dot" :class="{ online: conversation.sellerOnline }"></span>
           </div>
           <div class="message-content">
             <div class="message-header">
-              <h3>{{ conversation.sellerName }}</h3>
+              <h3>{{ conversation.sellerName || conversation.farmName || 'Seller' }}</h3>
               <span class="message-time">{{ formatConversationTime(conversation.lastMessageTime) }}</span>
             </div>
-            <p class="message-preview">{{ conversation.lastMessage }}</p>
-            <p v-if="conversation.sellerFarm" class="farm-name">{{ conversation.sellerFarm }}</p>
+            <div class="message-preview">{{ conversation.lastMessage || 'Tap to start chatting' }}</div>
+            <div v-if="conversation.farmName" class="farm-name">{{ conversation.farmName }}</div>
           </div>
           <div class="message-indicators">
-            <div v-if="conversation.unreadCount > 0" class="unread-badge">
-              {{ conversation.unreadCount }}
-            </div>
-            <CheckCheck
-              v-if="!conversation.unreadCount && conversation.lastMessageSender === 'customer'"
-              size="16"
-              class="read-indicator"
-            />
+            <div v-if="conversation.unreadCount > 0 && conversation.lastMessageSender !== 'customer'" class="unread-badge">{{ conversation.unreadCount }}</div>
+            <div v-else class="read-indicator"><CheckCheck size="16" /></div>
           </div>
         </div>
       </div>
     </div>
 
+    <!-- Chat Window -->
     <div v-if="selectedConversation" class="chat-window">
       <div class="chat-header">
         <button class="back-button" @click="closeChat">
@@ -126,47 +120,35 @@
         </button>
         <div class="chat-user">
           <div class="chat-avatar">
-            <img :src="selectedConversation.otherUserPhoto" :alt="selectedConversation.otherUserName" />
-            <div class="status-dot" :class="{ online: selectedConversation.otherUserOnline }"></div>
+            <img :src="selectedConversation.otherUserPhoto || fallbackAvatar" alt="" />
           </div>
           <div>
-            <h3>{{ selectedConversation.otherUserName }}</h3>
-            <p v-if="selectedConversation.otherUserOnline">Online</p>
-            <p v-else>Offline</p>
+            <h3>{{ selectedConversation.otherUserName || 'Seller' }}</h3>
+            <p>{{ selectedConversation.otherUserOnline ? 'Online' : 'Offline' }}</p>
           </div>
         </div>
       </div>
-      
+
       <div class="chat-messages" ref="messagesContainer">
-        <div 
-          v-for="(message, index) in chatMessages" 
-          :key="message.id || index" 
+        <div
+          v-for="(message, index) in chatMessages"
+          :key="message.id || index"
           class="chat-message"
-          :class="{ 'outgoing': message.senderId === currentUserId }"
+          :class="{ outgoing: message.senderId === currentUserId }"
         >
-          <div class="message-bubble">
-            {{ message.text }}
-          </div>
-          <div class="message-time">
-            {{ formatMessageTime(message.timestamp) }}
-            <CheckCheck 
-              v-if="message.senderId === currentUserId" 
-              size="12" 
-              class="message-status" 
-              :class="{ 'read': message.read }" 
-            />
-          </div>
+          <div class="message-bubble">{{ message.text }}</div>
+          <div class="message-time">{{ formatMessageTime(message.timestamp) }}</div>
         </div>
       </div>
-      
+
       <div class="chat-input">
-        <input 
-          type="text" 
-          placeholder="Type a message..." 
+        <input
+          type="text"
+          placeholder="Type a message..."
           v-model="newMessage"
           @keyup.enter="sendMessage"
           :disabled="sendingMessage"
-        >
+        />
         <button class="send-button" @click="sendMessage" :disabled="!newMessage.trim() || sendingMessage">
           <Send size="18" />
         </button>
@@ -181,38 +163,35 @@
 </template>
 
 <script>
-import { 
-  ChevronLeft, 
-  Search, 
-  MessageCircle, 
-  CheckCheck, 
+import {
+  ChevronLeft,
+  Search,
+  MessageCircle,
+  CheckCheck,
   MoreVertical,
   Paperclip,
   Send,
-  Bell
-} from "lucide-vue-next";
-import { 
-  ref, 
-  computed, 
-  onMounted, 
-  onUnmounted, 
-  nextTick 
-} from "vue";
-import { 
-  collection, 
-  query, 
-  where, 
-  orderBy, 
-  onSnapshot, 
-  doc, 
-  addDoc, 
-  updateDoc, 
+  Bell,
+} from 'lucide-vue-next';
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
+import {
+  collection,
+  query,
+  where,
+  orderBy,
+  onSnapshot,
+  doc,
+  addDoc,
+  updateDoc,
   serverTimestamp,
   getDoc,
   setDoc,
-  getDocs
-} from "firebase/firestore";
-import { db, auth } from "@/firebase/firebaseConfig";
+  getDocs,
+  limit,
+  increment,
+} from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
+import { db, auth } from '@/firebase/firebaseConfig';
 import { useRouter } from 'vue-router';
 
 export default {
@@ -225,98 +204,72 @@ export default {
     MoreVertical,
     Paperclip,
     Send,
-    Bell
+    Bell,
   },
   setup() {
-  const router = useRouter();
-    const activeTab = ref("all");
+    const router = useRouter();
+
+    // UI state
+    const activeTab = ref('all');
     const selectedConversation = ref(null);
-    const newMessage = ref("");
+    const newMessage = ref('');
     const chatMessages = ref([]);
     const conversations = ref([]);
     const loadingConversations = ref(true);
     const sendingMessage = ref(false);
     const messagesContainer = ref(null);
-    
-    // Search related state
+    const fallbackAvatar = 'https://ui-avatars.com/api/?name=F&background=E8F3E8&color=2e5c31&rounded=true&bold=true';
+
+    // Search
     const showSearch = ref(false);
-    const searchQuery = ref("");
+    const searchQuery = ref('');
     const searchResults = ref([]);
     const searching = ref(false);
-    
-    const currentUserId = auth.currentUser?.uid;
-    const currentUserPhoto = auth.currentUser?.photoURL || "https://randomuser.me/api/portraits/men/32.jpg";
-    
+
+    // Auth-aware current user
+    const currentUserId = ref(null);
+    const currentUserPhoto = ref('');
+
     let conversationsUnsubscribe = null;
     let messagesUnsubscribe = null;
 
-    // Add notification state
-    const notifications = ref([]);
+    // Notifications
     const showNotification = ref(false);
     const notificationMessage = ref('');
 
     const filteredConversations = computed(() => {
-      return conversations.value.filter(conv => {
-        if (activeTab.value === "all") return true;
-        if (activeTab.value === "farmers") return conv.type === "farmer";
-        if (activeTab.value === "support") return conv.type === "support";
-        return true;
-      });
-    });    const formatConversationTime = (timestamp) => {
-      if (!timestamp) return "No messages";
-      
-      // Handle different timestamp types
+      const list = conversations.value || [];
+      if (activeTab.value === 'farmers') return list.filter((c) => c.type === 'farmer');
+      if (activeTab.value === 'support') return list.filter((c) => c.type === 'support');
+      return list;
+    });
+
+    const formatConversationTime = (timestamp) => {
+      if (!timestamp) return 'No messages';
       let date;
-      if (timestamp && typeof timestamp.toDate === 'function') {
-        // Firestore Timestamp
-        date = timestamp.toDate();
-      } else if (timestamp instanceof Date) {
-        // JavaScript Date object
-        date = timestamp;
-      } else if (typeof timestamp === 'number') {
-        // Unix timestamp
-        date = new Date(timestamp);
-      } else if (typeof timestamp === 'string') {
-        // ISO string
-        date = new Date(timestamp);
-      } else {
-        return "No messages";
-      }
-      
+      if (timestamp && typeof timestamp.toDate === 'function') date = timestamp.toDate();
+      else if (timestamp instanceof Date) date = timestamp;
+      else if (typeof timestamp === 'number') date = new Date(timestamp);
+      else if (typeof timestamp === 'string') date = new Date(timestamp);
+      else return 'No messages';
+
       const now = new Date();
       const diffInDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
-      
-      if (diffInDays === 0) {
-        return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      } else if (diffInDays === 1) {
-        return "Yesterday";
-      } else if (diffInDays < 7) {
-        return date.toLocaleDateString([], { weekday: "short" });
-      } else {
-        return date.toLocaleDateString([], { month: "short", day: "numeric" });
-      }
-    };    const formatMessageTime = (timestamp) => {
-      if (!timestamp) return "";
-      
-      // Handle different timestamp types
+      if (diffInDays === 0) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      if (diffInDays === 1) return 'Yesterday';
+      if (diffInDays < 7) return date.toLocaleDateString([], { weekday: 'short' });
+      return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    };
+
+    const formatMessageTime = (timestamp) => {
+      if (!timestamp) return '';
       let date;
-      if (timestamp && typeof timestamp.toDate === 'function') {
-        // Firestore Timestamp
-        date = timestamp.toDate();
-      } else if (timestamp instanceof Date) {
-        // JavaScript Date object
-        date = timestamp;
-      } else if (typeof timestamp === 'number') {
-        // Unix timestamp
-        date = new Date(timestamp);
-      } else if (typeof timestamp === 'string') {
-        // ISO string
-        date = new Date(timestamp);
-      } else {
-        return "";
-      }
-      
-      return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      if (timestamp && typeof timestamp.toDate === 'function') date = timestamp.toDate();
+      else if (timestamp instanceof Date) date = timestamp;
+      else if (typeof timestamp === 'number') date = new Date(timestamp);
+      else if (typeof timestamp === 'string') date = new Date(timestamp);
+      else return '';
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     };
 
     const scrollToBottom = () => {
@@ -327,94 +280,100 @@ export default {
       });
     };
 
-    const fetchConversations = () => {
-      const q = query(
-        collection(db, "conversations"),
-        where("participants", "array-contains", currentUserId),
-        orderBy("lastMessageTime", "desc")
-      );
-      
-      conversationsUnsubscribe = onSnapshot(q, async (snapshot) => {        if (snapshot.docs.length === 0) {
-          conversations.value = [];
-          loadingConversations.value = false;
-          return;
-        }
+    // --- Firestore helpers ---
+    const isGenericName = (name) => {
+      if (!name || typeof name !== 'string') return true;
+      const n = name.trim().toLowerCase();
+      return n === 'user' || n === 'seller' || n === 'customer' || n === 'unknown';
+    };
 
-        // Get all unique seller IDs first
-        const sellerIds = [...new Set(snapshot.docs.map(doc => {
-          const data = doc.data();
-          return data.participants.find(id => id !== currentUserId);
-        }))];
+    const bestSellerName = (u) => {
+      if (!u) return '';
+      const fullNameField = u.fullName || u.name;
+      const composed = `${u.firstName || ''} ${u.lastName || ''}`.trim();
+      const username = u.username || '';
+      const displayName = u.displayName || '';
+      // Prefer explicit full names over generic display names
+      if (fullNameField && !isGenericName(fullNameField)) return fullNameField;
+      if (composed && !isGenericName(composed)) return composed;
+      if (displayName && !isGenericName(displayName)) return displayName;
+      if (username) return username;
+      return '';
+    };
 
-        console.log('Fetching data for sellers:', sellerIds);
+    const buildConversationObject = async (docSnapshot) => {
+      const data = docSnapshot.data() || {};
+      const participants = data.participants || [];
+      const otherId = participants.find((id) => id !== currentUserId.value) || data.sellerId;
 
-        // Batch fetch all seller data
-        const sellerDataMap = new Map();
-        
+      // Fetch seller data once and cache via a simple in-memory map
+      if (!buildConversationObject._cache) buildConversationObject._cache = new Map();
+      const cache = buildConversationObject._cache;
+
+      let sellerData = cache.get(otherId);
+      if (!sellerData && otherId) {
         try {
-          // Use Promise.all to fetch all seller data in parallel
-          const sellerPromises = sellerIds.map(async (sellerId) => {
-            try {
-              // Fetch both user and seller data in parallel
-              const [userDoc, sellerDoc] = await Promise.all([
-                getDoc(doc(db, "users", sellerId)),
-                getDoc(doc(db, "sellers", sellerId))
-              ]);
-              
-              let sellerData = {};
-              if (userDoc.exists()) {
-                sellerData = userDoc.data();
-              }
-              
-              if (sellerDoc.exists()) {
-                const additionalSellerData = sellerDoc.data();
-                sellerData = { ...sellerData, ...additionalSellerData };
-              }
-              
-              sellerDataMap.set(sellerId, sellerData);
-            } catch (error) {
-              console.error(`Error fetching seller ${sellerId}:`, error);
-              sellerDataMap.set(sellerId, {});
-            }
-          });
-
-          await Promise.all(sellerPromises);
-          console.log('Seller data fetched for', sellerDataMap.size, 'sellers');
-
-        } catch (error) {
-          console.error("Error in batch seller fetch:", error);
+          const userRef = doc(db, 'users', otherId);
+          const userDoc = await getDoc(userRef);
+          sellerData = userDoc.exists() ? userDoc.data() : {};
+          cache.set(otherId, sellerData);
+        } catch (e) {
+          sellerData = {};
         }
+      }
 
-        // Now build conversations with cached seller data
-        const convs = snapshot.docs.map(docSnapshot => {
-          const data = docSnapshot.data();
-          const sellerId = data.participants.find(id => id !== currentUserId);
-          const sellerData = sellerDataMap.get(sellerId) || {};
-          
-          const fullName = `${sellerData.firstName || ''} ${sellerData.lastName || ''}`.trim();
-          const farmName = sellerData.farmName || '';
-          
-          return {
-            id: docSnapshot.id,
-            conversationId: docSnapshot.id,
-            sellerId,
-            sellerName: fullName || 'Seller',
-            sellerFarm: farmName,
-            sellerPhoto: sellerData.photoURL || "https://randomuser.me/api/portraits/lego/1.jpg",
-            sellerOnline: sellerData.isOnline || false,
-            lastMessage: data.lastMessage || 'No messages yet',
-            lastMessageTime: data.lastMessageTime,
-            lastMessageSender: data.lastMessageSender,
-            unreadCount: (data.lastMessageSender === 'seller') ? (data.unreadCount || 0) : 0,
-            type: data.type || "farmer"
-          };
-        });
-        
-        conversations.value = convs;
-        loadingConversations.value = false;
-        
-        console.log("Loaded conversations:", convs);
-      });
+  // Prefer actual full names; avoid generic placeholders like "User"
+  const sellerNameResolved = bestSellerName(sellerData);
+  const sellerName = sellerNameResolved || sellerData.farmName || 'Seller';
+
+      return {
+        id: docSnapshot.id,
+        ...data,
+        type: data.type || (sellerData.role === 'support' ? 'support' : 'farmer'),
+        sellerId: otherId,
+        sellerName,
+        farmName: sellerData.farmName || '',
+  sellerPhoto: sellerData.profileImageUrl || sellerData.photoURL || '',
+        sellerOnline: !!sellerData.online,
+        lastMessage: data.lastMessage || '',
+        lastMessageTime: data.lastMessageTime || data.updatedAt || data.createdAt || null,
+        lastMessageSender: data.lastMessageSender || '',
+        unreadCount: Number(data.unreadCount || 0),
+      };
+    };
+
+    const fetchConversations = () => {
+      if (!currentUserId.value) return; // wait for auth
+
+      // Real-time conversations ordered by recent activity
+      const qConv = query(
+        collection(db, 'conversations'),
+        where('participants', 'array-contains', currentUserId.value),
+        orderBy('lastMessageTime', 'desc')
+      );
+
+      if (conversationsUnsubscribe) conversationsUnsubscribe();
+
+      conversationsUnsubscribe = onSnapshot(
+        qConv,
+        async (snapshot) => {
+          if (snapshot.empty) {
+            conversations.value = [];
+            loadingConversations.value = false;
+            return;
+          }
+
+          // Build all conversations with batched seller fetch (handled in helper cache)
+          const promises = snapshot.docs.map((d) => buildConversationObject(d));
+          const convs = await Promise.all(promises);
+          conversations.value = convs;
+          loadingConversations.value = false;
+        },
+        (error) => {
+          console.error('Conversations listener error:', error);
+          loadingConversations.value = false;
+        }
+      );
     };
 
     const openChat = async (conversation) => {
@@ -423,363 +382,289 @@ export default {
         otherUserId: conversation.sellerId,
         otherUserName: conversation.sellerName,
         otherUserPhoto: conversation.sellerPhoto,
-        otherUserOnline: conversation.sellerOnline
+        otherUserOnline: conversation.sellerOnline,
       };
-      
-      // Mark as read if needed
-      if (conversation.unreadCount > 0 && conversation.lastMessageSender !== "customer") {
-        await updateDoc(doc(db, "conversations", conversation.id), {
-          unreadCount: 0
-        });
+
+      // Mark as read for customer-side if the last message was from seller
+      try {
+        if (conversation.unreadCount > 0 && conversation.lastMessageSender !== 'customer') {
+          await updateDoc(doc(db, 'conversations', conversation.id), {
+            unreadCount: 0,
+          });
+        }
+      } catch (e) {
+        // non-blocking
       }
-      
-      // Load messages
+
       loadMessages(conversation.id);
     };
 
     const loadMessages = (conversationId) => {
-      if (messagesUnsubscribe) {
-        messagesUnsubscribe();
-      }
-      
-      const q = query(
-        collection(db, "conversations", conversationId, "messages"),
-        orderBy("timestamp", "asc")
+      if (messagesUnsubscribe) messagesUnsubscribe();
+      const q = query(collection(db, 'conversations', conversationId, 'messages'), orderBy('timestamp', 'asc'));
+      messagesUnsubscribe = onSnapshot(
+        q,
+        (snapshot) => {
+          chatMessages.value = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+          scrollToBottom();
+        },
+        (error) => console.error('Messages listener error:', error)
       );
-      
-      messagesUnsubscribe = onSnapshot(q, (snapshot) => {
-        chatMessages.value = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        scrollToBottom();
-      });
     };
 
     const closeChat = () => {
       selectedConversation.value = null;
       chatMessages.value = [];
-      if (messagesUnsubscribe) {
-        messagesUnsubscribe();
+      if (messagesUnsubscribe) messagesUnsubscribe();
+    };
+
+    const ensureConversation = async (sellerId) => {
+      const conversationId = `${currentUserId.value}_${sellerId}`;
+      const convRef = doc(db, 'conversations', conversationId);
+      const snap = await getDoc(convRef);
+      if (!snap.exists()) {
+        await setDoc(
+          convRef,
+          {
+            participants: [currentUserId.value, sellerId],
+            type: 'farmer',
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            lastMessage: '',
+            lastMessageTime: serverTimestamp(),
+            lastMessageSender: '',
+            unreadCount: 0,
+          },
+          { merge: true }
+        );
       }
+      return conversationId;
     };
 
     const sendMessage = async () => {
       if (!newMessage.value.trim() || !selectedConversation.value || sendingMessage.value) return;
-      
       sendingMessage.value = true;
+
+      const conversationId = selectedConversation.value.id;
       const message = {
-        senderId: currentUserId,
-        text: newMessage.value,
+        senderId: currentUserId.value,
+        text: newMessage.value.trim(),
         timestamp: serverTimestamp(),
-        read: false
+        read: false,
       };
-      
+
       try {
-        // Add message to Firestore
-        await addDoc(
-          collection(db, "conversations", selectedConversation.value.id, "messages"),
-          message
-        );
-        
-        // Update conversation last message
-        await updateDoc(doc(db, "conversations", selectedConversation.value.id), {
-          lastMessage: newMessage.value,
+        // Add message
+        await addDoc(collection(db, 'conversations', conversationId, 'messages'), message);
+
+        // Update parent conversation
+        await updateDoc(doc(db, 'conversations', conversationId), {
+          lastMessage: message.text,
           lastMessageTime: serverTimestamp(),
-          lastMessageSender: "customer",
-          unreadCount: 1 // Seller has unread message
+          lastMessageSender: 'customer',
+          unreadCount: increment(1), // mark as unread for seller
         });
-        
-        newMessage.value = "";
+
+        newMessage.value = '';
       } catch (error) {
-        console.error("Error sending message:", error);
+        console.error('Error sending message:', error);
       } finally {
         sendingMessage.value = false;
       }
     };
 
-    // Function to get recent sellers the customer has interacted with
+    // Recent sellers for suggestions
     const getRecentSellers = async () => {
+      if (!currentUserId.value) return [];
       try {
-        const conversationsQuery = query(
-          collection(db, "conversations"),
-          where("participants", "array-contains", currentUserId),
-          orderBy("lastMessageTime", "desc")
+        const qConv = query(
+          collection(db, 'conversations'),
+          where('participants', 'array-contains', currentUserId.value),
+          orderBy('lastMessageTime', 'desc'),
+          limit(10)
         );
-        
-        const snapshot = await getDocs(conversationsQuery);
-        const recentSellerIds = new Set();
-        
-        snapshot.docs.forEach(doc => {
-          const data = doc.data();
-          const sellerId = data.participants.find(id => id !== currentUserId);
-          if (sellerId) {
-            recentSellerIds.add(sellerId);
-          }
+        const snapshot = await getDocs(qConv);
+        const ids = new Set();
+        snapshot.docs.forEach((d) => {
+          const data = d.data();
+          const otherId = (data.participants || []).find((id) => id !== currentUserId.value);
+          if (otherId) ids.add(otherId);
         });
-        
-        return Array.from(recentSellerIds).slice(0, 5);
+        return Array.from(ids).slice(0, 5);
       } catch (error) {
-        console.error("Error fetching recent sellers:", error);
+        console.error('Error fetching recent sellers:', error);
         return [];
       }
     };
 
-    // Function to show contact suggestions in search
     const showRecentSellers = async () => {
       if (searchQuery.value) return;
-      
       const recentSellerIds = await getRecentSellers();
       const suggestions = [];
-      
       for (const sellerId of recentSellerIds) {
         try {
-          const userDoc = await getDoc(doc(db, "users", sellerId));
-          if (userDoc.exists()) {
-            const userData = userDoc.data();
-            const sellerDoc = await getDoc(doc(db, "sellers", sellerId));
-            const sellerData = sellerDoc.exists() ? sellerDoc.data() : {};
-            
+          const uRef = doc(db, 'users', sellerId);
+          const uSnap = await getDoc(uRef);
+          if (uSnap.exists()) {
+            const u = uSnap.data();
             suggestions.push({
-              id: sellerId,
               userId: sellerId,
-              firstName: userData.firstName || '',
-              lastName: userData.lastName || '',
-              photoURL: userData.photoURL || "https://randomuser.me/api/portraits/lego/1.jpg",
-              farmName: sellerData.farmName || '',
-              accountName: sellerData.accountName || '',
-              isOnline: userData.isOnline || false,
-              isRecent: true
+              fullName: `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.displayName,
+              farmName: u.farmName || '',
+              photoURL: u.profileImageUrl || u.photoURL || '',
+              username: u.username || '',
+              isRecent: true,
             });
           }
-        } catch (error) {
-          console.error("Error fetching seller details:", error);
+        } catch (e) {
+          // continue
         }
       }
-      
       searchResults.value = suggestions;
     };
 
     const toggleSearch = () => {
       showSearch.value = !showSearch.value;
       if (!showSearch.value) {
-        searchQuery.value = "";
+        searchQuery.value = '';
         searchResults.value = [];
       } else {
-        // Show recent sellers when search is opened
         showRecentSellers();
       }
     };
 
     const closeSearch = () => {
       showSearch.value = false;
-      searchQuery.value = "";
+      searchQuery.value = '';
       searchResults.value = [];
     };
 
     const handleSearch = async () => {
-      if (!searchQuery.value.trim()) {
-        showRecentSellers();
+      const qText = searchQuery.value.trim().toLowerCase();
+      if (!qText) {
+        await showRecentSellers();
         return;
       }
-
       searching.value = true;
-      const queryText = searchQuery.value.toLowerCase();
-
       try {
-        // Get all users with role 'seller'
-        const usersQuery = query(
-          collection(db, "users"),
-          where("role", "==", "seller")
-        );
-        const usersSnapshot = await getDocs(usersQuery);
-        
+        // Fetch all sellers (basic filter by role); then client-side fuzzy match
+        const usersQ = query(collection(db, 'users'), where('role', '==', 'seller'));
+        const usersSnap = await getDocs(usersQ);
         const results = [];
-        
-        for (const userDoc of usersSnapshot.docs) {
-          const userData = userDoc.data();
-          const userId = userDoc.id;
-          
-          // Create searchable name combinations
-          const firstName = (userData.firstName || '').toLowerCase();
-          const lastName = (userData.lastName || '').toLowerCase();
-          const fullName = `${firstName} ${lastName}`.trim();
-          
-          // Check name matches (partial matches included)
-          const nameMatches = 
-            firstName.includes(queryText) ||
-            lastName.includes(queryText) ||
-            fullName.includes(queryText);
-          
-          // Get seller data from sellers collection
-          let sellerData = {};
-          try {
-            const sellerDoc = await getDoc(doc(db, "sellers", userId));
-            if (sellerDoc.exists()) {
-              sellerData = sellerDoc.data();
-            }
-          } catch (error) {
-            console.error("Error fetching seller data:", error);
-          }
-          
-          // Check farm/account matches
-          const farmName = (sellerData.farmName || '').toLowerCase();
-          const accountName = (sellerData.accountName || '').toLowerCase();
-          
-          const sellerMatches = 
-            farmName.includes(queryText) || 
-            accountName.includes(queryText);
-          
-          if (nameMatches || sellerMatches) {
+        usersSnap.docs.forEach((uDoc) => {
+          const u = uDoc.data();
+          const name = `${u.firstName || ''} ${u.lastName || ''}`.trim();
+          const display = u.displayName || name;
+          const farm = u.farmName || '';
+          const username = u.username || '';
+          const hay = [display, farm, username].join(' ').toLowerCase();
+          if (hay.includes(qText)) {
             results.push({
-              id: userId,
-              userId: userId,
-              firstName: userData.firstName || '',
-              lastName: userData.lastName || '',
-              photoURL: userData.photoURL || "https://randomuser.me/api/portraits/lego/1.jpg",
-              farmName: sellerData.farmName || '',
-              accountName: sellerData.accountName || '',
-              isOnline: userData.isOnline || false,
+              userId: uDoc.id,
+              fullName: display,
+              farmName: farm,
+              photoURL: u.profileImageUrl || u.photoURL || '',
+              username,
             });
           }
-        }
-        
+        });
         searchResults.value = results;
-        console.log("Search query:", queryText);
-        console.log("Search results:", results);
       } catch (error) {
-        console.error("Search error:", error);
+        console.error('Search error:', error);
       } finally {
         searching.value = false;
       }
     };
 
     const startNewChat = async (seller) => {
-      // Check if conversation already exists using sellerId
-      const existingConv = conversations.value.find(
-        (conv) => conv.sellerId === seller.userId
-      );
-      
+      if (!seller || !seller.userId) return;
+      const existingConv = conversations.value.find((c) => c.sellerId === seller.userId);
       if (existingConv) {
         openChat(existingConv);
         closeSearch();
         return;
       }
-      
-      // Create new conversation using seller's userId
-      const conversationId = `${currentUserId}_${seller.userId}`;
-      
       try {
-        // Create conversation document
-        await setDoc(doc(db, "conversations", conversationId), {
-          participants: [currentUserId, seller.userId],
-          lastMessage: "",
-          lastMessageTime: serverTimestamp(),
-          lastMessageSender: "",
-          unreadCount: 0,
-          type: "farmer",
-          createdAt: serverTimestamp(),
-        });
-          // Add to local conversations
-        const newConversation = {
-          id: conversationId,
-          conversationId,
+        const convId = await ensureConversation(seller.userId);
+        // Prime minimal seller info into conversation (optional)
+        await updateDoc(doc(db, 'conversations', convId), {
           sellerId: seller.userId,
-          sellerName: `${seller.firstName} ${seller.lastName}`.trim(),
-          sellerFarm: seller.farmName,
-          sellerPhoto: seller.photoURL,
-          sellerOnline: seller.isOnline,
-          lastMessage: "",
-          lastMessageTime: null, // Set to null initially instead of new Date()
-          lastMessageSender: "",
+          lastMessageTime: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        // Add to local list optimistically
+        conversations.value.unshift({
+          id: convId,
+          participants: [currentUserId.value, seller.userId],
+          sellerId: seller.userId,
+          sellerName: seller.fullName || 'Seller',
+          farmName: seller.farmName || '',
+          sellerPhoto: seller.photoURL || '',
+          lastMessage: '',
+          lastMessageTime: new Date(),
+          lastMessageSender: '',
           unreadCount: 0,
-          type: "farmer",
-        };
-        
-        conversations.value.unshift(newConversation);
-        openChat(newConversation);
+          type: 'farmer',
+        });
+        openChat(conversations.value[0]);
         closeSearch();
       } catch (error) {
-        console.error("Error creating conversation:", error);
+        console.error('Error creating conversation:', error);
       }
     };
 
-    // Function to show notification
     const showNewMessageNotification = (message) => {
       notificationMessage.value = message;
       showNotification.value = true;
-      
-      // Try to play notification sound if available
       try {
         const audio = new Audio('/notification-sound.mp3');
-        audio.play().catch(() => {
-          // Handle autoplay restrictions or missing file gracefully
-          console.log('Could not play notification sound - autoplay prevented or file not found');
-        });
-      } catch (error) {
-        console.log('Notification sound not available');
-      }
-      
-      // Hide notification after 5 seconds
-      setTimeout(() => {
-        showNotification.value = false;
-      }, 5000);
+        audio.play().catch(() => {});
+      } catch (e) {}
+      setTimeout(() => (showNotification.value = false), 5000);
     };
 
-    // Add notification listener
     const setupNotificationListener = () => {
-      const q = query(
-        collection(db, "conversations"),
-        where("participants", "array-contains", currentUserId)
-      );
-      
-      return onSnapshot(q, (snapshot) => {
+      if (!currentUserId.value) return () => {};
+      const qConv = query(collection(db, 'conversations'), where('participants', 'array-contains', currentUserId.value));
+      return onSnapshot(qConv, (snapshot) => {
         snapshot.docChanges().forEach((change) => {
           if (change.type === 'modified') {
-            const conversation = change.doc.data();
-            if (conversation.lastMessageSender === 'seller' && 
-                conversation.unreadCount > 0 &&
-                change.doc.id !== selectedConversation.value?.id) {
-              
-              // Get seller name for notification from existing conversations
-              const existingConv = conversations.value.find(conv => conv.id === change.doc.id);
-              if (existingConv) {
-                showNewMessageNotification(`${existingConv.sellerName} sent you a message: ${conversation.lastMessage}`);
-              } else {
-                // Fallback: get seller data from Firestore
-                const sellerId = conversation.participants.find(id => id !== currentUserId);
-                getDoc(doc(db, "users", sellerId)).then((userDoc) => {
-                  if (userDoc.exists()) {
-                    const userData = userDoc.data();
-                    const fullName = `${userData.firstName || ''} ${userData.lastName || ''}`.trim();
-                    const sellerName = fullName || 'Seller';
-                    
-                    showNewMessageNotification(`${sellerName} sent you a message: ${conversation.lastMessage}`);
-                  }
-                });
-              }
+            const data = change.doc.data();
+            if (data.lastMessage && data.lastMessageSender !== 'customer') {
+              showNewMessageNotification(`New message: ${data.lastMessage}`);
             }
           }
         });
       });
     };
 
+    let notificationsUnsubscribe = null;
+
     onMounted(() => {
-      fetchConversations();
-      setupNotificationListener();
+      // Initialize auth + bootstrap listeners
+      const init = () => {
+        if (!auth.currentUser) return;
+        currentUserId.value = auth.currentUser.uid;
+        currentUserPhoto.value = auth.currentUser.photoURL || '';
+        fetchConversations();
+        notificationsUnsubscribe = setupNotificationListener();
+      };
+
+      if (auth.currentUser) init();
+      else onAuthStateChanged(auth, () => init());
     });
 
     onUnmounted(() => {
-      if (conversationsUnsubscribe) {
-        conversationsUnsubscribe();
-      }
-      if (messagesUnsubscribe) {
-        messagesUnsubscribe();
-      }
+      if (conversationsUnsubscribe) conversationsUnsubscribe();
+      if (messagesUnsubscribe) messagesUnsubscribe();
+      if (notificationsUnsubscribe) notificationsUnsubscribe();
     });
 
     return {
-  goHome: () => router.push({ name: 'homeview' }),
+      // navigation
+      goHome: () => router.push({ name: 'homeview' }),
+
+      // state
       activeTab,
       conversations,
       filteredConversations,
@@ -788,14 +673,19 @@ export default {
       newMessage,
       loadingConversations,
       sendingMessage,
-      currentUserId,
+      currentUserId: currentUserId,
       currentUserPhoto,
       messagesContainer,
+      fallbackAvatar,
+
+      // actions
       openChat,
       closeChat,
       sendMessage,
       formatConversationTime,
       formatMessageTime,
+
+      // search
       showSearch,
       searchQuery,
       searchResults,
@@ -804,10 +694,12 @@ export default {
       closeSearch,
       handleSearch,
       startNewChat,
+
+      // notifications
       showNotification,
       notificationMessage,
     };
-  }
+  },
 };
 </script>
 
@@ -1103,7 +995,7 @@ export default {
 }
 
 .status-dot.online {
-  background-color: #4CAF50;
+  background-color: #4caf50;
 }
 
 .message-content {
@@ -1309,7 +1201,7 @@ export default {
   cursor: not-allowed;
 }
 
-/* Add notification styles */
+/* Notification */
 .notification {
   position: fixed;
   top: 20px;

@@ -379,8 +379,6 @@
                 <span>{{ getTopPriorityRibbon(product).text }}</span>
               </div>
               <div :class="['pm-top-badges', { 'has-ribbon': !!getTopPriorityRibbon(product) }]">
-                <div v-if="getBadgeText(product)" class="product-status active">{{ getBadgeText(product) }}</div>
-                <div v-if="product.wholesaleAvailable" class="product-badge wholesale">Wholesale</div>
               </div>
               
               <div class="bottom-badges">
@@ -438,8 +436,6 @@
               
               <!-- Second row badges (status and wholesale) -->
               <div class="secondary-badges">
-                <div v-if="getBadgeText(product)" class="product-status active">{{ getBadgeText(product) }}</div>
-                <div v-if="product.wholesaleAvailable" class="product-badge wholesale">Wholesale</div>
               </div>
               
               <!-- Third row badges (trending/hot seller) -->
@@ -600,8 +596,6 @@
                 <span>{{ getTopPriorityRibbon(product).text }}</span>
               </div>
               <div :class="['pm-top-badges', { 'has-ribbon': !!getTopPriorityRibbon(product) }]">
-                <div v-if="getBadgeText(product)" class="product-status active">{{ getBadgeText(product) }}</div>
-                <div v-if="product.wholesaleAvailable" class="product-badge wholesale">Wholesale</div>
               </div>
               
               <div class="bottom-badges">
@@ -694,8 +688,6 @@
                 <span>{{ getTopPriorityRibbon(product).text }}</span>
               </div>
               <div :class="['pm-top-badges', { 'has-ribbon': !!getTopPriorityRibbon(product) }]">
-                <div v-if="getBadgeText(product)" class="product-status active">{{ getBadgeText(product) }}</div>
-                <div v-if="product.wholesaleAvailable" class="product-badge wholesale">Wholesale</div>
               </div>
               
               <div class="bottom-badges">
@@ -1326,7 +1318,7 @@ const fetchProducts = async () => {
     });
 
     const getTopPriorityRibbon = (product) => {
-      // Priority order: sale > limited > pre-order > new > organic
+      // Priority order: sale > limited > pre-order > new (organic disabled)
       if (product.ribbon === 'sale') {
         return { type: 'sale', text: `${product.discountPercentage || product.discount}% OFF` };
       }
@@ -1334,13 +1326,10 @@ const fetchProducts = async () => {
         return { type: 'limited', text: 'LIMITED' };
       }
       if (product.ribbon === 'pre-order') {
-        return { type: 'pre-order', text: 'PRE-ORDER' };
+  return { type: 'pre-order', text: 'Available' };
       }
       if (product.ribbon === 'new') {
         return { type: 'new', text: 'NEW' };
-      }
-      if (product.ribbon === 'organic') {
-        return { type: 'organic', text: 'ORGANIC' };
       }
       return null;
     };
@@ -1413,7 +1402,7 @@ const fetchProducts = async () => {
   },
   methods: {
     // Dynamic text for the green badge on product cards
-    // Priority: product.badgeText -> product.statusText -> 'Available' if active -> 'Organic' if organic -> ''
+  // Priority: product.badgeText -> product.statusText -> 'Available' if active -> ''
     getBadgeText(product) {
       if (!product) return '';
       const txt = (product.badgeText || product.statusText || '').toString().trim();
@@ -1421,7 +1410,6 @@ const fetchProducts = async () => {
       if (product.isActive === true || product.active === true || product.status === 'Active') {
         return 'Available';
       }
-      if (product.isOrganic) return 'Organic';
       return '';
     },
     formatPrice(price) {

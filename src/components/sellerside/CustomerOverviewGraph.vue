@@ -525,6 +525,7 @@ watch(chartData, () => {
   padding: 24px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   border: 1px solid #e5e7eb;
+  overflow: hidden; /* avoid inner elements bleeding outside rounded corners */
 }
 
 .chart-header {
@@ -644,6 +645,10 @@ watch(chartData, () => {
 
 /* Responsive design */
 @media (max-width: 768px) {
+  .customer-overview-graph {
+    padding: 16px; /* tighter card padding on phones */
+  }
+
   .chart-header {
     flex-direction: column;
     align-items: flex-start;
@@ -653,6 +658,7 @@ watch(chartData, () => {
   .chart-controls {
     width: 100%;
     justify-content: space-between;
+    gap: 12px;
   }
 
   .chart-legend {
@@ -661,7 +667,8 @@ watch(chartData, () => {
   }
 
   .chart-container {
-    height: 280px;
+    height: clamp(220px, 45vh, 320px); /* scale with viewport but cap to keep summary visible */
+    -webkit-overflow-scrolling: touch;
   }
 
   .chart-summary {
@@ -683,11 +690,11 @@ watch(chartData, () => {
 
 @media (max-width: 480px) {
   .customer-overview-graph {
-    padding: 16px;
+  padding: 14px; /* a bit tighter on very small devices */
   }
 
   .chart-container {
-    height: 240px;
+  height: clamp(200px, 42vh, 280px);
   }
 
   .chart-title h3 {
@@ -697,6 +704,7 @@ watch(chartData, () => {
   .time-filter {
     padding: 6px 10px;
     font-size: 0.8rem;
+  width: 100%; /* full width select for narrow screens to avoid overlap */
   }
 }
 

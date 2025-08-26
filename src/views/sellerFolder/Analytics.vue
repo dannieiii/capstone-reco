@@ -1493,6 +1493,7 @@ const initCategoryChart = (labels, data) => {
       plugins: {
         legend: {
           position: 'bottom',
+          align: 'center',
           labels: {
             boxWidth: 12,
             padding: 10
@@ -1878,7 +1879,7 @@ defineOptions({
 /* Charts */
 .charts-container {
   display: grid;
-  grid-template-columns: 2fr 1fr;
+  grid-template-columns: 1fr; /* stack charts vertically */
   gap: 20px;
   margin-bottom: 20px;
 }
@@ -1891,11 +1892,11 @@ defineOptions({
 }
 
 .main-chart {
-  grid-column: 1;
+  grid-column: auto;
 }
 
 .category-chart {
-  grid-column: 2;
+  grid-column: auto;
 }
 
 .chart-header {
@@ -1943,6 +1944,21 @@ defineOptions({
 
 .category-chart-wrapper {
   height: 250px;
+}
+
+/* Center Category chart section */
+.category-chart .chart-header {
+  justify-content: center;
+}
+
+.category-chart .chart-header h2 {
+  text-align: center;
+}
+
+.category-chart .chart-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Section Container */

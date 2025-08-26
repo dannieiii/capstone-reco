@@ -1022,12 +1022,26 @@ onUnmounted(() => {
 
 <style scoped>
 .community-page {
-  height: 100vh;
+  /* Use min-height to avoid mobile 100vh visual viewport issues */
+  min-height: 100vh;
+  height: auto;
   display: flex;
   flex-direction: column;
   padding-bottom: 80px;
   background-color: #f0f2f5;
-  overflow-x: hidden;
+  overflow-x: hidden; /* prevent sideways scroll */
+  touch-action: pan-y; /* disable horizontal panning */
+  overscroll-behavior-x: none; /* stop horizontal bounce */
+}
+.community-page, .community-page * {
+  box-sizing: border-box; /* avoid width overflow from padding */
+}
+
+/* Prefer dynamic viewport units when available for better mobile behavior */
+@supports (height: 100dvh) {
+  .community-page {
+    min-height: 100dvh;
+  }
 }
 
 /* Header Styles */
@@ -1073,6 +1087,7 @@ onUnmounted(() => {
   display: flex;
   gap: 8px;
   position: relative;
+  flex-shrink: 0; /* prevent buttons from shrinking and causing overflow */
 }
 
 .icon-button {
@@ -2323,11 +2338,12 @@ onUnmounted(() => {
   }
   
   .content {
-    padding: 10px;
+    padding: 12px; /* unify side margins with header */
   }
   
   .post-card {
-    margin: 0 -5px;
+    /* Avoid negative margins that can cause subtle horizontal scrolling */
+    margin: 0;
     border-radius: 8px;
   }
   
@@ -2380,6 +2396,8 @@ onUnmounted(() => {
   
   .product-ref-info h4 {
     font-size: 13px;
+    white-space: normal;
+    line-height: 1.25;
   }
   
   .product-ref-price {
@@ -2391,10 +2409,13 @@ onUnmounted(() => {
   }
   
   .reaction-menu {
-    min-width: 280px;
-    max-width: 90vw;
+    /* Let the menu fit narrower screens and wrap as needed */
+    width: auto;
+    max-width: calc(100vw - 20px);
     padding: 6px;
     gap: 2px;
+    flex-wrap: wrap;
+    justify-content: center;
   }
   
   .reaction-option {
@@ -2412,6 +2433,11 @@ onUnmounted(() => {
   
   .comment-avatar {
     width: 28px;
+  }
+
+  /* Product selector grid denser on small phones */
+  .products-grid {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   }
 }
 </style>

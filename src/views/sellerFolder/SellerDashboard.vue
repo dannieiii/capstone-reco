@@ -541,6 +541,10 @@ if (user) {
 </script>
 
 <style scoped>
+/* Global top app bar height (fallback). Adjust if your app bar is taller) */
+:root {
+  --topbar-height: 56px;
+}
 .dashboard-container {
 display: flex;
 min-height: 100vh;
@@ -987,6 +991,15 @@ margin-bottom: 15px;
 .main-content {
   margin-left: 0;
   padding: 10px;
+  /* Push below the fixed green app bar on mobile */
+  padding-top: calc(10px + var(--topbar-height, 56px) + env(safe-area-inset-top));
+}
+
+.header {
+  position: sticky;
+  top: calc(var(--topbar-height, 56px) + env(safe-area-inset-top));
+  background: #f9fafb;
+  z-index: 10;
 }
 
 .welcome-banner {

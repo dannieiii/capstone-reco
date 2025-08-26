@@ -133,22 +133,26 @@
                 </div>
                 <div class="price-changes">
                   <div class="price-change-item">
-                    <span class="label">Min Price:</span>
-                    <span class="price-change">
-                      ₱{{ formatPrice(notification.priceDetails?.minPrice?.old) }} → ₱{{ formatPrice(notification.priceDetails?.minPrice?.new) }}
-                      <span :class="getPriceChangeClass(notification.priceDetails?.minPrice?.old, notification.priceDetails?.minPrice?.new)">
-                        ({{ getPriceChangePercentage(notification.priceDetails?.minPrice?.old, notification.priceDetails?.minPrice?.new) }})
+                    <span class="label">Min Price</span>
+                    <div class="prices">
+                      <span class="num old">₱{{ formatPrice(notification.priceDetails?.minPrice?.old) }}</span>
+                      <span class="arrow">→</span>
+                      <span class="num new">₱{{ formatPrice(notification.priceDetails?.minPrice?.new) }}</span>
+                      <span class="delta" :class="getPriceChangeClass(notification.priceDetails?.minPrice?.old, notification.priceDetails?.minPrice?.new)">
+                        {{ getPriceChangePercentage(notification.priceDetails?.minPrice?.old, notification.priceDetails?.minPrice?.new) }}
                       </span>
-                    </span>
+                    </div>
                   </div>
                   <div class="price-change-item">
-                    <span class="label">Max Price:</span>
-                    <span class="price-change">
-                      ₱{{ formatPrice(notification.priceDetails?.maxPrice?.old) }} → ₱{{ formatPrice(notification.priceDetails?.maxPrice?.new) }}
-                      <span :class="getPriceChangeClass(notification.priceDetails?.maxPrice?.old, notification.priceDetails?.maxPrice?.new)">
-                        ({{ getPriceChangePercentage(notification.priceDetails?.maxPrice?.old, notification.priceDetails?.maxPrice?.new) }})
+                    <span class="label">Max Price</span>
+                    <div class="prices">
+                      <span class="num old">₱{{ formatPrice(notification.priceDetails?.maxPrice?.old) }}</span>
+                      <span class="arrow">→</span>
+                      <span class="num new">₱{{ formatPrice(notification.priceDetails?.maxPrice?.new) }}</span>
+                      <span class="delta" :class="getPriceChangeClass(notification.priceDetails?.maxPrice?.old, notification.priceDetails?.maxPrice?.new)">
+                        {{ getPriceChangePercentage(notification.priceDetails?.maxPrice?.old, notification.priceDetails?.maxPrice?.new) }}
                       </span>
-                    </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1180,15 +1184,19 @@ onMounted(async () => {
 }
 
 .price-update-details {
-  background: #d1fae5;
+  background: #ecfdf5;
   padding: 12px;
-  border-radius: 6px;
+  border-radius: 8px;
   margin-top: 8px;
+  border: 1px solid #a7f3d0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .product-info {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   margin-bottom: 8px;
 }
@@ -1209,21 +1217,40 @@ onMounted(async () => {
 .price-changes {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-bottom: 8px;
+  gap: 8px;
+  margin-bottom: 4px;
 }
 
 .price-change-item {
-  display: flex;
+  display: grid;
+  grid-template-columns: 110px 1fr;
   align-items: center;
-  gap: 8px;
-  font-size: 0.85rem;
+  column-gap: 12px;
+  font-size: 0.9rem;
 }
 
 .price-change-item .label {
-  font-weight: 500;
-  color: #374151;
-  min-width: 70px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.price-change-item .prices {
+  display: grid;
+  grid-template-columns: auto 18px auto auto;
+  align-items: center;
+  justify-content: start;
+  gap: 8px;
+}
+
+.price-change-item .num {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+.price-change-item .arrow {
+  color: #6b7280;
+  white-space: nowrap;
 }
 
 .price-change {
@@ -1231,16 +1258,27 @@ onMounted(async () => {
   font-weight: 600;
 }
 
+.delta {
+  font-weight: 700;
+  font-size: 0.8rem;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  line-height: 1.4;
+}
+
 .price-increase {
-  color: #dc2626;
+  color: #b91c1c;
+  background: #fee2e2;
 }
 
 .price-decrease {
-  color: #059669;
+  color: #065f46;
+  background: #d1fae5;
 }
 
 .price-same {
   color: #6b7280;
+  background: #e5e7eb;
 }
 
 .price-warning-preview {
@@ -1866,6 +1904,33 @@ onMounted(async () => {
   
   .price-changes {
     font-size: 0.8rem;
+  }
+
+  /* Horizontal, compact layout for price update rows on mobile */
+  .price-change-item {
+    grid-template-columns: 90px 1fr;
+    column-gap: 10px;
+    align-items: center;
+  }
+
+  .price-change-item .prices {
+    grid-template-columns: auto 14px auto auto;
+    column-gap: 6px;
+    align-items: center;
+  }
+
+  .price-change-item .arrow {
+    transform: none;
+    color: #6b7280;
+    margin: 0;
+  }
+
+  .delta {
+    justify-self: start;
+  }
+
+  .price-update-details {
+    padding: 10px;
   }
   
   .product-info {

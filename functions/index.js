@@ -7,6 +7,24 @@ const { defineSecret } = require('firebase-functions/params');
 // Initialize Firebase Admin
 admin.initializeApp();
 
+// CORS helpers: add explicit headers and handle OPTIONS preflight
+const setCorsHeaders = (req, res) => {
+  const origin = req.headers.origin || '*';
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  res.setHeader('Access-Control-Max-Age', '3600');
+};
+
+const maybeHandlePreflight = (req, res) => {
+  if (req.method === 'OPTIONS') {
+    setCorsHeaders(req, res);
+    return res.status(204).send('');
+  }
+  return false;
+};
+
 // Define secrets for sensitive data
 const xenditApiKey = defineSecret('XENDIT_API_KEY');
 const webhookToken = defineSecret('WEBHOOK_TOKEN');
@@ -142,7 +160,9 @@ exports.createGcashPaymentHttp = functions.https.onRequest({
   secrets: [xenditApiKey],
   invoker: 'public'
 }, (req, res) => {
-    return cors(req, res, async () => {
+  if (maybeHandlePreflight(req, res)) return;
+  setCorsHeaders(req, res);
+  return cors(req, res, async () => {
       try {
         if (req.method !== 'POST') {
           return res.status(405).json({ error: 'Method not allowed' });
@@ -194,7 +214,8 @@ exports.createGcashPaymentHttp = functions.https.onRequest({
           }
         );
 
-        return res.json({
+  setCorsHeaders(req, res);
+  return res.json({
           success: true,
           paymentUrl: response.data.invoice_url,
           paymentId: response.data.id,
@@ -203,7 +224,8 @@ exports.createGcashPaymentHttp = functions.https.onRequest({
 
       } catch (error) {
         console.error('HTTP: Error creating GCash payment:', error);
-        return res.status(500).json({ 
+  setCorsHeaders(req, res);
+  return res.status(500).json({ 
           error: 'Failed to create payment',
           message: error.message 
         });
@@ -212,7 +234,9 @@ exports.createGcashPaymentHttp = functions.https.onRequest({
   });
 
 // Webhook handler for Xendit payment notifications
-exports.xenditWebhook = functions.https.onRequest({
+exports.xenditWebhook = functions.runWith({
+  minInstances: 1
+}).https.onRequest({
   secrets: [webhookToken],
   invoker: 'public'
 }, async (req, res) => {
@@ -461,7 +485,11 @@ exports.hello = functions.https.onRequest((req, res) => {
 });
 
 // Simple test payment endpoint without authentication
-exports.testGcashPayment = functions.https.onRequest((req, res) => {
+exports.testGcashPayment = functions.https.onRequest({
+  invoker: 'public'
+}, (req, res) => {
+  if (maybeHandlePreflight(req, res)) return;
+  setCorsHeaders(req, res);
   return cors(req, res, async () => {
     try {
       console.log('=== TEST GCASH PAYMENT START ===');
@@ -487,12 +515,14 @@ exports.testGcashPayment = functions.https.onRequest((req, res) => {
         expiryDate: new Date(Date.now() + 3600000).toISOString() // 1 hour from now
       };
 
-      console.log('Test payment response:', mockPaymentResponse);
-      return res.json(mockPaymentResponse);
+  console.log('Test payment response:', mockPaymentResponse);
+  setCorsHeaders(req, res);
+  return res.json(mockPaymentResponse);
 
     } catch (error) {
       console.error('Test payment error:', error);
-      return res.status(500).json({ 
+  setCorsHeaders(req, res);
+  return res.status(500).json({ 
         error: 'Failed to create test payment',
         message: error.message 
       });
@@ -502,8 +532,11 @@ exports.testGcashPayment = functions.https.onRequest((req, res) => {
 
 // Public GCash payment endpoint without authentication - REAL Xendit integration
 exports.createGcashPaymentPublic = functions.https.onRequest({
-  secrets: [xenditApiKey]
+  secrets: [xenditApiKey],
+  invoker: 'public'
 }, (req, res) => {
+  if (maybeHandlePreflight(req, res)) return;
+  setCorsHeaders(req, res);
   return cors(req, res, async () => {
     try {
       console.log('=== PUBLIC GCASH PAYMENT START ===');
@@ -546,6 +579,8 @@ exports.createGcashPaymentPublic = functions.https.onRequest({
           given_names: customerName,
           email: customerEmail
         },
+  success_redirect_url: `${FRONTEND_URL}/payment/success?order=${orderCode}`,
+  failure_redirect_url: `${FRONTEND_URL}/payment/failed?order=${orderCode}`,
         customer_notification_preference: {
           invoice_created: ['email'],
           invoice_reminder: ['email'],
@@ -630,12 +665,14 @@ exports.createGcashPaymentPublic = functions.https.onRequest({
         status: responseData.status
       };
 
-      console.log('Public payment response:', paymentResponse);
-      return res.json(paymentResponse);
+    console.log('Public payment response:', paymentResponse);
+    setCorsHeaders(req, res);
+    return res.json(paymentResponse);
 
     } catch (error) {
       console.error('Public GCash payment error:', error);
-      return res.status(500).json({ 
+    setCorsHeaders(req, res);
+    return res.status(500).json({ 
         error: 'Failed to create payment',
         message: error.message 
       });
