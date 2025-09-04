@@ -832,6 +832,17 @@ export default {
       'default': 'https://cdn-icons-png.flaticon.com/512/1147/1147805.png'
     };
 
+    const hasAvailableStock = (product) => {
+      // Check if any of the unit stocks are available
+      return (product.stockPerKilo > 0) || 
+             (product.stockPerSack > 0) || 
+             (product.stockPerTali > 0) || 
+             (product.stockPerKaing > 0) || 
+             (product.stockPerBundle > 0) || 
+             (product.stockPerTray > 0) || 
+             (product.stockPerPiece > 0);
+    };
+
     // Computed property for displayed categories (max 8, with "More" button if needed)
     const displayedCategories = computed(() => {
       console.log('Computing displayedCategories, total categories:', categories.value.length);
@@ -1020,9 +1031,20 @@ const filteredProducts = computed(() => {
           });
         }
       }
-      
-      return result;
-    });
+  
+  result.sort((a, b) => {
+    const aHasStock = hasAvailableStock(a);
+    const bHasStock = hasAvailableStock(b);
+    
+    // If both have stock or both are sold out, maintain current order
+    if (aHasStock === bHasStock) return 0;
+    
+    // Products with stock come first (return -1), sold out products come last (return 1)
+    return aHasStock ? -1 : 1;
+  });
+  
+  return result;
+});
 
     // Calculate popularity score based on views, sales, and recency
     const calculatePopularityScore = (product) => {
@@ -1386,7 +1408,8 @@ const fetchProducts = async () => {
       showPreOrderSection,
       preOrderProducts,
       filterByPreOrder,
-      getTopPriorityRibbon
+      getTopPriorityRibbon,
+      hasAvailableStock // Added hasAvailableStock to return statement
     };
   },
   data() {
@@ -1451,16 +1474,6 @@ const fetchProducts = async () => {
       return originalPrice * (1 - discountPercentage / 100);
     },
 
-        hasAvailableStock(product) {
-      // Check if any of the unit stocks are available
-      return (product.stockPerKilo > 0) || 
-             (product.stockPerSack > 0) || 
-             (product.stockPerTali > 0) || 
-             (product.stockPerKaing > 0) || 
-             (product.stockPerBundle > 0) || 
-             (product.stockPerTray > 0) || 
-             (product.stockPerPiece > 0);
-    },
     async fetchUserInfo() {
       const user = auth.currentUser;
       if (user) {
@@ -1685,7 +1698,7 @@ watch: {
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
   width: 100%;
   box-sizing: border-box;
-}
+  }
 
 .search-container {
   display: flex;
@@ -2120,7 +2133,7 @@ watch: {
 
 .profile-menu {
   padding: 10px;
-}
+  }
 
 .menu-item {
   display: flex;
@@ -2434,11 +2447,12 @@ watch: {
   position: relative;
   overflow: hidden;
   box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
-  height: 120px;
+  min-height: 130px; /* allow content to breathe and keep buttons visible */
   cursor: pointer;
   transition: transform 0.3s ease, box-shadow 0.3s ease;
   display: flex;
   justify-content: space-between;
+  align-items: stretch;
   box-sizing: border-box;
   flex: 1;
 }
@@ -2463,8 +2477,10 @@ watch: {
 .delivery-content {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: flex-start; /* keep content at top */
+  align-items: flex-start;
   flex: 1;
+  height: 100%; /* so button can pin to the bottom */
 }
 
 .delivery-card h3 {
@@ -2478,6 +2494,7 @@ watch: {
   font-size: 13px;
   margin: 0 0 5px 0;
   color: #555;
+  flex-grow: 1; /* fill remaining space so the button sits at bottom */
 }
 
 .delivery-card .free {
@@ -2498,6 +2515,8 @@ watch: {
   transition: background-color 0.2s ease;
   width: fit-content;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  margin-top: auto; /* align to bottom across cards */
+  white-space: nowrap; /* keep label on one line */
 }
 
 .shop-now-btn:hover {
@@ -3388,7 +3407,12 @@ html {
 @media (max-width: 767px) {
   .hero-section {
     height: 250px;
-    padding: 0 15px;
+  padding: 0 15px;
+  }
+  
+  .content {
+  padding-left: 8px; /* further reduce side padding on small screens */
+  padding-right: 8px;
   }
   
   .hero-content h1 {
@@ -3422,8 +3446,12 @@ html {
   
   .products-grid {
     grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
-    padding: 0 10px;
+    gap: 6px; /* tighter gap for small screens */
+    padding: 0 6px; /* reduce side padding */
+  }
+  
+  .products-container {
+    gap: 8px; /* reduce inner grid gap from 12px */
   }
   
   .product-card {
@@ -3440,7 +3468,7 @@ html {
   }
   
   .delivery-card {
-    height: 110px;
+    min-height: 130px; /* consistent min-height so buttons align */
     padding: 12px;
     display: flex;
     justify-content: space-between;
@@ -3450,7 +3478,7 @@ html {
   .delivery-content {
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
+    justify-content: flex-start; /* let content stack and button pin to bottom */
     flex: 1;
     min-height: 100%;
     padding-right: 8px;

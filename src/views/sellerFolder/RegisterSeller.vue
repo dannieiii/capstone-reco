@@ -189,6 +189,48 @@
             >
             <span v-if="accountNumberError" class="field-error">{{ accountNumberError }}</span>
           </div>
+
+          <!-- GCash QR Code (visible preview before submit) -->
+          <div class="form-group" v-if="formData.paymentInfo.paymentMethod === 'GCash'">
+            <label>GCash QR Code (optional but recommended)</label>
+            <div class="document-upload-container">
+              <div class="upload-options">
+                <button 
+                  type="button" 
+                  class="upload-option-btn"
+                  @click="triggerQrInput"
+                >
+                  <Upload :size="16" />
+                  Upload QR Image
+                </button>
+              </div>
+
+              <!-- Image preview -->
+              <div v-if="filePreviews.paymentQr" class="file-preview">
+                <img :src="filePreviews.paymentQr" alt="GCash QR preview" class="document-preview-image" />
+                <button 
+                  type="button" 
+                  class="remove-file-btn"
+                  @click="removeQr"
+                >
+                  <X :size="14" />
+                </button>
+              </div>
+              <div v-else class="qr-placeholder file-help" style="text-align:center;">
+                No QR selected yet
+              </div>
+
+              <input 
+                type="file" 
+                ref="paymentQrInput" 
+                class="file-input"
+                accept="image/*"
+                @change="handleQrUpload"
+              />
+
+              <p class="file-help">Accepted: JPG, PNG, WEBP, GIF up to 5MB. You’ll see the image here before submitting.</p>
+            </div>
+          </div>
         </div>
         
         <!-- Verification Documents -->
@@ -750,7 +792,8 @@ export default {
         paymentInfo: {
           paymentMethod: "",
           accountName: "",
-          accountNumber: ""
+          accountNumber: "",
+          qrUrl: null
         },
         verificationDocs: {
           validID: null,
@@ -806,7 +849,8 @@ export default {
       filePreviews: {
         validID: null,
         businessPermit: null,
-        farmCert: null
+  farmCert: null,
+  paymentQr: null
       },
       
       // Account number validation
@@ -1006,6 +1050,40 @@ export default {
     triggerFileInput(key) {
       this.$refs[`${key}Input`].click();
     },
+
+    // QR helpers
+    triggerQrInput() {
+      if (this.$refs.paymentQrInput) this.$refs.paymentQrInput.click();
+    },
+    async handleQrUpload(e) {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const maxSize = 5 * 1024 * 1024;
+      if (file.size > maxSize) {
+        this.showNotification('QR Too Large', 'Please choose an image up to 5MB.', 'error');
+        return;
+      }
+      if (!this.isImageFile(file)) {
+        this.showNotification('Invalid QR File', 'QR must be an image (JPG/PNG/WEBP/GIF).', 'error');
+        return;
+      }
+      // preview
+      this.createFilePreview(file, 'paymentQr');
+      // store base64
+      try {
+        const base64 = await this.saveImageToBase64(file);
+        this.formData.paymentInfo.qrUrl = base64;
+        this.showNotification('QR Selected', 'Your QR image is ready.', 'success', 2000);
+      } catch (err) {
+        this.showNotification('Failed to read QR', err.message || 'Please try another image.', 'error');
+      }
+    },
+    removeQr() {
+      this.formData.paymentInfo.qrUrl = null;
+      this.filePreviews.paymentQr = null;
+      const input = this.$refs.paymentQrInput;
+      if (input) input.value = '';
+    },
     
     // Camera methods for document capture
     async openCameraForDocument(documentType) {
@@ -1169,11 +1247,8 @@ export default {
       }
       
       console.log(`Starting upload process for ${totalFiles} file(s)...`);
-      
-      // Set overall timeout for all uploads (15 seconds max for better UX)
-      const uploadTimeout = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Upload timeout - taking too long')), 15000);
-      });
+  // Note: Removed previous unhandled timeout Promise that caused a runtime error
+  // If you need timeouts, wrap specific awaits with Promise.race([... , timeoutPromise])
       
       try {
         // Process each document type
@@ -1506,7 +1581,8 @@ export default {
           paymentInfo: {
             accountName: this.formData.paymentInfo.accountName || "",
             accountNumber: this.formData.paymentInfo.accountNumber || "",
-            paymentMethod: this.formData.paymentInfo.paymentMethod || ""
+            paymentMethod: this.formData.paymentInfo.paymentMethod || "",
+            qrUrl: this.formData.paymentInfo.qrUrl || ""
           },
           
           // Personal info (map) - moved registrationStatus and status to root level
@@ -2693,6 +2769,13 @@ body {
   }
 }
 
+
+  .qr-placeholder {
+    border: 1px dashed #cbd5e1;
+    border-radius: 8px;
+    padding: 16px;
+    color: #64748b;
+  }
 .submit-button:disabled .loading-spinner {
   border-top-color: #666;
 }

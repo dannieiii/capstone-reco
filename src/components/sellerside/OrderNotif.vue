@@ -1,26 +1,26 @@
 <template>
-  <Teleport to="body">
-    <div v-if="visible" class="notification-container">
-      <Transition name="slide-in" appear>
-        <div v-if="visible" :class="['notification', `notification-${type}`]">
+  <Teleport to="body" v-if="isClient">
+    <Transition name="slide-in">
+      <div class="notification-container" v-show="visible">
+        <div :class="['notification', `notification-${type}`]">
           <div class="notification-icon">
             <i v-if="type === 'success'" class="i-lucide-check-circle"></i>
             <i v-else-if="type === 'error'" class="i-lucide-x-circle"></i>
             <i v-else-if="type === 'warning'" class="i-lucide-alert-triangle"></i>
             <i v-else class="i-lucide-info"></i>
           </div>
-          
+
           <div class="notification-content">
             <h4 class="notification-title">{{ title }}</h4>
             <p class="notification-message">{{ message }}</p>
           </div>
-          
+
           <button @click="close" class="notification-close">
             <i class="i-lucide-x"></i>
           </button>
         </div>
-      </Transition>
-    </div>
+      </div>
+    </Transition>
   </Teleport>
 </template>
 
@@ -55,6 +55,7 @@ const emit = defineEmits(['close'])
 
 const visible = ref(false)
 let timeoutId = null
+const isClient = ref(false)
 
 const show = () => {
   visible.value = true
@@ -76,6 +77,7 @@ const close = () => {
 }
 
 onMounted(() => {
+  isClient.value = true
   show()
 })
 

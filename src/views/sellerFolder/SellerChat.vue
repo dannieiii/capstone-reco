@@ -90,7 +90,9 @@
                     <h3>{{ conversation.customerName }}</h3>
                     <span class="conversation-time">{{ formatTime(conversation.lastMessageTime) }}</span>
                   </div>
-                  <p class="conversation-preview">{{ conversation.lastMessage || 'No messages yet' }}</p>
+                  <p class="conversation-preview">
+                    {{ conversation.lastMessage || 'No messages yet' }}
+                  </p>
                   <div class="conversation-meta">
                     <span v-if="conversation.orderId" class="order-badge">
                       Order #{{ conversation.orderId }}
@@ -1257,6 +1259,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 200px;
+    text-align: left;
   }
     .conversation-meta {
     display: flex;

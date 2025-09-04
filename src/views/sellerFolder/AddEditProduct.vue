@@ -1868,9 +1868,14 @@ const selectProductUnit = (productItem, unitSummary) => {
         updatePriceUnits.value.forEach(unit => {
           if (unit.newMinPrice || unit.newMaxPrice) {
             const unitKey = unit.unit;
+            const minVal = unit.newMinPrice || unit.currentMinPrice;
+            const maxVal = unit.newMaxPrice || unit.currentMaxPrice;
             updates[`unitPricing.${unitKey}`] = {
-              minPrice: unit.newMinPrice || unit.currentMinPrice,
-              maxPrice: unit.newMaxPrice || unit.currentMaxPrice
+              // Write both legacy and new fields for compatibility
+              minPrice: minVal,
+              maxPrice: maxVal,
+              newMinPrice: minVal,
+              newMaxPrice: maxVal
             };
             hasUpdates = true;
           }
@@ -1880,8 +1885,11 @@ const selectProductUnit = (productItem, unitSummary) => {
         if (newUnitData.value.unit && newUnitData.value.minPrice && newUnitData.value.maxPrice) {
           const unitKey = newUnitData.value.unit;
           updates[`unitPricing.${unitKey}`] = {
+            // Write both legacy and new fields for compatibility
             minPrice: newUnitData.value.minPrice,
-            maxPrice: newUnitData.value.maxPrice
+            maxPrice: newUnitData.value.maxPrice,
+            newMinPrice: newUnitData.value.minPrice,
+            newMaxPrice: newUnitData.value.maxPrice
           };
           hasUpdates = true;
         }
@@ -1972,13 +1980,21 @@ const selectProductUnit = (productItem, unitSummary) => {
           // Create unit summaries for easier display
           if (data.unitPricing) {
             Object.entries(data.unitPricing).forEach(([unit, pricing]) => {
-              if (pricing && typeof pricing === 'object' && pricing.minPrice !== undefined && pricing.maxPrice !== undefined) {
-                processedProduct.unitSummaries.push({
-                  unit: unit,
-                  minPrice: pricing.minPrice || 0,
-                  maxPrice: pricing.maxPrice || 0,
-                  priceRange: `₱${(pricing.minPrice || 0).toFixed(2)} - ₱${(pricing.maxPrice || 0).toFixed(2)}`
-                });
+              if (pricing && typeof pricing === 'object') {
+                // Support both legacy (minPrice/maxPrice) and new (newMinPrice/newMaxPrice) fields
+                const rawMin = pricing.newMinPrice ?? pricing.minPrice;
+                const rawMax = pricing.newMaxPrice ?? pricing.maxPrice;
+
+                if (rawMin !== undefined && rawMax !== undefined) {
+                  const minVal = parseFloat(rawMin) || 0;
+                  const maxVal = parseFloat(rawMax) || 0;
+                  processedProduct.unitSummaries.push({
+                    unit: unit,
+                    minPrice: minVal,
+                    maxPrice: maxVal,
+                    priceRange: `₱${minVal.toFixed(2)} - ₱${maxVal.toFixed(2)}`
+                  });
+                }
               }
             });
           }

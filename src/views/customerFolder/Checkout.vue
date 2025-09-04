@@ -82,22 +82,7 @@
         <h2>Payment Method</h2>
         
         <div class="options-list">
-          <label class="option-item" :class="{ active: paymentMethod === 'gcash' }">
-            <input 
-              type="radio" 
-              name="paymentMethod" 
-              value="gcash" 
-              v-model="paymentMethod"
-              class="radio-input"
-            >
-            <div class="option-content">
-              <div class="option-icon gcash">
-                <Smartphone size="18" />
-              </div>
-              <span class="option-title">GCash</span>
-            </div>
-          </label>
-          
+          <!-- Cash on Delivery FIRST -->
           <label class="option-item" :class="{ active: paymentMethod === 'cash' }">
             <input 
               type="radio" 
@@ -113,26 +98,76 @@
               <span class="option-title">Cash on Delivery</span>
             </div>
           </label>
+
+          <!-- Online Payment (GCash) SECOND -->
+          <label class="option-item" :class="{ active: paymentMethod === 'gcash' }">
+            <input 
+              type="radio" 
+              name="paymentMethod" 
+              value="gcash" 
+              v-model="paymentMethod"
+              class="radio-input"
+            >
+            <div class="option-content">
+              <div class="option-icon gcash">
+                <Smartphone size="18" />
+              </div>
+              <span class="option-title">Online Payment</span>
+            </div>
+          </label>
         </div>
         
-        <!-- GCash Details Form -->
+        <!-- Online Payment (GCash) Details -->
         <div class="gcash-details" v-if="paymentMethod === 'gcash'">
-          <div class="form-group">
-            <label for="gcashNumber">GCash Number</label>
-            <input 
-              type="text" 
-              id="gcashNumber" 
-              v-model="gcashDetails.number"
-              placeholder="09XX XXX XXXX"
-            >
+          <!-- Single seller -->
+          <div class="payment-guide" v-if="primarySeller && !isMultiSeller">
+            <div class="guide-card">
+              <div class="guide-left">
+                <p class="seller-line"><strong>Pay to:</strong> {{ primarySeller.gcash?.name || primarySeller.contactName || 'Seller' }}</p>
+                <p class="seller-line"><strong>GCash No.:</strong> {{ primarySeller.gcash?.number || primarySeller.contactNumber || '—' }}</p>
+                <div class="qr-wrapper">
+                  <div v-if="primarySeller.gcash?.qrUrl" class="qr-image">
+                    <img :src="primarySeller.gcash.qrUrl" alt="Seller QR Code" @click="openQrModal(primarySeller.gcash.qrUrl)" />
+                  </div>
+                  <div v-else class="qr-placeholder">QR Code not available</div>
+                  <p class="qr-caption">Seller QR Code</p>
+                </div>
+              </div>
+              <div class="guide-right">
+                <h4>How to pay</h4>
+                <ol class="steps">
+                  <li>Scan the QR to open the seller’s GCash.</li>
+                  <li>Enter the exact amount: <strong>₱{{ (hasPreOrderItems && !hasMixedPreOrder) ? totalDueNow.toFixed(2) : total.toFixed(2) }}</strong>.</li>
+                  <li>Confirm and complete the payment.</li>
+                  <li>Take a screenshot of the payment reference, then upload it on the next page.</li>
+                </ol>
+              </div>
+            </div>
           </div>
-          
-          <div class="form-group">
-            <label class="checkbox-container">
-              <input type="checkbox" v-model="saveGcash">
-              <span class="checkmark"></span>
-              Save GCash number for future payments
-            </label>
+          <!-- Multiple sellers: show a card per seller -->
+          <div class="payment-guide" v-else-if="isMultiSeller">
+            <div class="guide-card" style="grid-template-columns: 1fr;">
+              <div v-for="s in sellersList" :key="s.id" class="guide-left">
+                <p class="seller-line"><strong>Seller:</strong> {{ s.displayName }}</p>
+                <p class="seller-line"><strong>GCash No.:</strong> {{ s.gcash?.number || s.contactNumber || '—' }}</p>
+                <div class="qr-wrapper">
+                  <div v-if="s.gcash?.qrUrl" class="qr-image">
+                    <img :src="s.gcash.qrUrl" alt="Seller QR Code" @click="openQrModal(s.gcash.qrUrl)" />
+                  </div>
+                  <div v-else class="qr-placeholder">QR Code not available</div>
+                  <p class="qr-caption">Seller QR Code</p>
+                </div>
+              </div>
+              <div class="guide-right">
+                <h4>How to pay</h4>
+                <ol class="steps">
+                  <li>Pay each seller separately by scanning their QR code.</li>
+                  <li>Enter the amount for the items from that seller.</li>
+                  <li>Confirm payment and keep the receipt.</li>
+                  <li>Upload the receipts on the next page to complete verification.</li>
+                </ol>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -424,6 +459,16 @@
       </div>
     </div>
   </div>
+  
+  <!-- QR Enlarge Modal -->
+  <div v-if="showQrModal" class="qr-modal-overlay" @click="closeQrModal">
+    <div class="qr-modal-content" @click.stop>
+      <img :src="qrModalSrc" alt="QR Code" />
+      <button class="qr-modal-close" @click="closeQrModal">
+        <X size="20" />
+      </button>
+    </div>
+  </div>
 </template>
 
 <script>
@@ -458,7 +503,7 @@ import {
 } from 'firebase/firestore';
 import { db, auth } from '@/firebase/firebaseConfig';
 import Notification from '@/components/Notification.vue';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+// import { getFunctions, httpsCallable } from 'firebase/functions';
 import emailService from '@/services/emailService';
 
 // Oriental Mindoro data from Register.vue
@@ -792,6 +837,35 @@ export default {
       }
       
       fetchUserAddresses();
+      // Attempt to load payment info for all sellers (for QR display)
+      try {
+        if (orderItems.value && orderItems.value.length > 0) {
+          const uniqueSellerIds = Array.from(new Set(orderItems.value.map(i => i.sellerId).filter(Boolean)));
+          const snaps = await Promise.all(uniqueSellerIds.map(id => getDoc(doc(db, 'sellers', id))));
+          uniqueSellerIds.forEach((id, idx) => {
+            const snap = snaps[idx];
+            if (!snap?.exists()) return;
+            const sdata = snap.data() || {};
+            const gcash = sdata.gcash || {
+              name: sdata.paymentInfo?.accountName || sdata.farmDetails?.farmName || sdata.contactName || null,
+              number: sdata.paymentInfo?.accountNumber || sdata.gcashNumber || sdata.contactNumber || null,
+              qrUrl: sdata.paymentInfo?.qrUrl || sdata.gcashQrUrl || sdata.qrUrl || null,
+            };
+            sellersMap.value[id] = {
+              gcash,
+              contactName: sdata.contactName || sdata.farmDetails?.contactPerson || null,
+              contactNumber: sdata.contactNumber || sdata.paymentInfo?.accountNumber || sdata.gcashNumber || null,
+              displayName: sdata.farmDetails?.farmName || sdata.personalInfo?.fullName || sdata.contactName || 'Seller'
+            };
+          });
+          const firstId = uniqueSellerIds[0];
+          if (firstId && sellersMap.value[firstId]) {
+            primarySeller.value = sellersMap.value[firstId];
+          }
+        }
+      } catch (e) {
+        console.warn('Seller info load failed:', e?.message || e);
+      }
     });
 
     const startCountdown = () => {
@@ -845,9 +919,13 @@ export default {
     });
     
     // Payment data
-    const paymentMethod = ref('gcash');
-    const gcashDetails = ref({ number: '' });
-    const saveGcash = ref(false);
+  const paymentMethod = ref('');
+  const gcashDetails = ref({ number: '' });
+  const saveGcash = ref(false);
+  const primarySeller = ref(null);
+  const sellersMap = ref({}); // Map of sellerId -> { gcash, contactName, contactNumber, displayName }
+  const sellersList = computed(() => Object.keys(sellersMap.value).map(id => ({ id, ...sellersMap.value[id] })));
+  const isMultiSeller = computed(() => new Set(orderItems.value.map(i => i.sellerId)).size > 1);
     
     // Delivery options
     const deliveryOption = ref('standard');
@@ -1176,8 +1254,8 @@ export default {
       showAddressModal.value = false;
     };
 
-    // Show notification function
-    const showNotificationMessage = (message, type = 'success') => {
+    // Show notification function (optional custom duration)
+    const showNotificationMessage = (message, type = 'success', durationMs = 5000) => {
       notificationMessage.value = message;
       notificationType.value = type;
       showNotification.value = true;
@@ -1185,7 +1263,7 @@ export default {
       clearTimeout(notificationTimeout);
       notificationTimeout = setTimeout(() => {
         showNotification.value = false;
-      }, 5000);
+      }, durationMs);
     };
 
     // Calculations for multiple items
@@ -1229,9 +1307,7 @@ export default {
     const depositTotal = computed(() => orderItems.value.reduce((sum, it) => sum + computeItemDeposit(it), 0));
     const totalDueNow = computed(() => (hasPreOrderItems.value && !hasMixedPreOrder.value) ? depositTotal.value : total.value);
 
-    // Enhanced place order function with better validation
-    const functions = getFunctions();
-    const createGcashPayment = httpsCallable(functions, 'createGcashPayment');
+  // Enhanced place order function with better validation
 
     const placeOrder = async () => {
       // Enhanced validation checks
@@ -1251,16 +1327,19 @@ export default {
         return;
       }
 
-      // Enforce GCash for pre-orders
-      if (hasPreOrderItems.value && paymentMethod.value !== 'gcash') {
-        showNotificationMessage('Pre-order requires an initial payment via GCash. Please select GCash.', 'error');
+      // Require a payment method selection
+      if (!paymentMethod.value) {
+        showNotificationMessage('Please select a payment method', 'error');
         return;
       }
 
-      if (paymentMethod.value === 'gcash' && !gcashDetails.value.number) {
-        showNotificationMessage('Please enter your GCash number', 'error');
+      // Enforce Online Payment (GCash) for pre-orders
+      if (hasPreOrderItems.value && paymentMethod.value !== 'gcash') {
+        showNotificationMessage('Pre-order requires an initial Online Payment (GCash). Please select Online Payment.', 'error');
         return;
       }
+
+  // For QR-based payment, we don't collect the customer's GCash number here.
 
       // Enhanced validation for all order items
       console.log('🔍 STARTING DELIVERY AREA VALIDATION FOR ALL ITEMS');
@@ -1489,7 +1568,7 @@ export default {
                   orderType: item.orderType || (productIsPreOrder ? 'preorder' : 'normal'),
                   itemPrice: itemPrice,
                   paymentMethod: paymentMethod.value,
-                  gcashNumber: paymentMethod.value === 'gcash' ? gcashDetails.value.number : null,
+                  gcashNumber: null,
                   deliveryOption: paymentMethod.value !== 'pickup' ? deliveryOption.value : null,
                   deliveryFee: deliveryFeeValue,
                   deliveryDistance: deliveryDistance.value || 0,
@@ -1598,188 +1677,31 @@ export default {
           console.log(`isBuyNow: ${isBuyNow.value}, cartItemsToDelete.length: ${cartItemsToDelete.length}`);
         }
 
-        // PHASE 4: Handle Payment
+        // PHASE 4: Handle Payment (local/manual only, no remote calls)
         if (paymentMethod.value === 'gcash') {
           try {
-            const amountToCharge = totalDueNow.value;
-            const isDeposit = hasPreOrderItems.value && !hasMixedPreOrder.value;
-            console.log('Creating GCash payment with:', {
-              amount: amountToCharge,
-              orderCode: groupOrderCode,
-              customerName: username,
-              customerEmail: email
+            console.log('Marking orders as manual GCash (unpaid until proof) for group:', groupOrderCode);
+            // Update all orders created with this group code to reflect manual payment state
+            const ordersRef = collection(db, 'orders');
+            const snap = await getDocs(query(ordersRef, where('groupOrderCode', '==', groupOrderCode)));
+            const updates = [];
+            snap.forEach(d => {
+              updates.push(updateDoc(d.ref, {
+                paymentMethod: 'gcash_manual',
+                paymentStatus: 'unpaid',
+                paymentCreatedAt: serverTimestamp(),
+                gcashNumber: null,
+              }));
             });
-
-            let paymentResult;
-            
-            // Try Firebase Callable function first
-            try {
-              paymentResult = await createGcashPayment({
-                amount: amountToCharge,
-                orderCode: groupOrderCode,
-                customerName: username,
-                customerEmail: email,
-                bypassAuth: true, // Temporary bypass for authentication issues
-                paymentType: isDeposit ? 'preorder_deposit' : 'full_payment',
-                metadata: { type: isDeposit ? 'preorder_deposit' : 'full_payment' }
-              });
-              console.log('Callable function success:', paymentResult);
-            } catch (callableError) {
-              console.warn('Callable function failed, trying HTTP endpoint:', callableError);
-              
-              // Try the new public GCash payment endpoint
-              try {
-        const response = await fetch('https://us-central1-farmxpress-965bb.cloudfunctions.net/createGcashPaymentPublic', {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({
-          amount: amountToCharge,
-                    orderCode: groupOrderCode,
-                    customerName: username,
-          customerEmail: email,
-          paymentType: isDeposit ? 'preorder_deposit' : 'full_payment',
-          metadata: { type: isDeposit ? 'preorder_deposit' : 'full_payment' },
-                    items: orderItems.value.map(item => ({
-                      name: item.productName,
-                      quantity: item.quantity,
-                      price: item.unitPrice,
-                      category: 'Agricultural Product'
-                    }))
-                  })
-                });
-
-                if (!response.ok) {
-                  throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-
-                const httpResult = await response.json();
-                paymentResult = { data: httpResult };
-                console.log('Public GCash endpoint success:', paymentResult);
-              } catch (publicError) {
-                console.warn('Public GCash endpoint failed, trying test endpoint:', publicError);
-                
-                // Final fallback to test endpoint
-        const response = await fetch('https://us-central1-farmxpress-965bb.cloudfunctions.net/testGcashPayment', {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({
-          amount: amountToCharge,
-                    orderCode: groupOrderCode,
-                    customerName: username,
-                    customerEmail: email
-                  })
-                });
-
-                if (!response.ok) {
-                  throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-
-                const httpResult = await response.json();
-                paymentResult = { data: httpResult };
-                console.log('Test endpoint fallback success:', paymentResult);
-              }
-            }
-
-            console.log('GCash payment result:', paymentResult);
-
-            // Check if payment creation was successful
-            if (paymentResult.data && paymentResult.data.success && paymentResult.data.paymentUrl) {
-              // Check if it's development mode
-              if (paymentResult.data.isDevelopmentMode) {
-                // Show development mode message
-                showNotificationMessage('🧪 Development Mode: Payment simulation ready!', 'info');
-                
-                // Give user option to simulate payment or proceed to demo page
-                const userChoice = confirm(
-                  `🧪 DEVELOPMENT MODE\n\n` +
-                  `This is a payment simulation. Choose:\n\n` +
-                  `• OK: Simulate successful payment and stay here\n` +
-                  `• Cancel: Go to demo payment page\n\n` +
-      `Order: ${groupOrderCode}\nAmount: ₱${amountToCharge}`
-                );
-                
-                if (userChoice) {
-                  // Simulate successful payment by calling the function again with simulate flag
-                  try {
-                    const simulateResponse = await fetch('https://us-central1-farmxpress-965bb.cloudfunctions.net/createGcashPaymentPublic', {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                      },
-                      body: JSON.stringify({
-        amount: amountToCharge,
-        orderCode: groupOrderCode,
-                        customerName: username,
-                        customerEmail: email,
-        simulate: true,
-        paymentType: isDeposit ? 'preorder_deposit' : 'full_payment',
-        metadata: { type: isDeposit ? 'preorder_deposit' : 'full_payment' },
-                        items: orderItems.value.map(item => ({
-                          name: item.productName,
-                          quantity: item.quantity,
-                          price: item.unitPrice,
-                          category: 'Agricultural Product'
-                        }))
-                      })
-                    });
-
-                    const simulateResult = await simulateResponse.json();
-                    if (simulateResult.success && simulateResult.isSimulated) {
-                      showNotificationMessage('✅ Payment simulation successful! Order has been placed.', 'success');
-                      showSuccessModal.value = true;
-                      canCancel.value = true;
-                      return;
-                    } else {
-                      throw new Error('Simulation failed');
-                    }
-                  } catch (simError) {
-                    console.error('Simulation error:', simError);
-                    // Fallback to success modal anyway for demo
-                    showNotificationMessage('✅ Payment simulation successful! Order has been placed.', 'success');
-                    showSuccessModal.value = true;
-                    canCancel.value = true;
-                    return;
-                  }
-                } else {
-                  // Redirect to demo page
-                  showNotificationMessage('Redirecting to payment demo...', 'info');
-                  setTimeout(() => {
-                    window.location.href = paymentResult.data.paymentUrl;
-                  }, 1000);
-                  return;
-                }
-              } else {
-                // Production mode - redirect to real Xendit
-                showNotificationMessage('Redirecting to GCash payment...', 'info');
-                setTimeout(() => {
-                  window.location.href = paymentResult.data.paymentUrl;
-                }, 1000);
-                return;
-              }
-            } else {
-              throw new Error('Invalid payment response from server');
-            }
+            await Promise.all(updates);
+            // Show success alert and delay navigation so the user can read it
+            showNotificationMessage('Online Payment (GCash) selected. You can upload your receipt on the next page.', 'success', 10000);
+            setTimeout(() => {
+              router.push({ path: '/payment/upload', query: { order: groupOrderCode } });
+            }, 6000); // 6-second delay (within 5-7s range)
           } catch (error) {
-            console.error('Error creating GCash payment:', error);
-            let errorMessage = 'Failed to create GCash payment. Please try again.';
-            
-            if (error.message) {
-              if (error.message.includes('CORS')) {
-                errorMessage = 'Network error. Please check your internet connection and try again.';
-              } else if (error.message.includes('unauthenticated')) {
-                errorMessage = 'Please sign in again and try your order.';
-              } else if (error.message.includes('invalid-argument')) {
-                errorMessage = 'Invalid order information. Please refresh and try again.';
-              } else {
-                errorMessage = `Payment Error: ${error.message}`;
-              }
-            }
-            
-            showNotificationMessage(errorMessage, 'error');
+            console.error('Error setting manual GCash status locally:', error);
+            showNotificationMessage('Failed to set manual GCash status. Please try again.', 'error');
             return;
           }
         }
@@ -1800,7 +1722,7 @@ export default {
               day: 'numeric'
             }),
             deliveryAddress: getAddressDisplay(selectedAddress.value),
-            paymentMethod: paymentMethod.value === 'gcash' ? 'GCash' : 'Cash on Delivery',
+            paymentMethod: paymentMethod.value === 'gcash' ? 'Online Payment' : 'Cash on Delivery',
             deliveryOption: deliveryOption.value === 'express' ? 'Express Delivery (24 hours)' : 'Standard Delivery (2-3 days)',
             items: orderItems.value.map(item => ({
               productName: item.productName,
@@ -1844,18 +1766,7 @@ export default {
         
         showNotificationMessage(successMessage, 'success');
 
-        // Save GCash number if requested
-        if (paymentMethod.value === 'gcash' && saveGcash.value) {
-          try {
-            const userRef = doc(db, 'users', auth.currentUser.uid);
-            await updateDoc(userRef, {
-              savedGcashNumber: gcashDetails.value.number
-            });
-          } catch (error) {
-            console.error('Error saving GCash number:', error);
-            // Non-critical error
-          }
-        }
+  // No number to save; receipts will be uploaded next.
         
       } catch (error) {
         console.error('Order placement error:', error);
@@ -1959,6 +1870,18 @@ export default {
       }
     };
     
+    // QR enlarge modal state/handlers
+    const showQrModal = ref(false);
+    const qrModalSrc = ref('');
+    const openQrModal = (src) => {
+      qrModalSrc.value = src || '';
+      showQrModal.value = !!src;
+    };
+    const closeQrModal = () => {
+      showQrModal.value = false;
+      qrModalSrc.value = '';
+    };
+    
     return {
       orderItems,
       isBuyNow,
@@ -2001,6 +1924,9 @@ export default {
       paymentMethod,
       gcashDetails,
       saveGcash,
+  primarySeller,
+  isMultiSeller,
+  sellersList,
       
       // Delivery
       deliveryOption,
@@ -2026,6 +1952,11 @@ export default {
       showNotificationMessage,
       canCancel,
       cancelOrder,
+  // QR modal
+  showQrModal,
+  qrModalSrc,
+  openQrModal,
+  closeQrModal,
     };
   }
 }
@@ -2467,6 +2398,25 @@ export default {
   margin-top: 15px;
   padding-top: 15px;
   border-top: 1px solid #eee;
+}
+
+/* Online Payment guide */
+.payment-guide { margin-top: 10px; }
+.guide-card { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+.guide-left { border: 1px solid #e0e0e0; border-radius: 10px; padding: 12px; background: #fafafa; }
+.seller-line { margin: 0 0 6px 0; font-size: 14px; color: #333; }
+.qr-wrapper { margin-top: 8px; text-align: center; }
+.qr-image { border: 1px dashed #cbd5e1; border-radius: 10px; padding: 8px; background: white; }
+.qr-image img { width: 100%; max-width: 220px; height: auto; display: inline-block; }
+.qr-placeholder { border: 1px dashed #cbd5e1; border-radius: 10px; padding: 24px; color: #64748b; font-size: 14px; }
+.qr-caption { margin-top: 6px; font-size: 12px; color: #64748b; }
+.guide-right { border: 1px solid #e0e0e0; border-radius: 10px; padding: 12px; background: #ffffff; }
+.guide-right h4 { margin: 0 0 8px 0; font-size: 16px; color: #2e5c31; }
+.steps { margin: 0; padding-left: 18px; color: #374151; }
+.steps li { margin: 6px 0; font-size: 14px; }
+
+@media (max-width: 640px) {
+  .guide-card { grid-template-columns: 1fr; }
 }
 
 .form-group {
@@ -2934,6 +2884,46 @@ export default {
 .unit {
   font-size: 12px;
   color: #666;
+}
+
+/* QR enlarge modal */
+.qr-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 20px;
+}
+.qr-modal-content {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+}
+.qr-modal-content img {
+  max-width: 100%;
+  max-height: 80vh;
+  object-fit: contain;
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px;
+}
+.qr-modal-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(0,0,0,0.7);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
 }
 
 .loading-addresses {

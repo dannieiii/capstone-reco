@@ -44,11 +44,11 @@ import Cart from '../views/customerFolder/Cart.vue';
 import FarmStore from '../views/customerFolder/FarmStore.vue';
 import CommunityView from '../views/customerFolder/CommunityView.vue';
 import CustomerNotifications from '../views/customerFolder/CustomerNotifications.vue';
+import PaymentUpload from '../views/customerFolder/PaymentUpload.vue';
 
 // Payment components
 import PaymentSuccess from '../components/gcashalerts/PaymentSuccess.vue';
 import PaymentFailed from '../components/gcashalerts/PaymentFailed.vue';
-import PaymentDemo from '../views/PaymentDemo.vue';
 
 
 // Seller components
@@ -155,9 +155,9 @@ const routes = [
     meta: { requiresAuth: true, allowedRoles: ['customer'] },
   },
   {
-    path: '/payment/demo',
-    name: 'PaymentDemo',
-    component: PaymentDemo,
+    path: '/payment/upload',
+    name: 'PaymentUpload',
+    component: PaymentUpload,
     meta: { requiresAuth: true, allowedRoles: ['customer'] },
   },
   {

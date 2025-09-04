@@ -84,11 +84,15 @@
   const showNotificationPanel = ref(false);
   const notificationIconRef = ref(null);
   const currentUserId = ref(null);
+  const currentSellerDocId = ref(null);
   const unsubscribeNotifications = ref(null);
   const unsubscribeOrderListener = ref(null);
   const isAuthReady = ref(false);
   const isProcessingOrders = ref(false);
   const isInitialized = ref(false); // Track if the component is initialized
+  const listeningSellerId = ref(null); // Track which sellerId the notifications listener is attached to
+  const listeningOrderSellerId = ref(null); // Track which sellerId the orders listener is attached to
+  let refreshTimer = null;
   
   // Props
   const props = defineProps({
@@ -250,19 +254,19 @@
   };
   
   // Setup notification listener
-  const setupNotificationListener = (userId) => {
-    if (!userId) return;
+  const setupNotificationListener = (sellerId) => {
+    if (!sellerId) return;
     
     // Clear any existing listener
     if (unsubscribeNotifications.value) {
       unsubscribeNotifications.value();
     }
+    listeningSellerId.value = sellerId;
     
     const notificationsRef = collection(db, 'notifications');
     const q = query(
       notificationsRef,
-      where('userId', '==', userId),
-      orderBy('timestamp', 'desc'),
+      where('sellerId', '==', sellerId),
       limit(20)
     );
     
@@ -284,7 +288,11 @@
         });
       });
       
-      notifications.value = notificationsList;
+      notifications.value = notificationsList.sort((a, b) => {
+        const ta = a.timestamp?.toDate?.() || new Date(a.timestamp || 0);
+        const tb = b.timestamp?.toDate?.() || new Date(b.timestamp || 0);
+        return tb - ta;
+      });
       console.log('Notifications updated:', notificationsList.length);
       try { emit('notification-count-update', unreadCount.value); } catch {}
 
@@ -321,27 +329,31 @@
   // Refresh notifications
   const refreshNotifications = () => {
     const userId = currentUserId.value || props.userId;
-    if (userId) {
-      setupNotificationListener(userId);
-    }
+    if (!userId) return;
+    // Debounce to avoid re-entrant Firestore queue usage
+    if (refreshTimer) clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => {
+      if (listeningSellerId.value !== userId) {
+        setupNotificationListener(userId);
+      }
+    }, 150);
   };
   
   // Process existing orders
   const processExistingOrders = async () => {
     if (isProcessingOrders.value) return;
     
-    const userId = currentUserId.value || props.userId;
-    if (!userId) return;
+    const sellerId = currentSellerDocId.value || props.userId || currentUserId.value;
+    if (!sellerId) return;
     
     isProcessingOrders.value = true;
-    console.log('Processing existing orders for user:', userId);
+    console.log('Processing existing orders for seller:', sellerId);
     
     try {
       const ordersRef = collection(db, 'orders');
       const q = query(
         ordersRef,
-        where('sellerId', '==', userId),
-        orderBy('timestamp', 'desc')
+        where('sellerId', '==', sellerId)
       );
       
       const snapshot = await getDocs(q);
@@ -354,7 +366,7 @@
         await createOrderNotification({
           id: doc.id,
           ...orderData,
-          sellerId: userId
+          sellerId: sellerId
         });
         processedCount++;
       }
@@ -370,23 +382,26 @@
   // Setup order listener
   const setupOrderListener = (sellerId) => {
     if (!sellerId) return;
+    if (listeningOrderSellerId && listeningOrderSellerId.value === sellerId && unsubscribeOrderListener.value) {
+      return;
+    }
     
     // Process existing orders first
     processExistingOrders();
     
     // Clear any existing listener
-    if (unsubscribeOrderListener.value) {
+  if (unsubscribeOrderListener.value) {
       unsubscribeOrderListener.value();
     }
     
     const ordersRef = collection(db, 'orders');
     const q = query(
       ordersRef,
-      where('sellerId', '==', sellerId),
-      orderBy('timestamp', 'desc')
+      where('sellerId', '==', sellerId)
     );
     
-    unsubscribeOrderListener.value = onSnapshot(q, (snapshot) => {
+  listeningOrderSellerId.value = sellerId;
+  unsubscribeOrderListener.value = onSnapshot(q, (snapshot) => {
       snapshot.docChanges().forEach((change) => {
         if (change.type === 'added') {
           const orderData = change.doc.data();
@@ -420,7 +435,7 @@
       const notificationsRef = collection(db, 'notifications');
       const existingQuery = query(
         notificationsRef,
-        where('userId', '==', sellerId),
+  where('sellerId', '==', sellerId),
         where('orderId', '==', order.id)
       );
       
@@ -432,7 +447,9 @@
         
         // Create notification document
         await addDoc(notificationsRef, {
+          // Normalize so sellers can find by sellerId and legacy userId filters if any component still uses it
           userId: sellerId,
+          sellerId: sellerId,
           title: 'New Order Received',
           message: `New order #${order.orderCode || order.id.substring(0, 6)} for ${order.productName || 'your product'} has been placed.`,
           type: 'order',
@@ -443,9 +460,7 @@
         });
         
         console.log('Notification created successfully for order:', order.id);
-        
-        // Refresh notifications
-        refreshNotifications();
+        // No manual refresh; the active onSnapshot listener will pick this up
       } else {
         console.log('Notification already exists for order:', order.id);
       }
@@ -462,22 +477,33 @@
   };
   
   // Initialize
-  onMounted(() => {
+  onMounted(async () => {
     // Initialize only once
     if (isInitialized.value) return;
     isInitialized.value = true;
   
     // Use provided userId or get from auth
+    const resolveAndInit = async (uid) => {
+      currentUserId.value = uid;
+      // Resolve seller document ID
+      try {
+        const sellersRef = collection(db, 'sellers');
+        const snap = await getDocs(query(sellersRef, where('userId', '==', uid), limit(1)));
+        currentSellerDocId.value = snap.empty ? uid : snap.docs[0].id;
+      } catch (e) {
+        console.warn('Failed to resolve seller doc ID, using uid', e);
+        currentSellerDocId.value = uid;
+      }
+      setupNotificationListener(currentSellerDocId.value);
+      setupOrderListener(currentSellerDocId.value);
+    };
+
     if (props.userId) {
-      currentUserId.value = props.userId;
-      setupNotificationListener(props.userId);
-      setupOrderListener(props.userId);
+      await resolveAndInit(props.userId);
     } else {
-      onAuthStateChanged(auth, (user) => {
+      onAuthStateChanged(auth, async (user) => {
         if (user) {
-          currentUserId.value = user.uid;
-          setupNotificationListener(user.uid);
-          setupOrderListener(user.uid);
+          await resolveAndInit(user.uid);
         }
         isAuthReady.value = true;
       });
@@ -500,15 +526,21 @@
     if (unsubscribeOrderListener.value) {
       unsubscribeOrderListener.value();
     }
+    listeningSellerId.value = null;
+    listeningOrderSellerId.value = null;
+    if (refreshTimer) {
+      clearTimeout(refreshTimer);
+      refreshTimer = null;
+    }
   });
   
   // Watch for auth ready and currentUserId
   watch(
-    () => [isAuthReady.value, currentUserId.value],
-    ([newIsAuthReady, newCurrentUserId]) => {
-      if (newIsAuthReady && newCurrentUserId) {
-        setupNotificationListener(newCurrentUserId);
-        setupOrderListener(newCurrentUserId);
+    () => [isAuthReady.value, currentSellerDocId.value],
+    ([newIsAuthReady, newSellerId]) => {
+      if (newIsAuthReady && newSellerId) {
+        setupNotificationListener(newSellerId);
+        setupOrderListener(newSellerId);
       }
     }
   );
@@ -516,11 +548,18 @@
   // Watch for props.userId changes
   watch(
     () => props.userId,
-    (newUserId) => {
+    async (newUserId) => {
       if (newUserId) {
-        currentUserId.value = newUserId;
-        setupNotificationListener(newUserId);
-        setupOrderListener(newUserId);
+        // Resolve seller doc id when prop changes
+        try {
+          const sellersRef = collection(db, 'sellers');
+          const snap = await getDocs(query(sellersRef, where('userId', '==', newUserId), limit(1)));
+          currentSellerDocId.value = snap.empty ? newUserId : snap.docs[0].id;
+        } catch {
+          currentSellerDocId.value = newUserId;
+        }
+        setupNotificationListener(currentSellerDocId.value);
+        setupOrderListener(currentSellerDocId.value);
       }
     }
   );

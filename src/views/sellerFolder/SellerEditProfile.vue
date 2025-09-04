@@ -1,2118 +1,758 @@
 <template>
-  <div class="edit-profile">
+  <div class="supplier-form-page">
     <div class="header">
-      <button class="back-button" @click="$emit('navigate', 'ViewProfile')">
+      <button class="back-button" @click="goBack">
         <ChevronLeft size="22" />
       </button>
-      <h1>Edit Profile</h1>
+      <h1>Edit Seller Profile</h1>
     </div>
-    
-    <div class="profile-content">
-      <!-- Alert Box -->
-      <div v-if="alertMessage" :class="['alert-box', alertType]">
-        {{ alertMessage }}
-      </div>
 
-      <div v-if="loading" class="loading-container">
-        <Loader size="32" class="spinner" />
-        <p>Loading profile...</p>
-      </div>
-      
-      <div v-else-if="error" class="error-container">
-        <AlertCircle size="32" class="error-icon" />
-        <p>{{ error }}</p>
-        <button class="retry-button" @click="fetchSellerData">Retry</button>
-      </div>
-      
-      <template v-else>
-        <!-- Profile Picture Section -->
-        <div class="profile-picture-section">
-          <div class="profile-picture">
-            <img 
-              v-if="profileImageUrl" 
-              :src="profileImageUrl" 
-              alt="Profile picture" 
-            />
-            <User v-else size="64" class="default-icon" />
-            <button class="change-photo-btn" @click="openFileInput">
-              <Camera size="18" />
-            </button>
-            <input 
-              type="file" 
-              ref="fileInput" 
-              accept="image/*" 
-              style="display: none" 
-              @change="handleFileUpload"
-            />
-          </div>
-          <h2>{{ firstName }} {{ lastName }}</h2>
-          <p>{{ email }}</p>
+    <div class="content">
+      <!-- Progress Indicator -->
+      <div class="progress-container">
+        <div class="progress-bar">
+          <div class="progress-fill" :style="{ width: progressWidth + '%' }"></div>
         </div>
-
-        <!-- Multi-step Form -->
-        <div class="content">
-          <!-- Progress Indicator -->
-          <div class="progress-container">
-            <div class="progress-bar">
-              <div class="progress-fill" :style="{ width: progressWidth + '%' }"></div>
-            </div>
-            <div class="step-indicators">
-              <div 
-                v-for="(step, index) in steps" 
-                :key="index" 
-                class="step-indicator" 
-                :class="{ 
-                  'active': currentStep >= index, 
-                  'current': currentStep === index 
-                }"
-                @click="goToStep(index)"
-              >
-                <div class="step-number">{{ index + 1 }}</div>
-                <span class="step-name">{{ step }}</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Form Content -->
-          <div class="form-container">
-            <!-- Personal Information -->
-            <div v-if="currentStep === 0" class="form-step">
-              <h2>Personal Information</h2>
-              <p class="step-description">Update your basic contact information</p>
-              
-              <div class="form-group">
-                <label for="firstName">First Name</label>
-                <input 
-                  type="text" 
-                  id="firstName" 
-                  v-model="firstName" 
-                  placeholder="Enter your first name"
-                />
-              </div>
-              
-              <div class="form-group">
-                <label for="lastName">Last Name</label>
-                <input 
-                  type="text" 
-                  id="lastName" 
-                  v-model="lastName" 
-                  placeholder="Enter your last name"
-                />
-              </div>
-              
-              <div class="form-group">
-                <label for="contactNumber">Contact Number</label>
-                <input 
-                  type="text" 
-                  id="contactNumber" 
-                  v-model="contactNumber" 
-                  placeholder="Enter your contact number"
-                />
-              </div>
-              
-              <div class="form-group">
-                <label for="email">Email Address</label>
-                <input 
-                  type="email" 
-                  id="email" 
-                  v-model="email" 
-                  placeholder="Enter your email address"
-                  disabled
-                />
-              </div>
-              
-              <div class="form-group">
-                <label for="address">Complete Address</label>
-                <textarea 
-                  id="address" 
-                  v-model="address" 
-                  placeholder="Enter your complete address"
-                  rows="3"
-                ></textarea>
-              </div>
-            </div>
-            
-            <!-- Farm Details -->
-            <div v-if="currentStep === 1 && isSeller" class="form-step">
-              <h2>Farm Details</h2>
-              <p class="step-description">Update information about your farm and what you grow</p>
-              
-              <div class="form-group">
-                <label for="farmName">Farm Name</label>
-                <input 
-                  type="text" 
-                  id="farmName" 
-                  v-model="farmName" 
-                  placeholder="Enter your farm name"
-                />
-              </div>
-              
-              <div class="form-group">
-                <label for="farmAddress">Farm Address</label>
-                <textarea 
-                  id="farmAddress" 
-                  v-model="farmAddress" 
-                  placeholder="Enter your farm address"
-                  rows="3"
-                ></textarea>
-              </div>
-              
-              <div class="form-group">
-                <label for="farmType">Farm Type</label>
-                <select id="farmType" v-model="farmType">
-                  <option value="" disabled>Select farm type</option>
-                  <option value="Vegetable Farm">Vegetable Farm</option>
-                  <option value="Fruit Orchard">Fruit Orchard</option>
-                  <option value="Livestock Farm">Livestock Farm</option>
-                  <option value="Poultry Farm">Poultry Farm</option>
-                  <option value="Dairy Farm">Dairy Farm</option>
-                  <option value="Mixed Farm">Mixed Farm</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-              
-              <div class="form-group">
-                <label for="products">Products to Sell</label>
-                <textarea 
-                  id="products" 
-                  v-model="products" 
-                  placeholder="List the products you sell"
-                  rows="3"
-                ></textarea>
-              </div>
-              
-              <div class="form-group">
-                <label for="yearInFarming">Years in Farming</label>
-                <input 
-                  type="number" 
-                  id="yearInFarming" 
-                  v-model="yearInFarming" 
-                  placeholder="Enter years of experience"
-                  min="0"
-                />
-              </div>
-              
-              <div class="form-group">
-                <label for="farmSize">Farm Size</label>
-                <input 
-                  type="text" 
-                  id="farmSize" 
-                  v-model="farmSize" 
-                  placeholder="Enter farm size (e.g., 2 hectares)"
-                />
-              </div>
-              
-              <div class="form-group">
-                <label for="certifications">Certifications</label>
-                <textarea 
-                  id="certifications" 
-                  v-model="certifications" 
-                  placeholder="Enter any certifications or licenses"
-                  rows="2"
-                ></textarea>
-              </div>
-            </div>
-            
-            <!-- Payment Information -->
-            <div v-if="currentStep === 2 && isSeller" class="form-step">
-              <h2>Payment Information</h2>
-              <p class="step-description">Update how you would like to receive payments</p>
-              
-              <div class="form-group">
-                <label for="paymentMethod">Payment Method</label>
-                <select id="paymentMethod" v-model="paymentMethod">
-                  <option value="" disabled>Select payment method</option>
-                  <option value="Bank Transfer">Bank Transfer</option>
-                  <option value="GCash">GCash</option>
-                  <option value="PayMaya">PayMaya</option>
-                  <option value="Cash on Delivery">Cash on Delivery</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-              
-              <div class="form-group">
-                <label for="accountName">Account Name</label>
-                <input 
-                  type="text" 
-                  id="accountName" 
-                  v-model="accountName" 
-                  placeholder="Enter account name"
-                />
-              </div>
-              
-              <div class="form-group">
-                <label for="accountNumber">Account Number</label>
-                <input 
-                  type="tel" 
-                  id="accountNumber" 
-                  v-model="accountNumber" 
-                  placeholder="09123456789 (11 digits only)"
-                  maxlength="11"
-                  pattern="[0-9]{11}"
-                  @input="validateAccountNumber"
-                />
-                <span v-if="accountNumberError" class="error-message">{{ accountNumberError }}</span>
-              </div>
-            </div>
-            
-            <!-- Verification Documents -->
-            <div v-if="currentStep === 3 && isSeller" class="form-step">
-              <h2>Verification Documents</h2>
-              <p class="step-description">Upload your verification documents (optional - you can add these later)</p>
-              
-              <!-- Valid ID -->
-              <div class="form-group">
-                <label for="validID">Valid ID</label>
-                <div class="document-upload-container">
-                  <div class="upload-options">
-                    <button 
-                      type="button" 
-                      class="upload-option-btn"
-                      @click="triggerFileInput('validID')"
-                    >
-                      <Upload :size="16" />
-                      Upload File
-                    </button>
-                  </div>
-                  
-                  <!-- File preview -->
-                  <div v-if="formData.verificationDocs.validID" class="file-preview">
-                    <img 
-                      v-if="isImageFile(formData.verificationDocs.validID)" 
-                      :src="getFilePreview('validID')" 
-                      alt="Valid ID preview" 
-                      class="document-preview-image"
-                    />
-                    <div v-else class="document-file-info">
-                      <FileText :size="20" />
-                      <span>{{ formData.verificationDocs.validID.name }}</span>
-                    </div>
-                    <button 
-                      type="button" 
-                      class="remove-file-btn"
-                      @click="removeDocument('validID')"
-                    >
-                      <X :size="14" />
-                    </button>
-                  </div>
-                  
-                  <input 
-                    type="file" 
-                    id="validIDInput" 
-                    @change="handleFileUploadForDoc($event, 'validID')" 
-                    accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt"
-                    style="display: none"
-                  />
-                  
-                  <p class="file-help">Accepted formats: Images (JPG, PNG), Documents (PDF, DOC, DOCX) - max 5MB</p>
-                </div>
-              </div>
-
-              <!-- Business Permit -->
-              <div class="form-group">
-                <label for="businessPermit">Business Permit</label>
-                <div class="document-upload-container">
-                  <div class="upload-options">
-                    <button 
-                      type="button" 
-                      class="upload-option-btn"
-                      @click="triggerFileInput('businessPermit')"
-                    >
-                      <Upload :size="16" />
-                      Upload File
-                    </button>
-                  </div>
-                  
-                  <!-- File preview -->
-                  <div v-if="formData.verificationDocs.businessPermit" class="file-preview">
-                    <img 
-                      v-if="isImageFile(formData.verificationDocs.businessPermit)" 
-                      :src="getFilePreview('businessPermit')" 
-                      alt="Business Permit preview" 
-                      class="document-preview-image"
-                    />
-                    <div v-else class="document-file-info">
-                      <FileText :size="20" />
-                      <span>{{ formData.verificationDocs.businessPermit.name }}</span>
-                    </div>
-                    <button 
-                      type="button" 
-                      class="remove-file-btn"
-                      @click="removeDocument('businessPermit')"
-                    >
-                      <X :size="14" />
-                    </button>
-                  </div>
-                  
-                  <input 
-                    type="file" 
-                    id="businessPermitInput" 
-                    @change="handleFileUploadForDoc($event, 'businessPermit')" 
-                    accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt"
-                    style="display: none"
-                  />
-                  
-                  <p class="file-help">Accepted formats: Images (JPG, PNG), Documents (PDF, DOC, DOCX) - max 5MB</p>
-                </div>
-              </div>
-
-              <!-- Farm Certification -->
-              <div class="form-group">
-                <label for="farmCert">Farm Certification</label>
-                <div class="document-upload-container">
-                  <div class="upload-options">
-                    <button 
-                      type="button" 
-                      class="upload-option-btn"
-                      @click="triggerFileInput('farmCert')"
-                    >
-                      <Upload :size="16" />
-                      Upload File
-                    </button>
-                  </div>
-                  
-                  <!-- File preview -->
-                  <div v-if="formData.verificationDocs.farmCert" class="file-preview">
-                    <img 
-                      v-if="isImageFile(formData.verificationDocs.farmCert)" 
-                      :src="getFilePreview('farmCert')" 
-                      alt="Farm Certification preview" 
-                      class="document-preview-image"
-                    />
-                    <div v-else class="document-file-info">
-                      <FileText :size="20" />
-                      <span>{{ formData.verificationDocs.farmCert.name }}</span>
-                    </div>
-                    <button 
-                      type="button" 
-                      class="remove-file-btn"
-                      @click="removeDocument('farmCert')"
-                    >
-                      <X :size="14" />
-                    </button>
-                  </div>
-                  
-                  <input 
-                    type="file" 
-                    id="farmCertInput" 
-                    @change="handleFileUploadForDoc($event, 'farmCert')" 
-                    accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt"
-                    style="display: none"
-                  />
-                  
-                  <p class="file-help">Accepted formats: Images (JPG, PNG), Documents (PDF, DOC, DOCX) - max 5MB</p>
-                </div>
-              </div>
-            </div>
-            
-            <!-- Delivery Information -->
-            <div v-if="currentStep === 4 && isSeller" class="form-step">
-              <h2>Delivery Information</h2>
-              <p class="step-description">Update how you plan to deliver your products</p>
-              
-              <div class="form-group">
-                <label>Delivery Method</label>
-                <div class="dropdown-checkbox">
-                  <div class="dropdown-header" @click="toggleDeliveryDropdown">
-                    <span>{{ selectedDeliveryMethods.length ? `${selectedDeliveryMethods.length} selected` : 'Select delivery methods' }}</span>
-                    <ChevronDown :class="{'rotate-180': isDeliveryDropdownOpen}" />
-                  </div>
-                  <div class="dropdown-content" v-if="isDeliveryDropdownOpen">
-                    <div class="checkbox-group" v-for="method in deliveryMethods" :key="method.value">
-                      <input 
-                        type="checkbox" 
-                        :id="method.value" 
-                        :value="method.value" 
-                        v-model="formData.deliveryInfo.deliveryMethods"
-                      >
-                      <label :for="method.value">{{ method.label }}</label>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-              <div class="form-group">
-                <label>Areas Covered (Municipalities of Oriental Mindoro)</label>
-                <div class="dropdown-checkbox">
-                  <div class="dropdown-header" @click="toggleMunicipalityDropdown">
-                    <span>{{ selectedMunicipalities.length ? `${selectedMunicipalities.length} selected` : 'Select municipalities' }}</span>
-                    <ChevronDown :class="{'rotate-180': isMunicipalityDropdownOpen}" />
-                  </div>
-                  <div class="dropdown-content" v-if="isMunicipalityDropdownOpen">
-                    <div class="checkbox-group" v-for="municipality in municipalities" :key="municipality">
-                      <input 
-                        type="checkbox" 
-                        :id="municipality" 
-                        :value="municipality" 
-                        v-model="formData.deliveryInfo.areasCovered"
-                      >
-                      <label :for="municipality">{{ municipality }}</label>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <!-- Additional Details -->
-            <div v-if="currentStep === 5 && isSeller" class="form-step">
-              <h2>Additional Details</h2>
-              <p class="step-description">Additional information about your business</p>
-              
-              <div class="form-group">
-                <label for="socialMedia">Social Media Links</label>
-                <textarea 
-                  id="socialMedia" 
-                  v-model="socialMedia" 
-                  placeholder="Enter your social media links (Facebook, Instagram, etc.)"
-                  rows="3"
-                ></textarea>
-              </div>
-              
-              <div class="form-group">
-                <label for="preferredCommunication">Preferred Communication</label>
-                <input 
-                  type="text" 
-                  id="preferredCommunication" 
-                  v-model="preferredCommunication" 
-                  placeholder="Enter preferred contact method"
-                />
-              </div>
-              
-              <div class="form-group checkbox-group">
-                <input 
-                  type="checkbox" 
-                  id="wholesaleAvailability" 
-                  v-model="wholesaleAvailability"
-                />
-                <label for="wholesaleAvailability">Available for wholesale orders</label>
-              </div>
-            </div>
-            
-            <!-- Change Password -->
-            <div v-if="currentStep === (isSeller ? 6 : 1)" class="form-step">
-              <h2>Change Password</h2>
-              <p class="step-description">Update your account password</p>
-              
-              <div class="form-group">
-                <label for="currentPassword">Current Password</label>
-                <div class="password-input">
-                  <input 
-                    :type="showCurrentPassword ? 'text' : 'password'" 
-                    id="currentPassword" 
-                    v-model="currentPassword" 
-                    placeholder="Enter current password"
-                  />
-                  <button type="button" @click="showCurrentPassword = !showCurrentPassword" class="toggle-password">
-                    <Eye v-if="!showCurrentPassword" size="18" />
-                    <EyeOff v-else size="18" />
-                  </button>
-                </div>
-              </div>
-              
-              <div class="form-group">
-                <label for="newPassword">New Password</label>
-                <div class="password-input">
-                  <input 
-                    :type="showNewPassword ? 'text' : 'password'" 
-                    id="newPassword" 
-                    v-model="newPassword" 
-                    placeholder="Enter new password"
-                  />
-                  <button type="button" @click="showNewPassword = !showNewPassword" class="toggle-password">
-                    <Eye v-if="!showNewPassword" size="18" />
-                    <EyeOff v-else size="18" />
-                  </button>
-                </div>
-              </div>
-              
-              <div class="form-group">
-                <label for="confirmNewPassword">Confirm New Password</label>
-                <div class="password-input">
-                  <input 
-                    :type="showConfirmPassword ? 'text' : 'password'" 
-                    id="confirmNewPassword" 
-                    v-model="confirmNewPassword" 
-                    placeholder="Confirm new password"
-                  />
-                  <button type="button" @click="showConfirmPassword = !showConfirmPassword" class="toggle-password">
-                    <Eye v-if="!showConfirmPassword" size="18" />
-                    <EyeOff v-else size="18" />
-                  </button>
-                </div>
-                <p v-if="passwordMismatch" class="error-message">Passwords do not match</p>
-              </div>
-            </div>
-          </div>
-          
-          <!-- Navigation Buttons -->
-          <div class="form-navigation">
-            <button 
-              v-if="currentStep > 0" 
-              class="prev-button" 
-              @click="prevStep"
-              type="button"
-            >
-              <ChevronLeft size="18" />
-              Previous
-            </button>
-            
-            <button 
-              v-if="currentStep < maxSteps - 1" 
-              class="next-button" 
-              @click="nextStep"
-              type="button"
-            >
-              Next
-              <ChevronRight size="18" />
-            </button>
-            
-            <button 
-              v-if="currentStep === maxSteps - 1" 
-              class="submit-button" 
-              @click="updateProfile"
-              :disabled="isLoading"
-            >
-              {{ isLoading ? 'Saving...' : 'Save Changes' }}
-            </button>
+        <div class="step-indicators">
+          <div
+            v-for="(step, index) in steps"
+            :key="index"
+            class="step-indicator"
+            :class="{ 'active': currentStep >= index, 'current': currentStep === index }"
+            @click="goToStep(index)"
+          >
+            <div class="step-number">{{ index + 1 }}</div>
+            <span class="step-name">{{ step }}</span>
           </div>
         </div>
-      </template>
+      </div>
+
+      <!-- Form Content -->
+      <div class="form-container">
+        <!-- Loading and error states -->
+        <div v-if="loading" class="loading-container">
+          <Loader size="32" class="spinner" />
+          <p>Loading profile...</p>
+        </div>
+        <div v-else-if="error" class="error-container">
+          <AlertCircle size="32" class="error-icon" />
+          <p>{{ error }}</p>
+          <button class="prev-button" @click="fetchAll">Retry</button>
+        </div>
+
+        <template v-else>
+          <!-- Personal Information -->
+          <div v-if="currentStep === 0" class="form-step">
+            <h2>Personal Information</h2>
+            <p class="step-description">Update your basic contact information</p>
+
+            <div class="form-group">
+              <label for="firstName">First Name</label>
+              <input type="text" id="firstName" v-model="formData.personalInfo.firstName" placeholder="Enter your first name" />
+            </div>
+
+            <div class="form-group">
+              <label for="lastName">Last Name</label>
+              <input type="text" id="lastName" v-model="formData.personalInfo.lastName" placeholder="Enter your last name" />
+            </div>
+
+            <div class="form-group">
+              <label for="contact">Contact Number</label>
+              <input type="text" id="contact" v-model="formData.personalInfo.contact" placeholder="Enter your contact number" />
+            </div>
+
+            <div class="form-group">
+              <label for="email">Email Address</label>
+              <input type="email" id="email" v-model="formData.personalInfo.email" placeholder="Enter your email address" />
+            </div>
+
+            <div class="form-group">
+              <label for="address">Complete Address</label>
+              <textarea id="address" v-model="formData.personalInfo.address" placeholder="Enter your complete address" rows="3"></textarea>
+            </div>
+          </div>
+
+          <!-- Farm Details -->
+          <div v-if="currentStep === 1" class="form-step">
+            <h2>Farm Details</h2>
+            <p class="step-description">Tell us about your farm and what you grow</p>
+
+            <div class="form-group">
+              <label for="farmName">Farm Name</label>
+              <input type="text" id="farmName" v-model="formData.farmDetails.farmName" placeholder="Enter your farm name" />
+            </div>
+
+            <div class="form-group">
+              <label for="farmAddress">Farm Address</label>
+              <textarea id="farmAddress" v-model="formData.farmDetails.farmAddress" placeholder="Enter your farm address" rows="3"></textarea>
+            </div>
+
+            <div class="form-group">
+              <label for="farmType">Farm Type</label>
+              <select id="farmType" v-model="formData.farmDetails.farmType">
+                <option value="" disabled>Select farm type</option>
+                <option value="Vegetable Farm">Vegetable Farm</option>
+                <option value="Fruit Orchard">Fruit Orchard</option>
+                <option value="Livestock Farm">Livestock Farm</option>
+                <option value="Poultry Farm">Poultry Farm</option>
+                <option value="Dairy Farm">Dairy Farm</option>
+                <option value="Mixed Farm">Mixed Farm</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="products">Products to Sell</label>
+              <textarea id="products" v-model="formData.farmDetails.products" placeholder="List the products you plan to sell" rows="3"></textarea>
+            </div>
+
+            <div class="form-group">
+              <label for="yearInFarming">Years in Farming</label>
+              <input type="number" id="yearInFarming" v-model="formData.farmDetails.yearInFarming" placeholder="Enter years of experience" min="0" />
+            </div>
+          </div>
+
+          <!-- Payment Information -->
+          <div v-if="currentStep === 2" class="form-step">
+            <h2>Payment Information</h2>
+            <p class="step-description">How would you like to receive payments?</p>
+
+            <div class="form-group">
+              <label for="paymentMethod">Payment Method</label>
+              <select id="paymentMethod" v-model="formData.paymentInfo.paymentMethod">
+                <option value="" disabled>Select payment method</option>
+                <option value="Bank Transfer">Bank Transfer</option>
+                <option value="GCash">GCash</option>
+                <option value="PayMaya">PayMaya</option>
+                <option value="Cash on Delivery">Cash on Delivery</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="accountName">Account Name</label>
+              <input type="text" id="accountName" v-model="formData.paymentInfo.accountName" placeholder="Enter account name" />
+            </div>
+
+            <div class="form-group">
+              <label for="accountNumber">Account Number</label>
+              <input type="tel" id="accountNumber" v-model="formData.paymentInfo.accountNumber" placeholder="09123456789 (11 digits only)" maxlength="11" pattern="[0-9]{11}" @input="validateAccountNumber" />
+              <span v-if="accountNumberError" class="field-error">{{ accountNumberError }}</span>
+            </div>
+
+            <!-- GCash QR Code -->
+            <div class="form-group" v-if="formData.paymentInfo.paymentMethod === 'GCash'">
+              <label>GCash QR Code (optional)</label>
+              <div class="document-upload-container">
+                <div class="upload-options">
+                  <button type="button" class="upload-option-btn" @click="triggerQrInput">
+                    <Upload :size="16" />
+                    Upload QR Image
+                  </button>
+                </div>
+
+                <div v-if="filePreviews.paymentQr || formData.paymentInfo.qrUrl" class="file-preview">
+                  <img :src="filePreviews.paymentQr || formData.paymentInfo.qrUrl" alt="GCash QR preview" class="document-preview-image" />
+                  <button type="button" class="remove-file-btn" @click="removeQr">
+                    <X :size="14" />
+                  </button>
+                </div>
+                <div v-else class="qr-placeholder file-help" style="text-align:center;">No QR selected yet</div>
+
+                <input type="file" ref="paymentQrInput" class="file-input" accept="image/*" @change="handleQrUpload" />
+                <p class="file-help">Accepted: JPG, PNG, WEBP, GIF up to 5MB.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Verification Documents -->
+          <div v-if="currentStep === 3" class="form-step">
+            <h2>Verification Documents</h2>
+            <p class="step-description">Upload or replace your verification documents.</p>
+
+            <!-- Valid ID -->
+            <div class="form-group">
+              <label for="validID">Valid ID</label>
+              <div class="document-upload-container">
+                <div class="upload-options">
+                  <button type="button" class="upload-option-btn" @click="triggerFileInput('validID')">
+                    <Upload :size="16" />
+                    Upload File
+                  </button>
+                </div>
+
+                <!-- Existing preview or newly selected -->
+                <div v-if="formData.verificationDocs.validID || filePreviews.validID" class="file-preview">
+                  <img v-if="isCurrentPreviewImage('validID')" :src="currentPreview('validID')" alt="Valid ID preview" class="document-preview-image" />
+                  <div v-else class="document-file-info">
+                    <FileText :size="20" />
+                    <span>Existing document</span>
+                  </div>
+                  <button type="button" class="remove-file-btn" @click="removeDocument('validID')">
+                    <X :size="14" />
+                  </button>
+                </div>
+
+                <input type="file" ref="validIDInput" @change="handleFileUpload($event, 'validID')" accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,.doc,.docx,.xls,.xlsx,.txt" class="file-input" />
+                <p class="file-help">Accepted formats: Images (JPG, PNG), Documents (PDF, DOC, DOCX), Spreadsheets (XLS, XLSX) - max 5MB</p>
+              </div>
+            </div>
+
+            <!-- Business Permit -->
+            <div class="form-group">
+              <label for="businessPermit">Business Permit</label>
+              <div class="document-upload-container">
+                <div class="upload-options">
+                  <button type="button" class="upload-option-btn" @click="triggerFileInput('businessPermit')">
+                    <Upload :size="16" />
+                    Upload File
+                  </button>
+                </div>
+
+                <div v-if="formData.verificationDocs.businessPermit || filePreviews.businessPermit" class="file-preview">
+                  <img v-if="isCurrentPreviewImage('businessPermit')" :src="currentPreview('businessPermit')" alt="Business Permit preview" class="document-preview-image" />
+                  <div v-else class="document-file-info">
+                    <FileText :size="20" />
+                    <span>Existing document</span>
+                  </div>
+                  <button type="button" class="remove-file-btn" @click="removeDocument('businessPermit')">
+                    <X :size="14" />
+                  </button>
+                </div>
+
+                <input type="file" ref="businessPermitInput" @change="handleFileUpload($event, 'businessPermit')" accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,.doc,.docx,.xls,.xlsx,.txt" class="file-input" />
+                <p class="file-help">Accepted formats: Images (JPG, PNG), Documents (PDF, DOC, DOCX), Spreadsheets (XLS, XLSX) - max 5MB</p>
+              </div>
+            </div>
+
+            <!-- Farm Certification -->
+            <div class="form-group">
+              <label for="farmCert">Farm Certification</label>
+              <div class="document-upload-container">
+                <div class="upload-options">
+                  <button type="button" class="upload-option-btn" @click="triggerFileInput('farmCert')">
+                    <Upload :size="16" />
+                    Upload File
+                  </button>
+                </div>
+
+                <div v-if="formData.verificationDocs.farmCert || filePreviews.farmCert" class="file-preview">
+                  <img v-if="isCurrentPreviewImage('farmCert')" :src="currentPreview('farmCert')" alt="Farm Certification preview" class="document-preview-image" />
+                  <div v-else class="document-file-info">
+                    <FileText :size="20" />
+                    <span>Existing document</span>
+                  </div>
+                  <button type="button" class="remove-file-btn" @click="removeDocument('farmCert')">
+                    <X :size="14" />
+                  </button>
+                </div>
+
+                <input type="file" ref="farmCertInput" @change="handleFileUpload($event, 'farmCert')" accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,.doc,.docx,.xls,.xlsx,.txt" class="file-input" />
+                <p class="file-help">Accepted formats: Images (JPG, PNG), Documents (PDF, DOC, DOCX), Spreadsheets (XLS, XLSX) - max 5MB</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Delivery Information -->
+          <div v-if="currentStep === 4" class="form-step">
+            <h2>Delivery Information</h2>
+            <p class="step-description">Tell us how you plan to deliver your products</p>
+
+            <div class="form-group">
+              <label>Delivery Method</label>
+              <div class="dropdown-checkbox">
+                <div class="dropdown-header" @click="toggleDeliveryDropdown">
+                  <span>{{ selectedDeliveryMethods.length ? `${selectedDeliveryMethods.length} selected` : 'Select delivery methods' }}</span>
+                  <ChevronDown :class="{'rotate-180': isDeliveryDropdownOpen}" />
+                </div>
+                <div class="dropdown-content" v-if="isDeliveryDropdownOpen">
+                  <div class="checkbox-group" v-for="method in deliveryMethods" :key="method.value">
+                    <input type="checkbox" :id="method.value" :value="method.value" v-model="formData.deliveryInfo.deliveryMethods" />
+                    <label :for="method.value">{{ method.label }}</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Areas Covered (Municipalities of Oriental Mindoro)</label>
+              <div class="dropdown-checkbox">
+                <div class="dropdown-header" @click="toggleMunicipalityDropdown">
+                  <span>{{ selectedMunicipalities.length ? `${selectedMunicipalities.length} selected` : 'Select municipalities' }}</span>
+                  <ChevronDown :class="{'rotate-180': isMunicipalityDropdownOpen}" />
+                </div>
+                <div class="dropdown-content" v-if="isMunicipalityDropdownOpen">
+                  <div class="checkbox-group" v-for="municipality in municipalities" :key="municipality">
+                    <input type="checkbox" :id="municipality" :value="municipality" v-model="formData.deliveryInfo.areasCovered" />
+                    <label :for="municipality">{{ municipality }}</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Additional Details -->
+          <div v-if="currentStep === 5" class="form-step">
+            <h2>Additional Details</h2>
+            <p class="step-description">Provide additional information about your business</p>
+
+            <div class="form-group">
+              <label for="socialMedia">Social Media Links</label>
+              <textarea id="socialMedia" v-model="formData.additionalDetails.socialMedia" placeholder="Enter your social media links (Facebook, Instagram, etc.)" rows="3"></textarea>
+            </div>
+
+            <div class="form-group checkbox-group">
+              <input type="checkbox" id="wholesaleAvailability" v-model="formData.additionalDetails.wholesaleAvailability" />
+              <label for="wholesaleAvailability">Available for wholesale orders</label>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Navigation Buttons -->
+      <div class="form-navigation">
+        <button v-if="currentStep > 0" class="prev-button" @click="prevStep">
+          <ChevronLeft size="18" />
+          Previous
+        </button>
+
+        <button v-if="currentStep < steps.length - 1" class="next-button" @click="nextStep">
+          Next
+          <ChevronRight size="18" />
+        </button>
+
+        <button v-if="currentStep === steps.length - 1" class="submit-button" @click="saveChanges" :disabled="isSubmitting">
+          <span v-if="isSubmitting"><span class="loading-spinner"></span>Saving...</span>
+          <span v-else>Save Changes</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Custom Notification -->
+    <div v-if="notification.show" class="custom-notification" :class="notification.type">
+      <div class="notification-content">
+        <div class="notification-header">
+          <h4 class="notification-title">{{ notification.title }}</h4>
+          <button class="notification-close" @click="closeNotification">&times;</button>
+        </div>
+        <div class="notification-body">
+          <p v-html="notification.message"></p>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script>
-import { 
-  ChevronLeft, 
-  ChevronRight,
-  ChevronDown,
-  Camera, 
-  Eye, 
-  EyeOff,
-  User,
-  Loader,
-  AlertCircle,
-  Upload,
-  FileText,
-  X
-} from 'lucide-vue-next';
-import { ref, computed, onMounted } from 'vue';
-import { auth, db, storage } from '@/firebase/firebaseConfig';
-import { updateDoc, doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
-import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import { db, auth, storage } from "@/firebase/firebaseConfig";
+import { collection, doc, getDoc, getDocs, query, updateDoc, where } from "firebase/firestore";
+import { ref as storageRef, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import { ChevronLeft, ChevronRight, Upload, ChevronDown, X, FileText, Loader, AlertCircle } from 'lucide-vue-next';
 
 export default {
-  components: {
-    ChevronLeft,
-    ChevronRight,
-    ChevronDown,
-    Camera,
-    Eye,
-    EyeOff,
-    User,
-    Loader,
-    AlertCircle,
-    Upload,
-    FileText,
-    X
-  },
-  setup() {
-    // Form data structure matching RegisterSeller.vue
-    const formData = ref({
-      personalInfo: {
-        firstName: "",
-        lastName: "",
-        contact: "",
-        email: "",
-        address: "",
-        photoUrl: ""
-      },
-      farmDetails: {
-        farmName: "",
-        farmAddress: "",
-        farmType: "",
-        products: "",
-        yearInFarming: ""
-      },
-      paymentInfo: {
-        paymentMethod: "",
-        accountName: "",
-        accountNumber: ""
-      },
-      verificationDocs: {
-        validID: null,
-        businessPermit: null,
-        farmCert: null
-      },
-      deliveryInfo: {
-        deliveryMethods: [],
-        areasCovered: []
-      },
-      additionalDetails: {
-        socialMedia: "",
-        wholesaleAvailability: false
-      },
-      termsAgreement: {
-        agreeTerms: false,
-        consentData: false
-      },
-      password: {
-        currentPassword: "",
-        newPassword: "",
-        confirmPassword: ""
-      }
-    });
-
-    // Document metadata to track storage type
-    const documentMetadata = ref({
-      businessPermit: { type: null, isBase64: false },
-      farmCert: { type: null, isBase64: false },
-      validID: { type: null, isBase64: false }
-    });
-
-    // Upload status for documents
-    const uploadStatus = ref({
-      validID: { progress: 0, error: null, uploading: false, url: null },
-      businessPermit: { progress: 0, error: null, uploading: false, url: null },
-      farmCert: { progress: 0, error: null, uploading: false, url: null }
-    });
-
-    // File preview URLs for images
-    const filePreviews = ref({
-      validID: null,
-      businessPermit: null,
-      farmCert: null
-    });
-
-    // Dropdown management
-    const isDeliveryDropdownOpen = ref(false);
-    const isMunicipalityDropdownOpen = ref(false);
-    
-    // Municipalities of Oriental Mindoro
-    const municipalities = ref([
-      "Baco", "Bansud", "Bongabong", "Bulalacao", "Calapan City",
-      "Gloria", "Mansalay", "Naujan", "Pinamalayan", "Pola",
-      "Puerto Galera", "Roxas", "San Teodoro", "Socorro", "Victoria"
-    ]);
-    
-    // Delivery methods
-    const deliveryMethods = ref([
-      { label: "Own Delivery", value: "own_delivery" },
-      { label: "Pickup Only", value: "pickup_only" }
-    ]);
-
-    // Account number validation
-    const accountNumberError = ref('');
-
-    // Camera state for document capture
-    const cameraState = ref({
-      isOpen: false,
-      documentType: null,
-      mediaStream: null
-    });
-
-    // Legacy individual field refs for backward compatibility
-    const firstName = computed({
-      get: () => formData.value.personalInfo.firstName,
-      set: (val) => formData.value.personalInfo.firstName = val
-    });
-    
-    const lastName = computed({
-      get: () => formData.value.personalInfo.lastName,
-      set: (val) => formData.value.personalInfo.lastName = val
-    });
-    
-    const email = computed({
-      get: () => formData.value.personalInfo.email,
-      set: (val) => formData.value.personalInfo.email = val
-    });
-    
-    const contactNumber = computed({
-      get: () => formData.value.personalInfo.contact,
-      set: (val) => formData.value.personalInfo.contact = val
-    });
-    
-    const address = computed({
-      get: () => formData.value.personalInfo.address,
-      set: (val) => formData.value.personalInfo.address = val
-    });
-    
-    const profileImageUrl = computed({
-      get: () => formData.value.personalInfo.photoUrl,
-      set: (val) => formData.value.personalInfo.photoUrl = val
-    });
-
-    // Multi-step navigation
-    const currentStep = ref(0);
-    const steps = ref([
-      "Personal Info", 
-      "Farm Details", 
-      "Payment Info", 
-      "Verification", 
-      "Delivery Info", 
-      "Additional Details", 
-      "Password"
-    ]);
-    
-    // For non-sellers, only show Personal Info and Password
-    const customerSteps = ref([
-      "Personal Info", 
-      "Password"
-    ]);
-
-    // Computed properties for areas covered management
-    const areasCoveredList = computed({
-      get: () => {
-        if (Array.isArray(formData.value.deliveryInfo.areasCovered)) {
-          return formData.value.deliveryInfo.areasCovered.length > 0 
-            ? formData.value.deliveryInfo.areasCovered 
-            : [""];
-        }
-        return [""];
-      },
-      set: (val) => {
-        formData.value.deliveryInfo.areasCovered = val.filter(area => area.trim() !== "");
-      }
-    });
-
-    // Computed properties for selected delivery methods and municipalities
-    const selectedDeliveryMethods = computed(() => {
-      return formData.value.deliveryInfo.deliveryMethods || [];
-    });
-
-    const selectedMunicipalities = computed(() => {
-      return formData.value.deliveryInfo.areasCovered || [];
-    });
-
-    // Password fields computed properties
-    const currentPassword = computed({
-      get: () => formData.value.password.currentPassword,
-      set: (val) => formData.value.password.currentPassword = val
-    });
-
-    const newPassword = computed({
-      get: () => formData.value.password.newPassword,
-      set: (val) => formData.value.password.newPassword = val
-    });
-
-    const confirmPassword = computed({
-      get: () => formData.value.password.confirmPassword,
-      set: (val) => formData.value.password.confirmPassword = val
-    });
-
-    // UI state
-    const fileInput = ref(null);
-    const alertMessage = ref("");
-    const alertType = ref("");
-    const showCurrentPassword = ref(false);
-    const showNewPassword = ref(false);
-    const showConfirmPassword = ref(false);
-    const experience = ref("");
-    
-    // Form processing state
-    const isSubmitting = ref(false);
-    const uploadInProgress = ref(false);
-    const savingToDatabase = ref(false);
-    const passwordMismatch = ref(false);
-    const isLoading = ref(false);
-    const loading = ref(true);
-    const error = ref(null);
-    
-    // Store seller document ID if found
-    const sellerDocId = ref(null);
-    const userRole = ref('customer');
-    
-    const isSeller = computed(() => {
-      return userRole.value === 'seller' || sellerDocId.value !== null;
-    });
-    
-    const maxSteps = computed(() => {
-      return isSeller.value ? steps.value.length : customerSteps.value.length;
-    });
-    
-    const progressWidth = computed(() => {
-      return ((currentStep.value + 1) / maxSteps.value) * 100;
-    });
-    
-    const currentStepList = computed(() => {
-      return isSeller.value ? steps.value : customerSteps.value;
-    });
-
-    // Multi-step navigation methods
-    const nextStep = () => {
-      if (currentStep.value < maxSteps.value - 1) {
-        currentStep.value++;
-      }
-    };
-    
-    const prevStep = () => {
-      if (currentStep.value > 0) {
-        currentStep.value--;
-      }
-    };
-    
-    const goToStep = (index) => {
-      if (index >= 0 && index < maxSteps.value) {
-        currentStep.value = index;
-      }
-    };
-    
-    // Areas covered management
-    const addArea = () => {
-      const currentAreas = [...areasCoveredList.value];
-      currentAreas.push("");
-      areasCoveredList.value = currentAreas;
-    };
-    
-    const removeArea = (index) => {
-      const currentAreas = [...areasCoveredList.value];
-      if (currentAreas.length > 1) {
-        currentAreas.splice(index, 1);
-        areasCoveredList.value = currentAreas;
-      }
-    };
-
-    // Dropdown management methods
-    const toggleDeliveryDropdown = () => {
-      isDeliveryDropdownOpen.value = !isDeliveryDropdownOpen.value;
-      if (isDeliveryDropdownOpen.value) {
-        isMunicipalityDropdownOpen.value = false;
-      }
-    };
-
-    const toggleMunicipalityDropdown = () => {
-      isMunicipalityDropdownOpen.value = !isMunicipalityDropdownOpen.value;
-      if (isMunicipalityDropdownOpen.value) {
-        isDeliveryDropdownOpen.value = false;
-      }
-    };
-
-    // Account number validation
-    const validateAccountNumber = () => {
-      const accountNumber = formData.value.paymentInfo.accountNumber;
-      
-      // Remove any non-digit characters
-      const cleanNumber = accountNumber.replace(/\D/g, '');
-      formData.value.paymentInfo.accountNumber = cleanNumber;
-      
-      // Validate length
-      if (cleanNumber.length === 0) {
-        accountNumberError.value = '';
-      } else if (cleanNumber.length < 11) {
-        accountNumberError.value = 'Account number must be exactly 11 digits';
-      } else if (cleanNumber.length === 11) {
-        accountNumberError.value = '';
-      } else {
-        // Trim to 11 digits if longer
-        formData.value.paymentInfo.accountNumber = cleanNumber.slice(0, 11);
-        accountNumberError.value = '';
-      }
-    };
-
-    const fetchSellerData = async () => {
-      loading.value = true;
-      error.value = null;
-      
-      try {
-        const user = auth.currentUser;
-        if (!user) {
-          error.value = "No user logged in.";
-          loading.value = false;
-          return;
-        }
-        
-        // First, get the user data from users collection
-        const userRef = doc(db, "users", user.uid);
-        const userSnap = await getDoc(userRef);
-        
-        if (!userSnap.exists()) {
-          error.value = "User profile not found.";
-          loading.value = false;
-          return;
-        }
-        
-        const userData = userSnap.data();
-        
-        // Set user data
-        firstName.value = userData.firstName || "";
-        lastName.value = userData.lastName || "";
-        email.value = userData.email || "";
-        contactNumber.value = userData.contactNumber || "";
-        address.value = userData.address || "";
-        profileImageUrl.value = userData.profileImageUrl || "";
-        userRole.value = userData.role || 'customer';
-        
-        console.log("User data loaded:", userData);
-        
-        // Try to get seller data directly using sellerId (document ID)
-        const potentialSellerId = user.uid;
-        console.log("Attempting to fetch seller data for ID:", potentialSellerId);
-        
-        try {
-          const sellerDocRef = doc(db, "sellers", potentialSellerId);
-          const sellerSnap = await getDoc(sellerDocRef);
-          
-          if (sellerSnap.exists()) {
-            sellerDocId.value = sellerSnap.id;
-            const sellerData = sellerSnap.data();
-            
-            console.log("Seller data loaded directly by document ID:", sellerData);
-            populateSellerFields(sellerData);
-            overrideUserDataWithSellerData(sellerData);
-            userRole.value = 'seller';
-          } else {
-            await fetchSellerDataByQuery(user);
-          }
-        } catch (error) {
-          console.log("Direct seller fetch failed, trying query method:", error);
-          await fetchSellerDataByQuery(user);
-        }
-        
-        loading.value = false;
-      } catch (err) {
-        console.error("Error fetching seller data:", err);
-        error.value = "Failed to load profile data. Please try again.";
-        loading.value = false;
-      }
-    };
-
-    const openFileInput = () => {
-      fileInput.value.click();
-    };
-
-    const handleFileUpload = async (event) => {
-      const file = event.target.files[0];
-      if (!file) return;
-
-      try {
-        const user = auth.currentUser;
-        if (!user) return;
-
-        const storageReference = storageRef(storage, `profile-pictures/${user.uid}/${file.name}`);
-        await uploadBytes(storageReference, file);
-
-        const downloadURL = await getDownloadURL(storageReference);
-
-        const userRef = doc(db, "users", user.uid);
-        await updateDoc(userRef, {
-          profileImageUrl: downloadURL,
-        });
-
-        profileImageUrl.value = downloadURL;
-        showAlert("Profile picture updated successfully!", "success");
-      } catch (error) {
-        console.error("Error uploading profile picture:", error);
-        showAlert("Failed to upload profile picture.", "error");
-      }
-    };
-
-    // Document upload methods
-    const triggerFileInput = (docType) => {
-      const inputRef = document.getElementById(`${docType}Input`);
-      if (inputRef) {
-        inputRef.click();
-      }
-    };
-
-    const handleFileUploadForDoc = (event, docType) => {
-      const file = event.target.files[0];
-      if (!file) return;
-
-      // Validate file size (5MB limit)
-      const maxSize = 5 * 1024 * 1024;
-      if (file.size > maxSize) {
-        showAlert('File too large. Maximum size is 5MB.', 'error');
-        return;
-      }
-
-      // Store the file
-      formData.value.verificationDocs[docType] = file;
-      
-      // Create preview for images
-      if (isImageFile(file)) {
-        createFilePreview(file, docType);
-      }
-
-      showAlert(`${docType} uploaded successfully!`, 'success');
-    };
-
-    const isImageFile = (file) => {
-      if (!file || !file.type) return false;
-      return file.type.startsWith('image/');
-    };
-
-    const createFilePreview = (file, key) => {
-      if (!isImageFile(file)) return;
-      
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        filePreviews.value[key] = e.target.result;
-      };
-      reader.readAsDataURL(file);
-    };
-
-    const getFilePreview = (key) => {
-      return filePreviews.value[key];
-    };
-
-    const removeDocument = (key) => {
-      formData.value.verificationDocs[key] = null;
-      filePreviews.value[key] = null;
-      uploadStatus.value[key] = {
-        progress: 0,
-        error: null,
-        uploading: false,
-        url: null
-      };
-      
-      // Clear file input
-      const inputRef = document.getElementById(`${key}Input`);
-      if (inputRef) {
-        inputRef.value = '';
-      }
-    };
-
-    const showAlert = (message, type) => {
-      alertMessage.value = message;
-      alertType.value = type;
-      setTimeout(() => {
-        alertMessage.value = "";
-      }, 3000);
-    };
-
-    const updateProfile = async () => {
-      isLoading.value = true;
-      try {
-        const user = auth.currentUser;
-        if (!user) {
-          showAlert("No user logged in.", "error");
-          return;
-        }
-        
-        // Password validation
-        if (formData.value.password.newPassword || formData.value.password.confirmPassword) {
-          if (formData.value.password.newPassword !== formData.value.password.confirmPassword) {
-            passwordMismatch.value = true;
-            showAlert("Passwords do not match.", "error");
-            return;
-          } else {
-            passwordMismatch.value = false;
-          }
-          
-          showAlert("Password change not implemented in this demo.", "error");
-        }
-        
-        // Update user data in users collection
-        const userRef = doc(db, "users", user.uid);
-        await updateDoc(userRef, {
-          firstName: formData.value.personalInfo.firstName,
-          lastName: formData.value.personalInfo.lastName,
-          contactNumber: formData.value.personalInfo.contact,
-          address: formData.value.personalInfo.address,
-        });
-        
-        console.log("User data updated successfully");
-        
-        // If seller data exists, update it in sellers collection using nested structure
-        if (isSeller.value) {
-          const sellerUpdateData = {
-            // Personal info (nested)
-            personalInfo: {
-              firstName: formData.value.personalInfo.firstName,
-              lastName: formData.value.personalInfo.lastName,
-              contact: formData.value.personalInfo.contact,
-              email: formData.value.personalInfo.email,
-              address: formData.value.personalInfo.address,
-              photoUrl: formData.value.personalInfo.photoUrl || ""
-            },
-            
-            // Farm details (nested)
-            farmDetails: {
-              farmName: formData.value.farmDetails.farmName,
-              farmAddress: formData.value.farmDetails.farmAddress,
-              farmType: formData.value.farmDetails.farmType,
-              products: formData.value.farmDetails.products,
-              yearInFarming: formData.value.farmDetails.yearInFarming?.toString() || "0"
-            },
-            
-            // Payment info (nested)
-            paymentInfo: {
-              paymentMethod: formData.value.paymentInfo.paymentMethod,
-              accountName: formData.value.paymentInfo.accountName,
-              accountNumber: formData.value.paymentInfo.accountNumber
-            },
-            
-            // Delivery info (nested)
-            deliveryInfo: {
-              deliveryMethods: formData.value.deliveryInfo.deliveryMethods,
-              areasCovered: formData.value.deliveryInfo.areasCovered
-            },
-            
-            // Additional details (nested)
-            additionalDetails: {
-              socialMedia: formData.value.additionalDetails.socialMedia,
-              wholesaleAvailability: formData.value.additionalDetails.wholesaleAvailability
-            },
-            
-            // Terms agreement (nested)
-            termsAgreement: {
-              agreeTerms: formData.value.termsAgreement.agreeTerms,
-              consentData: formData.value.termsAgreement.consentData
-            },
-            
-            // Documents (nested) - maintain current document references
-            documents: {
-              validID: formData.value.verificationDocs.validID || "",
-              businessPermit: formData.value.verificationDocs.businessPermit || "",
-              farmCert: formData.value.verificationDocs.farmCert || ""
-            },
-            
-            // Document metadata (nested)
-            documentMetadata: documentMetadata.value,
-            
-            // Update timestamp
-            updatedAt: new Date(),
-            lastUpdated: new Date().toISOString()
-          };
-          
-          if (sellerDocId.value) {
-            console.log("Updating existing seller document:", sellerDocId.value);
-            const sellerRef = doc(db, "sellers", sellerDocId.value);
-            await updateDoc(sellerRef, sellerUpdateData);
-          } else {
-            console.log("Looking for seller document by email");
-            const sellersRef = collection(db, "sellers");
-            const q = query(sellersRef, where("email", "==", formData.value.personalInfo.email));
-            const sellerSnap = await getDocs(q);
-            
-            if (!sellerSnap.empty) {
-              const sellerDoc = sellerSnap.docs[0];
-              sellerDocId.value = sellerDoc.id;
-              console.log("Found seller document by email:", sellerDocId.value);
-              
-              const sellerRef = doc(db, "sellers", sellerDocId.value);
-              await updateDoc(sellerRef, sellerUpdateData);
-            }
-          }
-        }
-        
-        showAlert("Profile updated successfully!", "success");
-      } catch (error) {
-        console.error("Error updating profile:", error);
-        showAlert("Failed to update profile: " + error.message, "error");
-      } finally {
-        isLoading.value = false;
-      }
-    };
-
-    // Helper function to populate seller fields from seller data
-    const populateSellerFields = (sellerData) => {
-      console.log("Populating seller fields with data:", sellerData);
-      
-      // Handle nested structure from RegisterSeller.vue
-      if (sellerData.personalInfo) {
-        formData.value.personalInfo.firstName = sellerData.personalInfo.firstName || "";
-        formData.value.personalInfo.lastName = sellerData.personalInfo.lastName || "";
-        formData.value.personalInfo.contact = sellerData.personalInfo.contact || "";
-        formData.value.personalInfo.email = sellerData.personalInfo.email || "";
-        formData.value.personalInfo.address = sellerData.personalInfo.address || "";
-        formData.value.personalInfo.photoUrl = sellerData.personalInfo.photoUrl || "";
-      }
-      
-      if (sellerData.farmDetails) {
-        formData.value.farmDetails.farmName = sellerData.farmDetails.farmName || "";
-        formData.value.farmDetails.farmAddress = sellerData.farmDetails.farmAddress || "";
-        formData.value.farmDetails.farmType = sellerData.farmDetails.farmType || "";
-        formData.value.farmDetails.products = sellerData.farmDetails.products || "";
-        formData.value.farmDetails.yearInFarming = sellerData.farmDetails.yearInFarming || "";
-      }
-      
-      if (sellerData.paymentInfo) {
-        formData.value.paymentInfo.paymentMethod = sellerData.paymentInfo.paymentMethod || "";
-        formData.value.paymentInfo.accountName = sellerData.paymentInfo.accountName || "";
-        formData.value.paymentInfo.accountNumber = sellerData.paymentInfo.accountNumber || "";
-      }
-      
-      if (sellerData.deliveryInfo) {
-        formData.value.deliveryInfo.deliveryMethods = sellerData.deliveryInfo.deliveryMethods || [];
-        formData.value.deliveryInfo.areasCovered = sellerData.deliveryInfo.areasCovered || [];
-      }
-      
-      if (sellerData.additionalDetails) {
-        formData.value.additionalDetails.socialMedia = sellerData.additionalDetails.socialMedia || "";
-        formData.value.additionalDetails.wholesaleAvailability = sellerData.additionalDetails.wholesaleAvailability || false;
-      }
-      
-      if (sellerData.termsAgreement) {
-        formData.value.termsAgreement.agreeTerms = sellerData.termsAgreement.agreeTerms || false;
-        formData.value.termsAgreement.consentData = sellerData.termsAgreement.consentData || false;
-      }
-      
-      // Handle documents
-      if (sellerData.documents) {
-        // Store document URLs/data in verification docs
-        formData.value.verificationDocs.validID = sellerData.documents.validID || null;
-        formData.value.verificationDocs.businessPermit = sellerData.documents.businessPermit || null;
-        formData.value.verificationDocs.farmCert = sellerData.documents.farmCert || null;
-        
-        // Set up file previews for images
-        if (sellerData.documents.validID) {
-          filePreviews.value.validID = sellerData.documents.validID;
-        }
-        if (sellerData.documents.businessPermit) {
-          filePreviews.value.businessPermit = sellerData.documents.businessPermit;
-        }
-        if (sellerData.documents.farmCert) {
-          filePreviews.value.farmCert = sellerData.documents.farmCert;
-        }
-      }
-      
-      // Handle document metadata
-      if (sellerData.documentMetadata) {
-        documentMetadata.value = sellerData.documentMetadata;
-      }
-      
-      // Handle flat structure for backward compatibility
-      if (!sellerData.personalInfo) {
-        formData.value.personalInfo.firstName = sellerData.firstName || "";
-        formData.value.personalInfo.lastName = sellerData.lastName || "";
-        formData.value.personalInfo.contact = sellerData.contact || "";
-        formData.value.personalInfo.email = sellerData.email || "";
-        formData.value.personalInfo.address = sellerData.address || "";
-      }
-      
-      if (!sellerData.farmDetails) {
-        formData.value.farmDetails.farmName = sellerData.farmName || "";
-        formData.value.farmDetails.farmAddress = sellerData.farmAddress || "";
-        formData.value.farmDetails.farmType = sellerData.farmType || "";
-        formData.value.farmDetails.products = sellerData.products || "";
-        formData.value.farmDetails.yearInFarming = sellerData.yearInFarming || "";
-      }
-      
-      if (!sellerData.paymentInfo) {
-        formData.value.paymentInfo.paymentMethod = sellerData.paymentMethod || "";
-        formData.value.paymentInfo.accountName = sellerData.accountName || "";
-        formData.value.paymentInfo.accountNumber = sellerData.accountNumber || "";
-      }
-      
-      if (!sellerData.deliveryInfo) {
-        // Handle legacy areasCovered as string
-        if (sellerData.areasCovered) {
-          if (typeof sellerData.areasCovered === 'string') {
-            formData.value.deliveryInfo.areasCovered = sellerData.areasCovered.split(", ").filter(area => area.trim() !== "");
-          } else if (Array.isArray(sellerData.areasCovered)) {
-            formData.value.deliveryInfo.areasCovered = sellerData.areasCovered;
-          }
-        }
-        
-        // Handle legacy deliveryMethod as string
-        if (sellerData.deliveryMethod) {
-          formData.value.deliveryInfo.deliveryMethods = [sellerData.deliveryMethod];
-        }
-      }
-      
-      if (!sellerData.additionalDetails) {
-        formData.value.additionalDetails.socialMedia = sellerData.socialMedia || "";
-        formData.value.additionalDetails.wholesaleAvailability = sellerData.wholesaleAvailability || false;
-      }
-      
-      // Handle legacy documents as individual fields
-      if (!sellerData.documents) {
-        if (sellerData.businessPermit) {
-          formData.value.verificationDocs.businessPermit = sellerData.businessPermit;
-          filePreviews.value.businessPermit = sellerData.businessPermit;
-        }
-        if (sellerData.validID) {
-          formData.value.verificationDocs.validID = sellerData.validID;
-          filePreviews.value.validID = sellerData.validID;
-        }
-        if (sellerData.farmCert) {
-          formData.value.verificationDocs.farmCert = sellerData.farmCert;
-          filePreviews.value.farmCert = sellerData.farmCert;
-        }
-      }
-      
-      // Store additional fields for backward compatibility
-      experience.value = sellerData.experience || "";
-    };
-
-    // Helper function to override user data with seller data if available
-    const overrideUserDataWithSellerData = (sellerData) => {
-      // Use nested structure first
-      if (sellerData.personalInfo) {
-        if (sellerData.personalInfo.firstName) formData.value.personalInfo.firstName = sellerData.personalInfo.firstName;
-        if (sellerData.personalInfo.lastName) formData.value.personalInfo.lastName = sellerData.personalInfo.lastName;
-        if (sellerData.personalInfo.contact) formData.value.personalInfo.contact = sellerData.personalInfo.contact;
-        if (sellerData.personalInfo.address) formData.value.personalInfo.address = sellerData.personalInfo.address;
-        if (sellerData.personalInfo.photoUrl) formData.value.personalInfo.photoUrl = sellerData.personalInfo.photoUrl;
-      } else {
-        // Fallback to flat structure
-        if (sellerData.firstName) formData.value.personalInfo.firstName = sellerData.firstName;
-        if (sellerData.lastName) formData.value.personalInfo.lastName = sellerData.lastName;
-        if (sellerData.contact) formData.value.personalInfo.contact = sellerData.contact;
-        if (sellerData.address) formData.value.personalInfo.address = sellerData.address;
-        if (sellerData.profileImageUrl) formData.value.personalInfo.photoUrl = sellerData.profileImageUrl;
-      }
-    };
-
-    // Fallback function to query seller data by userId or email
-    const fetchSellerDataByQuery = async (user) => {
-      console.log("Fetching seller data by query for user:", user.uid);
-      
-      const sellersRef = collection(db, "sellers");
-      const q = query(sellersRef, where("userId", "==", user.uid));
-      const sellerSnap = await getDocs(q);
-      
-      if (!sellerSnap.empty) {
-        const sellerDoc = sellerSnap.docs[0];
-        sellerDocId.value = sellerDoc.id;
-        const sellerData = sellerDoc.data();
-        
-        console.log("Seller data loaded by userId query:", sellerData);
-        
-        populateSellerFields(sellerData);
-        overrideUserDataWithSellerData(sellerData);
-        userRole.value = 'seller';
-      } else {
-        const emailQuery = query(sellersRef, where("email", "==", email.value));
-        const emailSellerSnap = await getDocs(emailQuery);
-        
-        if (!emailSellerSnap.empty) {
-          const sellerDoc = emailSellerSnap.docs[0];
-          sellerDocId.value = sellerDoc.id;
-          const sellerData = sellerDoc.data();
-          
-          console.log("Seller data loaded by email query:", sellerData);
-          
-          populateSellerFields(sellerData);
-          overrideUserDataWithSellerData(sellerData);
-          userRole.value = 'seller';
-        } else {
-          console.log("No seller data found for user:", user.uid);
-        }
-      }
-    };
-
-    onMounted(fetchSellerData);
-
+  name: 'SellerEditProfile',
+  components: { ChevronLeft, ChevronRight, Upload, ChevronDown, X, FileText, Loader, AlertCircle },
+  data() {
     return {
-      // Form data structure
-      formData,
-      documentMetadata,
-      uploadStatus,
-      filePreviews,
-      
-      // Multi-step navigation
-      currentStep,
-      steps,
-      customerSteps,
-      maxSteps,
-      progressWidth,
-      currentStepList,
-      nextStep,
-      prevStep,
-      goToStep,
-      
-      // User data (computed from formData)
-      firstName,
-      lastName,
-      email,
-      contactNumber,
-      address,
-      profileImageUrl,
-      
-      // Areas covered management
-      areasCoveredList,
-      addArea,
-      removeArea,
-      
-      // Dropdown management
-      isDeliveryDropdownOpen,
-      isMunicipalityDropdownOpen,
-      toggleDeliveryDropdown,
-      toggleMunicipalityDropdown,
-      
-      // Data lists
-      municipalities,
-      deliveryMethods,
-      selectedDeliveryMethods,
-      selectedMunicipalities,
-      
-      // Password fields
-      currentPassword,
-      newPassword,
-      confirmPassword,
-      
-      // Validation
-      validateAccountNumber,
-      accountNumberError,
-      
-      // UI state
-      fileInput,
-      alertMessage,
-      alertType,
-      showCurrentPassword,
-      showNewPassword,
-      showConfirmPassword,
-      passwordMismatch,
-      isLoading,
-      loading,
-      error,
-      isSeller,
-      userRole,
-      sellerDocId,
-      
-      // Processing state
-      isSubmitting,
-      uploadInProgress,
-      savingToDatabase,
-      
-      // Additional fields
-      experience,
-      
-      // Methods
-      openFileInput,
-      handleFileUpload,
-      updateProfile,
-      fetchSellerData,
-      
-      // Document upload methods
-      triggerFileInput,
-      handleFileUploadForDoc,
-      isImageFile,
-      getFilePreview,
-      removeDocument
+      currentStep: 0,
+      steps: [
+        "Personal Info",
+        "Farm Details",
+        "Payment Info",
+        "Verification",
+        "Delivery Info",
+        "Additional Details"
+      ],
+      isDeliveryDropdownOpen: false,
+      isMunicipalityDropdownOpen: false,
+      municipalities: [
+        "Baco","Bansud","Bongabong","Bulalacao","Calapan City",
+        "Gloria","Mansalay","Naujan","Pinamalayan","Pola",
+        "Puerto Galera","Roxas","San Teodoro","Socorro","Victoria"
+      ],
+      deliveryMethods: [
+        { label: "Own Delivery", value: "own_delivery" },
+        { label: "Pickup Only", value: "pickup_only" }
+      ],
+      formData: {
+        personalInfo: { firstName: '', lastName: '', contact: '', email: '', address: '' },
+        farmDetails: { farmName: '', farmAddress: '', farmType: '', products: '', yearInFarming: 0 },
+        paymentInfo: { paymentMethod: '', accountName: '', accountNumber: '', qrUrl: null },
+        verificationDocs: { validID: null, businessPermit: null, farmCert: null },
+        deliveryInfo: { deliveryMethods: [], areasCovered: [] },
+        additionalDetails: { socialMedia: '', wholesaleAvailability: false }
+      },
+      uploadStatus: {
+        validID: { progress: 0, error: null, uploading: false, url: null },
+        businessPermit: { progress: 0, error: null, uploading: false, url: null },
+        farmCert: { progress: 0, error: null, uploading: false, url: null }
+      },
+      filePreviews: { validID: null, businessPermit: null, farmCert: null, paymentQr: null },
+      accountNumberError: '',
+      isSubmitting: false,
+      loading: true,
+      error: null,
+      sellerDocId: null,
+      // Keep originals to preserve if user doesn't replace
+      loadedSellerData: null,
+
+      // Notification system
+      notification: { show: false, type: 'success', title: '', message: '', duration: 5000 }
     };
+  },
+  computed: {
+    progressWidth() { return ((this.currentStep + 1) / this.steps.length) * 100; },
+    selectedMunicipalities() { return this.formData.deliveryInfo.areasCovered || []; },
+    selectedDeliveryMethods() { return this.formData.deliveryInfo.deliveryMethods || []; }
+  },
+  async created() {
+    await this.fetchAll();
+  },
+  methods: {
+    goBack() {
+      if (window.history.length > 1) return this.$router.back();
+      this.$router.push('/seller-dashboard').catch(() => {});
+    },
+    toggleDeliveryDropdown() {
+      this.isDeliveryDropdownOpen = !this.isDeliveryDropdownOpen;
+      if (this.isDeliveryDropdownOpen) this.isMunicipalityDropdownOpen = false;
+    },
+    toggleMunicipalityDropdown() {
+      this.isMunicipalityDropdownOpen = !this.isMunicipalityDropdownOpen;
+      if (this.isMunicipalityDropdownOpen) this.isDeliveryDropdownOpen = false;
+    },
+    goToStep(index) { if (index <= this.currentStep) this.currentStep = index; },
+    nextStep() { if (this.currentStep < this.steps.length - 1) this.currentStep++; },
+    prevStep() { if (this.currentStep > 0) this.currentStep--; },
+
+    showNotification(title, message, type = 'success', duration = 5000) {
+      this.notification = { show: true, type, title, message, duration };
+      setTimeout(() => this.closeNotification(), duration);
+    },
+    closeNotification() { this.notification.show = false; },
+
+    // Fetch user and seller data (by route id or current user)
+    async fetchAll() {
+      this.loading = true;
+      this.error = null;
+      try {
+        const user = auth.currentUser;
+        if (!user) throw new Error('No authenticated user.');
+
+        // Load base user profile
+        const userSnap = await getDoc(doc(db, 'users', user.uid));
+        if (userSnap.exists()) {
+          const u = userSnap.data();
+          this.formData.personalInfo.firstName = u.firstName || '';
+          this.formData.personalInfo.lastName = u.lastName || '';
+          this.formData.personalInfo.email = u.email || user.email || '';
+          this.formData.personalInfo.contact = u.contactNumber || '';
+          this.formData.personalInfo.address = u.address || '';
+        }
+
+        // Determine seller document id from route or user mapping
+        const routeSellerId = this.$route.params.id || this.$route.query.sellerId || null;
+        let sellerDocRef = routeSellerId ? doc(db, 'sellers', routeSellerId) : doc(db, 'sellers', user.uid);
+        let sellerSnap = await getDoc(sellerDocRef);
+
+        if (!sellerSnap.exists()) {
+          // fallback: query by userId
+          const snap = await getDocs(query(collection(db, 'sellers'), where('userId', '==', user.uid)));
+          if (!snap.empty) {
+            sellerSnap = snap.docs[0];
+          } else {
+            // fallback: by email
+            const snapByEmail = await getDocs(query(collection(db, 'sellers'), where('personalInfo.email', '==', this.formData.personalInfo.email)));
+            if (!snapByEmail.empty) sellerSnap = snapByEmail.docs[0];
+          }
+        }
+
+        if (sellerSnap && sellerSnap.exists()) {
+          this.sellerDocId = sellerSnap.id;
+          const s = sellerSnap.data();
+          this.loadedSellerData = s;
+          // Map nested data
+          if (s.personalInfo) Object.assign(this.formData.personalInfo, s.personalInfo);
+          if (s.farmDetails) Object.assign(this.formData.farmDetails, {
+            farmName: s.farmDetails.farmName || '',
+            farmAddress: s.farmDetails.farmAddress || '',
+            farmType: s.farmDetails.farmType || '',
+            products: s.farmDetails.products || '',
+            yearInFarming: isNaN(Number(s.farmDetails.yearInFarming)) ? 0 : Number(s.farmDetails.yearInFarming)
+          });
+          if (s.paymentInfo) Object.assign(this.formData.paymentInfo, s.paymentInfo);
+          if (s.deliveryInfo) Object.assign(this.formData.deliveryInfo, s.deliveryInfo);
+          if (s.additionalDetails) Object.assign(this.formData.additionalDetails, s.additionalDetails);
+          if (s.documents) {
+            this.filePreviews.validID = s.documents.validID || null;
+            this.filePreviews.businessPermit = s.documents.businessPermit || null;
+            this.filePreviews.farmCert = s.documents.farmCert || null;
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load profile:', e);
+        this.error = e?.message || 'Failed to load profile data';
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    // File helpers
+    isImageFile(file) { return !!file && file.type?.startsWith('image/'); },
+    createFilePreview(file, key) {
+      if (!this.isImageFile(file)) return;
+      const reader = new FileReader();
+      reader.onload = (e) => { this.filePreviews[key] = e.target.result; };
+      reader.readAsDataURL(file);
+    },
+    currentPreview(key) {
+      return this.filePreviews[key];
+    },
+    isCurrentPreviewImage(key) {
+      const val = this.formData.verificationDocs[key];
+      if (val instanceof File) return this.isImageFile(val);
+      const existing = this.filePreviews[key];
+      return typeof existing === 'string' && existing.startsWith('data:image');
+    },
+    handleFileUpload(event, key) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      const maxSize = 5 * 1024 * 1024;
+      if (file.size > maxSize) { this.showNotification('File Too Large', 'Please select a file smaller than 5MB', 'error'); return; }
+      const allowedTypes = [
+        'image/jpeg','image/jpg','image/png','image/gif','image/webp',
+        'application/pdf',
+        'application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/plain'
+      ];
+      if (!allowedTypes.includes(file.type)) { this.showNotification('Invalid File Type', 'Please select an image, PDF, Word, Excel, or text file', 'error'); return; }
+      this.formData.verificationDocs[key] = file;
+      if (this.isImageFile(file)) this.createFilePreview(file, key);
+      this.showNotification('File Selected', `${file.name} ready to upload`, 'success', 2000);
+    },
+    triggerFileInput(key) { this.$refs[`${key}Input`]?.click(); },
+    removeDocument(key) {
+      this.formData.verificationDocs[key] = null;
+      this.filePreviews[key] = null;
+      const ref = this.$refs[`${key}Input`]; if (ref) ref.value = '';
+      this.uploadStatus[key] = { progress: 0, error: null, uploading: false, url: null };
+    },
+
+    // QR helpers
+    triggerQrInput() { this.$refs.paymentQrInput?.click(); },
+    async handleQrUpload(e) {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const maxSize = 5 * 1024 * 1024;
+      if (file.size > maxSize) { this.showNotification('QR Too Large', 'Please choose an image up to 5MB.', 'error'); return; }
+      if (!this.isImageFile(file)) { this.showNotification('Invalid QR File', 'QR must be an image.', 'error'); return; }
+      this.createFilePreview(file, 'paymentQr');
+      const base64 = await this.saveImageToBase64(file);
+      this.formData.paymentInfo.qrUrl = base64;
+      this.showNotification('QR Selected', 'Your QR image is ready.', 'success', 2000);
+    },
+    removeQr() {
+      this.formData.paymentInfo.qrUrl = null;
+      this.filePreviews.paymentQr = null;
+      const input = this.$refs.paymentQrInput; if (input) input.value = '';
+    },
+
+    async saveImageToBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target.result);
+        reader.onerror = () => reject(new Error('Failed to read image file'));
+        reader.readAsDataURL(file);
+      });
+    },
+
+    validateAccountNumber() {
+      const clean = (this.formData.paymentInfo.accountNumber || '').replace(/\D/g, '');
+      this.formData.paymentInfo.accountNumber = clean.slice(0, 11);
+      this.accountNumberError = clean.length > 0 && clean.length < 11 ? 'Account number must be exactly 11 digits' : '';
+    },
+
+    async uploadFileToStorage(file, docType) {
+      if (!file || this.isImageFile(file)) throw new Error('Only non-image files here');
+      const user = auth.currentUser; if (!user) throw new Error('User not authenticated');
+      this.uploadStatus[docType] = { progress: 0, error: null, uploading: true, url: null };
+      const timestamp = Date.now();
+      const ext = file.name.split('.').pop();
+      const path = `seller-documents/${user.uid}/${docType}_${timestamp}.${ext}`;
+      const sRef = storageRef(storage, path);
+      const task = uploadBytesResumable(sRef, file);
+      return new Promise((resolve, reject) => {
+        task.on('state_changed', snap => {
+          const progress = (snap.bytesTransferred / snap.totalBytes) * 100;
+          this.uploadStatus[docType].progress = Math.round(progress);
+        }, err => {
+          this.uploadStatus[docType].error = err.message; this.uploadStatus[docType].uploading = false; reject(err);
+        }, async () => {
+          const url = await getDownloadURL(task.snapshot.ref);
+          this.uploadStatus[docType].url = url; this.uploadStatus[docType].uploading = false; this.uploadStatus[docType].progress = 100;
+          resolve({ url });
+        });
+      });
+    },
+
+    async uploadAllDocuments() {
+      const results = { validID: { success: false, url: '', type: null }, businessPermit: { success: false, url: '', type: null }, farmCert: { success: false, url: '', type: null } };
+      const order = ['validID','businessPermit','farmCert'];
+      for (const key of order) {
+        const file = this.formData.verificationDocs[key];
+        if (!file) continue;
+        try {
+          if (this.isImageFile(file)) {
+            const base64 = await this.saveImageToBase64(file);
+            results[key] = { success: true, url: base64, type: 'image' };
+          } else {
+            const { url } = await this.uploadFileToStorage(file, key);
+            results[key] = { success: true, url, type: 'file' };
+          }
+        } catch (e) {
+          results[key] = { success: false, url: '', type: this.isImageFile(file) ? 'image' : 'file', error: e?.message };
+        }
+      }
+      return results;
+    },
+
+    async saveChanges() {
+      try {
+        const user = auth.currentUser; if (!user) { this.showNotification('Auth required', 'Please log in.', 'error'); return; }
+        this.isSubmitting = true;
+
+        const uploadResults = await this.uploadAllDocuments();
+
+        const docs = {
+          validID: uploadResults.validID?.success ? uploadResults.validID.url : (this.loadedSellerData?.documents?.validID || ''),
+          businessPermit: uploadResults.businessPermit?.success ? uploadResults.businessPermit.url : (this.loadedSellerData?.documents?.businessPermit || ''),
+          farmCert: uploadResults.farmCert?.success ? uploadResults.farmCert.url : (this.loadedSellerData?.documents?.farmCert || '')
+        };
+
+        const sellerUpdate = {
+          personalInfo: { ...this.formData.personalInfo, photoUrl: this.loadedSellerData?.personalInfo?.photoUrl || '' },
+          farmDetails: { ...this.formData.farmDetails, yearInFarming: String(this.formData.farmDetails.yearInFarming || 0) },
+          paymentInfo: { ...this.formData.paymentInfo },
+          deliveryInfo: { ...this.formData.deliveryInfo },
+          additionalDetails: { ...this.formData.additionalDetails },
+          documents: docs,
+          documentMetadata: {
+            validID: { type: uploadResults.validID?.type || this.loadedSellerData?.documentMetadata?.validID?.type || null, isBase64: (uploadResults.validID?.type === 'image') || this.loadedSellerData?.documentMetadata?.validID?.isBase64 || false },
+            businessPermit: { type: uploadResults.businessPermit?.type || this.loadedSellerData?.documentMetadata?.businessPermit?.type || null, isBase64: (uploadResults.businessPermit?.type === 'image') || this.loadedSellerData?.documentMetadata?.businessPermit?.isBase64 || false },
+            farmCert: { type: uploadResults.farmCert?.type || this.loadedSellerData?.documentMetadata?.farmCert?.type || null, isBase64: (uploadResults.farmCert?.type === 'image') || this.loadedSellerData?.documentMetadata?.farmCert?.isBase64 || false }
+          },
+          updatedAt: new Date()
+        };
+
+        let targetId = this.sellerDocId || user.uid;
+        const tryDoc = await getDoc(doc(db, 'sellers', targetId));
+        if (!tryDoc.exists() && this.sellerDocId && this.sellerDocId !== user.uid) {
+          targetId = this.sellerDocId;
+        }
+        await updateDoc(doc(db, 'sellers', targetId), sellerUpdate);
+
+        await updateDoc(doc(db, 'users', user.uid), {
+          firstName: this.formData.personalInfo.firstName,
+          lastName: this.formData.personalInfo.lastName,
+          contactNumber: this.formData.personalInfo.contact,
+          address: this.formData.personalInfo.address
+        });
+
+        this.showNotification('Profile Updated', 'Your seller profile has been saved.', 'success', 4000);
+      } catch (e) {
+        console.error('Save failed:', e);
+        this.showNotification('Save Failed', e?.message || 'Please try again.', 'error', 6000);
+      } finally {
+        this.isSubmitting = false;
+      }
+    }
   }
-}
+};
 </script>
 
 <style scoped>
-.edit-profile {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background-color: #f5f5f5;
-}
-
-.header {
-  display: flex;
-  align-items: center;
-  padding: 20px 15px;
-  background-color: #2e5c31;
-  color: white;
-}
-
-.back-button {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  background: none;
-  border: none;
-  cursor: pointer;
-  margin-right: 10px;
-}
-
-.header h1 {
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.profile-content {
-  flex: 1;
-  overflow-y: auto;
-  background-color: #f5f5f5;
-}
+* { box-sizing: border-box; }
+body { overflow-x: hidden; }
 
 .loading-container, .error-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 200px;
-  text-align: center;
-  color: #666;
-}
-
-.spinner {
-  animation: spin 1s linear infinite;
-  margin-bottom: 15px;
-}
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
-
-.error-icon {
-  color: #e74c3c;
-  margin-bottom: 15px;
-}
-
-.retry-button {
-  margin-top: 15px;
-  padding: 8px 20px;
-  background-color: #2e5c31;
-  color: white;
-  border: none;
-  border-radius: 20px;
-  cursor: pointer;
-}
-
-.profile-picture-section {
-  background-color: white;
-  padding: 30px 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin-bottom: 20px;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
-}
-
-.profile-picture {
-  position: relative;
-  width: 100px;
-  height: 100px;
-  border-radius: 50%;
-  overflow: hidden;
-  margin-bottom: 15px;
-  border: 3px solid #2e5c31;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: #f0f0f0;
-}
-
-.profile-picture img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.default-icon {
-  color: #aaa;
-}
-
-.change-photo-btn {
-  position: absolute;
-  bottom: 0;
-  right: 0;
-  width: 32px;
-  height: 32px;
-  background-color: #2e5c31;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-  border: none;
-  cursor: pointer;
-}
-
-.profile-picture-section h2 {
-  font-size: 18px;
-  font-weight: 600;
-  margin: 0 0 5px 0;
-  color: #333;
-}
-
-.profile-picture-section p {
-  font-size: 14px;
-  color: #666;
-  margin: 0;
-}
-
-.content {
-  flex: 1;
-  padding: 20px 15px;
-  overflow-y: auto;
-}
-
-/* Progress Bar Styles */
-.progress-container {
-  margin-bottom: 25px;
-}
-
-.progress-bar {
-  width: 100%;
-  height: 8px;
-  background-color: #e0e0e0;
-  border-radius: 4px;
-  overflow: hidden;
-  margin-bottom: 20px;
-}
-
-.progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #2e5c31 0%, #4a8a4e 100%);
-  border-radius: 4px;
-  transition: width 0.3s ease;
-}
-
-.step-indicators {
-  display: flex;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.step-indicator {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  flex: 1;
-  min-width: 80px;
-}
-
-.step-indicator.active .step-number {
-  background-color: #2e5c31;
-  color: white;
-}
-
-.step-indicator.current .step-number {
-  background-color: #4a8a4e;
-  color: white;
-  transform: scale(1.1);
-}
-
-.step-number {
-  width: 35px;
-  height: 35px;
-  border-radius: 50%;
-  background-color: #e0e0e0;
-  color: #999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 600;
-  font-size: 14px;
-  transition: all 0.3s ease;
-  margin-bottom: 5px;
-}
-
-.step-name {
-  font-size: 12px;
-  color: #666;
-  text-align: center;
-  font-weight: 500;
-}
-
-.step-indicator.active .step-name {
-  color: #2e5c31;
-  font-weight: 600;
-}
-
-/* Form Styles */
-.form-container {
-  background-color: white;
-  border-radius: 10px;
-  padding: 25px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  margin-bottom: 20px;
-}
-
-.form-step h2 {
-  color: #2e5c31;
-  font-size: 20px;
-  font-weight: 600;
-  margin-bottom: 10px;
-}
-
-.step-description {
-  color: #666;
-  margin-bottom: 25px;
-  line-height: 1.5;
-}
-
-.form-group {
-  margin-bottom: 20px;
-}
-
-.form-group label {
-  display: block;
-  font-weight: 500;
-  margin-bottom: 5px;
-  color: #333;
-}
-
-.form-group input,
-.form-group select,
-.form-group textarea {
-  width: 100%;
-  padding: 12px 15px;
-  border: 2px solid #e0e0e0;
-  border-radius: 8px;
-  font-size: 14px;
-  transition: border-color 0.3s ease;
-  box-sizing: border-box;
-}
-
-.form-group input:focus,
-.form-group select:focus,
-.form-group textarea:focus {
-  border-color: #2e5c31;
-  outline: none;
-}
-
-.form-group input:disabled {
-  background-color: #f5f5f5;
-  cursor: not-allowed;
-}
-
-.checkbox-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.checkbox-group input[type="checkbox"] {
-  width: auto;
-  margin: 0;
-}
-
-.checkbox-group label {
-  margin: 0;
-  cursor: pointer;
-  font-weight: normal;
-}
-
-.password-input {
-  position: relative;
-}
-
-.toggle-password {
-  position: absolute;
-  right: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  background: none;
-  border: none;
-  color: #777;
-  cursor: pointer;
-  padding: 5px;
-}
-
-.error-message {
-  color: #e74c3c;
-  font-size: 12px;
-  margin-top: 5px;
-}
-
-/* Areas Covered Styles */
-.areas-covered-container {
-  margin-bottom: 15px;
-}
-
-.area-input-group {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.area-input {
-  flex: 1;
-}
-
-.remove-area-button {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background-color: #e74c3c;
-  color: white;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  font-weight: bold;
-}
-
-.add-area-button {
-  background-color: #2e5c31;
-  color: white;
-  border: none;
-  padding: 10px 15px;
-  border-radius: 5px;
-  cursor: pointer;
-  font-size: 14px;
-  transition: background-color 0.3s ease;
-}
-
-.add-area-button:hover {
-  background-color: #26492a;
-}
-
-/* Navigation Buttons */
-.form-navigation {
-  display: flex;
-  justify-content: space-between;
-  gap: 15px;
-  margin-top: 20px;
-}
-
-.prev-button,
-.next-button,
-.submit-button {
-  padding: 12px 25px;
-  border: none;
-  border-radius: 8px;
-  font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.prev-button {
-  background-color: #f1f1f1;
-  color: #666;
-}
-
-.next-button,
-.submit-button {
-  background-color: #2e5c31;
-  color: white;
-  margin-left: auto;
-}
-
-.prev-button:hover {
-  background-color: #e5e5e5;
-}
-
-.next-button:hover,
-.submit-button:hover {
-  background-color: #26492a;
-}
-
-.submit-button:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-
-/* Document Upload Styles */
-.document-upload-container {
-  border: 2px dashed #e0e0e0;
-  border-radius: 8px;
-  padding: 20px;
-  text-align: center;
-  transition: border-color 0.3s ease;
-}
-
-.document-upload-container:hover {
-  border-color: #2e5c31;
-}
-
-.upload-options {
-  display: flex;
-  justify-content: center;
-  gap: 10px;
-  margin-bottom: 15px;
-}
-
-.upload-option-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 20px;
-  background-color: #2e5c31;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  transition: background-color 0.3s ease;
-}
-
-.upload-option-btn:hover {
-  background-color: #26492a;
-}
-
-.file-preview {
-  position: relative;
-  margin-top: 15px;
-  padding: 15px;
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
-  background-color: #f9f9f9;
-}
-
-.document-preview-image {
-  max-width: 200px;
-  max-height: 150px;
-  border-radius: 4px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-.document-file-info {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  justify-content: center;
-  color: #666;
-}
-
-.remove-file-btn {
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background-color: #e74c3c;
-  color: white;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-}
-
-.file-help {
-  font-size: 12px;
-  color: #666;
-  margin-top: 10px;
-  margin-bottom: 0;
-}
-
-/* Dropdown Checkbox Styles */
-.dropdown-checkbox {
-  position: relative;
-  margin-bottom: 10px;
-}
-
-.dropdown-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 15px;
-  border: 2px solid #e0e0e0;
-  border-radius: 8px;
-  cursor: pointer;
-  background-color: white;
-  font-size: 14px;
-  transition: border-color 0.3s ease;
-}
-
-.dropdown-header:hover {
-  border-color: #2e5c31;
-}
-
-.dropdown-header .lucide-chevron-down {
-  transition: transform 0.3s ease;
-}
-
-.dropdown-header .lucide-chevron-down.rotate-180 {
-  transform: rotate(180deg);
-}
-
-.dropdown-content {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  background-color: white;
-  border: 2px solid #e0e0e0;
-  border-top: none;
-  border-radius: 0 0 8px 8px;
-  max-height: 200px;
-  overflow-y: auto;
-  z-index: 1000;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-}
-
-.dropdown-content .checkbox-group {
-  display: flex;
-  align-items: center;
-  padding: 10px 15px;
-  border-bottom: 1px solid #f0f0f0;
-  gap: 10px;
-}
-
-.dropdown-content .checkbox-group:last-child {
-  border-bottom: none;
-}
-
-.dropdown-content .checkbox-group:hover {
-  background-color: #f8f9fa;
-}
-
-.dropdown-content .checkbox-group input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  cursor: pointer;
-}
-
-.dropdown-content .checkbox-group label {
-  margin: 0;
-  font-weight: normal;
-  cursor: pointer;
-  flex: 1;
-  font-size: 14px;
-}
-
-.alert-box {
-  padding: 12px 15px;
-  margin: 15px;
-  border-radius: 8px;
-  font-size: 14px;
-  text-align: center;
-}
-
-.success {
-  background-color: #d4edda;
-  color: #155724;
-  border: 1px solid #c3e6cb;
-}
-
-.error {
-  background-color: #f8d7da;
-  color: #721c24;
-  border: 1px solid #f5c6cb;
-}
-
-@media (max-width: 600px) {
-  .step-indicators {
-    gap: 5px;
-  }
-  
-  .step-indicator {
-    min-width: 60px;
-  }
-  
-  .step-number {
-    width: 30px;
-    height: 30px;
-    font-size: 12px;
-  }
-  
-  .step-name {
-    font-size: 10px;
-  }
-  
-  .form-navigation {
-    flex-direction: column;
-  }
-  
-  .next-button,
-  .submit-button {
-    margin-left: 0;
-  }
-  
-  .dropdown-content {
-    max-height: 150px;
-  }
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #666;
+}
+.spinner { animation: spin 1s linear infinite; }
+@keyframes spin { 0%{transform:rotate(0)}100%{transform:rotate(360deg)} }
+.error-icon { color: #ef4444; }
+
+.custom-notification { position: fixed; top: 20px; right: 20px; max-width: 400px; min-width: 300px; z-index: 9999; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,.12); backdrop-filter: blur(10px); animation: slideInRight .3s ease-out; overflow: hidden; }
+.custom-notification.success { background: linear-gradient(135deg,#10b981,#059669); border:1px solid rgba(16,185,129,.3); }
+.custom-notification.error { background: linear-gradient(135deg,#ef4444,#dc2626); border:1px solid rgba(239,68,68,.3); }
+.custom-notification.warning { background: linear-gradient(135deg,#f59e0b,#d97706); border:1px solid rgba(245,158,11,.3); }
+.custom-notification.info { background: linear-gradient(135deg,#3b82f6,#2563eb); border:1px solid rgba(59,130,246,.3); }
+.notification-content { padding: 20px; color: white; }
+.notification-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px; }
+.notification-title { font-size:16px; font-weight:600; margin:0; line-height:1.2; }
+.notification-close { background: rgba(255,255,255,.2); border:none; color:white; width:24px; height:24px; border-radius:50%; cursor:pointer; font-size:16px; display:flex; align-items:center; justify-content:center; margin-left:12px; transition: background .2s ease; }
+.notification-close:hover { background: rgba(255,255,255,.3); }
+.notification-body p { margin:0; font-size:14px; line-height:1.5; opacity:.95; }
+@keyframes slideInRight { from { transform: translateX(100%); opacity:0;} to { transform: translateX(0); opacity:1;} }
+
+.supplier-form-page { min-height: 100vh; display: flex; flex-direction: column; background-color: #f5f5f5; width: 100%; padding: 0; overflow-x: hidden; }
+.header { display:flex; align-items:center; padding:20px 15px; background-color:#2e5c31; color:white; }
+.back-button { width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:white; margin-right:10px; background: transparent; border: none; }
+.header h1 { font-size:18px; font-weight:600; }
+.content { flex:1; padding:10px; overflow-y:auto; overflow-x:hidden; width:100%; max-width:800px; margin:0 auto; }
+
+.progress-container { margin-bottom:25px; }
+.progress-bar { height:6px; background-color:#e0e0e0; border-radius:3px; margin-bottom:15px; overflow:hidden; }
+.progress-fill { height:100%; background-color:#2e5c31; transition: width .3s ease; }
+.step-indicators { display:flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding:10px 0; overflow:visible; }
+.step-indicator { display:flex; flex-direction:column; align-items:center; flex:1; min-width:80px; max-width:120px; cursor:pointer; opacity:.5; transition: all .3s ease; padding:5px; }
+.step-indicator.active { opacity:1; }
+.step-indicator.current { color:#2e5c31; font-weight:600; }
+.step-number { width:24px; height:24px; border-radius:50%; background:#e0e0e0; display:flex; align-items:center; justify-content:center; font-size:12px; margin-bottom:5px; transition: all .3s ease; }
+.step-indicator.active .step-number { background:#2e5c31; color:#fff; }
+.step-name { font-size:11px; text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+
+.form-container { background:#fff; border-radius:10px; padding:25px; box-shadow:0 2px 8px rgba(0,0,0,.05); margin-bottom:20px; width:100%; max-width:100%; box-sizing: border-box; }
+.form-step h2 { font-size:20px; font-weight:600; color:#333; margin-bottom:5px; }
+.step-description { font-size:14px; color:#666; margin-bottom:20px; }
+.form-group { margin-bottom:20px; position:relative; width:100%; }
+.form-group label { display:block; font-size:14px; font-weight:500; color:#333; margin-bottom:8px; width:100%; }
+.form-group input[type="text"], .form-group input[type="email"], .form-group input[type="tel"], .form-group input[type="number"], .form-group select, .form-group textarea { width:100%; padding:12px 15px; border:1px solid #ddd; border-radius:8px; font-size:14px; transition:border-color .3s ease; background:#fff; box-sizing: border-box; max-width:100%; }
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color:#2e5c31; outline:none; }
+.checkbox-group { display:flex; align-items:center; gap:10px; }
+.checkbox-group input[type="checkbox"] { width:18px; height:18px; accent-color:#2e5c31; }
+.dropdown-checkbox { position:relative; width:100%; }
+.dropdown-header { display:flex; justify-content:space-between; align-items:center; padding:12px 15px; border:1px solid #ddd; border-radius:8px; background:#fff; cursor:pointer; font-size:14px; }
+.dropdown-header .rotate-180 { transform: rotate(180deg); }
+.dropdown-content { position:absolute; top:100%; left:0; width:100%; max-height:200px; overflow-y:auto; background:#fff; border:1px solid #ddd; border-radius:0 0 8px 8px; z-index:10; box-shadow: 0 4px 8px rgba(0,0,0,.1); }
+.dropdown-content .checkbox-group { padding:10px 15px; border-bottom:1px solid #eee; }
+.dropdown-content .checkbox-group:last-child { border-bottom:none; }
+
+.document-upload-container { width:100%; max-width:100%; border:2px dashed #ddd; border-radius:8px; padding:20px; background:#fafafa; transition: all .3s ease; }
+.document-upload-container:hover { border-color:#2e5c31; background:#f8f9fa; }
+.upload-options { display:flex; gap:12px; margin-bottom:15px; flex-wrap:wrap; }
+.upload-option-btn { display:flex; align-items:center; gap:8px; padding:12px 16px; border:2px solid #2e5c31; border-radius:8px; background:#fff; color:#2e5c31; font-weight:500; cursor:pointer; transition: all .2s ease; flex:1; min-width:120px; justify-content:center; }
+.upload-option-btn:hover { background:#2e5c31; color:#fff; }
+.file-input { display:none; }
+.file-preview { position:relative; width:100%; max-width:300px; margin:15px 0; border:1px solid #ddd; border-radius:8px; overflow:hidden; background:#fff; }
+.document-preview-image { width:100%; height:auto; max-height:200px; object-fit:cover; }
+.document-file-info { display:flex; align-items:center; gap:10px; padding:15px; color:#333; }
+.remove-file-btn { position:absolute; top:5px; right:5px; width:30px; height:30px; border-radius:50%; border:none; background:rgba(220,53,69,.9); color:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center; transition: all .2s ease; }
+.remove-file-btn:hover { background: rgba(220,53,69,1); transform: scale(1.1); }
+.file-help { font-size:12px; color:#999; margin-top:5px; }
+.qr-placeholder { border:1px dashed #cbd5e1; border-radius:8px; padding:16px; color:#64748b; }
+
+.form-navigation { display:flex; justify-content:space-between; align-items:center; width:100%; margin-top:20px; padding:0 10px; }
+.prev-button, .next-button, .submit-button { display:flex; align-items:center; gap:8px; padding:12px 20px; border-radius:8px; font-size:14px; font-weight:600; transition: all .2s ease; border:none; cursor:pointer; }
+.prev-button { background:#f0f0f0; color:#333; }
+.next-button, .submit-button { background:#2e5c31; color:#fff; margin-left:auto; }
+.submit-button:disabled { background:#ccc; cursor:not-allowed; }
+.loading-spinner { display:inline-block; width:16px; height:16px; border:2px solid transparent; border-top:2px solid currentColor; border-radius:50%; animation: spin 1s linear infinite; margin-right:8px; }
+
+@media (max-width: 768px) {
+  .content { padding:8px; max-width:100%; }
+  .form-container { padding:20px; box-shadow:none; border-radius:8px; }
+  .upload-options { flex-direction:column; gap:10px; }
+  .upload-option-btn { width:100%; justify-content:center; padding:14px; }
+  .file-preview { max-width:100%; }
 }
 </style>

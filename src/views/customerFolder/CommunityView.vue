@@ -11,40 +11,13 @@
           >
         </div>
         <div class="header-buttons">
-          <button class="icon-button" @click="navigateToPath('/cart')">
+          <button class="icon-button" @click="navigateToPath('/cart')" aria-label="Cart">
             <ShoppingCart :size="18" />
             <span v-if="cartItems.length > 0" class="cart-badge">{{ cartItems.length }}</span>
           </button>
-          <button class="icon-button profile-icon" @click="toggleProfileMenu" ref="profileRef">
-            <User :size="18" />
+          <button class="icon-button" @click="toggleMyPosts" :class="{ active: myPostsOnly }" aria-label="My Posts">
+            <FileText :size="18" />
           </button>
-          
-          <div class="profile-dropdown" v-if="showProfileMenu">
-            <div class="dropdown-header">
-              <div class="user-avatar">
-                <img v-if="currentUser?.photoURL" :src="currentUser.photoURL" alt="User avatar">
-                <User v-else :size="24" />
-              </div>
-              <div class="user-info">
-                <h4>{{ currentUser?.displayName || 'Anonymous' }}</h4>
-                <p>{{ currentUser?.email }}</p>
-              </div>
-            </div>
-            <div class="dropdown-menu">
-              <button @click="navigateToPath('/profile')">
-                <User :size="16" />
-                <span>My Profile</span>
-              </button>
-              <button @click="navigateToPath('/my-posts')" v-if="currentUser">
-                <FileText :size="16" />
-                <span>My Posts</span>
-              </button>
-              <button @click="signOut">
-                <LogOut :size="16" />
-                <span>Sign Out</span>
-              </button>
-            </div>
-          </div>
         </div>
       </div>
       
@@ -59,14 +32,14 @@
       <div class="create-post-section">
         <div class="post-composer" @click="openNewPostModal">
           <div class="composer-avatar">
-            <img v-if="currentUser?.photoURL" :src="currentUser.photoURL" alt="Your avatar">
+            <img v-if="userProfile?.profileImageUrl" :src="userProfile.profileImageUrl" alt="Your avatar">
             <User v-else :size="20" />
           </div>
           <div class="composer-input">
             <span>What's on your mind? Ask about products or share updates...</span>
           </div>
           <div class="composer-actions">
-            <Image :size="20" class="action-icon" />
+            <Image :size="32" class="action-icon" />
           </div>
         </div>
       </div>
@@ -76,6 +49,12 @@
         <div class="filter-tag" v-if="searchQuery">
           Search: "{{ searchQuery }}"
           <button class="clear-filter" @click="clearSearch">
+            <X :size="12" />
+          </button>
+        </div>
+        <div class="filter-tag" v-if="myPostsOnly">
+          My Posts
+          <button class="clear-filter" @click="myPostsOnly = false">
             <X :size="12" />
           </button>
         </div>
@@ -166,20 +145,22 @@
                 <span v-if="post.angryCount > 0" class="reaction-emoji">😠</span>
               </div>
               <span class="reaction-count">{{ getTotalReactions(post) }}</span>
-              <span class="comment-count" v-if="post.replyCount > 0">
+              <span class="comment-count clickable" v-if="post.replyCount > 0" @click.stop="openComments(post.id)">
                 {{ post.replyCount }} {{ post.replyCount === 1 ? 'comment' : 'comments' }}
               </span>
             </div>
             
             <!-- Action Buttons -->
             <div class="post-actions">
-              <div class="action-button reaction-button" @click.stop="toggleReactionMenu(post.id)">
-                <ThumbsUp 
-                  :size="16" 
-                  :class="{ 'reacted': getUserReaction(post.id) }"
-                  :fill="getUserReaction(post.id) ? getReactionColor(getUserReaction(post.id)) : 'none'"
-                  :color="getUserReaction(post.id) ? getReactionColor(getUserReaction(post.id)) : 'currentColor'"
-                />
+              <div 
+                class="action-button reaction-button"
+                @click.stop.prevent="onReactionClick(post.id)"
+                @touchstart.passive="onReactionTouchStart(post.id)"
+                @touchend.prevent="onReactionTouchEnd(post.id)"
+                @touchcancel.prevent="onReactionTouchCancel(post.id)"
+              >
+                <span v-if="getUserReaction(post.id)" class="reaction-emoji-inline">{{ getReactionEmoji(getUserReaction(post.id)) }}</span>
+                <ThumbsUp v-else :size="16" />
                 <span 
                   :class="{ 'reacted': getUserReaction(post.id) }" 
                   :style="{ color: getUserReaction(post.id) ? getReactionColor(getUserReaction(post.id)) : '' }"
@@ -216,7 +197,7 @@
                 </div>
               </div>
               
-              <div class="action-button" @click.stop="toggleComments(post.id)">
+              <div class="action-button" @click.stop="openComments(post.id)">
                 <MessageSquare :size="16" />
                 <span>Comment</span>
               </div>
@@ -227,55 +208,7 @@
               </div>
             </div>
             
-            <!-- Comments Section -->
-            <div class="comments-section" v-if="expandedComments.includes(post.id)">
-              <div class="comment-composer">
-                <div class="comment-avatar">
-                  <img v-if="currentUser?.photoURL" :src="currentUser.photoURL" alt="Your avatar">
-                  <User v-else :size="16" />
-                </div>
-                <div class="comment-input-container">
-                  <input 
-                    type="text" 
-                    v-model="commentTexts[post.id]"
-                    :placeholder="`Comment as ${currentUser?.displayName || 'Anonymous'}...`"
-                    @keyup.enter="submitComment(post.id)"
-                    class="comment-input"
-                  >
-                  <button 
-                    v-if="commentTexts[post.id]?.trim()"
-                    @click="submitComment(post.id)"
-                    class="send-comment-btn"
-                  >
-                    <Send :size="14" />
-                  </button>
-                </div>
-              </div>
-              
-              <div class="comments-list" v-if="post.replies && post.replies.length > 0">
-                <div 
-                  class="comment-item" 
-                  v-for="(comment, index) in post.replies.slice().reverse()" 
-                  :key="index"
-                >
-                  <div class="comment-avatar">
-                    <img v-if="comment.userPhoto" :src="comment.userPhoto" alt="Commenter avatar">
-                    <User v-else :size="16" />
-                  </div>
-                  <div class="comment-content">
-                    <div class="comment-bubble">
-                      <div class="comment-author">{{ comment.userName }}</div>
-                      <div class="comment-text">{{ comment.content }}</div>
-                    </div>
-                    <div class="comment-actions">
-                      <span class="comment-time">{{ formatTime(comment.createdAt) }}</span>
-                      <button class="comment-action">Like</button>
-                      <button class="comment-action">Reply</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <!-- Inline comments removed; comments open in modal -->
           </div>
         </div>
       </div>
@@ -294,7 +227,7 @@
         <div class="modal-body">
           <div class="post-author">
             <div class="author-avatar">
-              <img v-if="currentUser?.photoURL && !newPost.isAnonymous" :src="currentUser.photoURL" alt="Your avatar">
+              <img v-if="userProfile?.profileImageUrl && !newPost.isAnonymous" :src="userProfile.profileImageUrl" alt="Your avatar">
               <User v-else :size="24" />
             </div>
             <div class="author-info">
@@ -350,7 +283,7 @@
           <div class="form-group">
             <textarea 
               v-model="newPost.content" 
-              :placeholder="selectedProduct ? 'Ask your question about this product...' : 'What\'s on your mind? Share updates, ask about products, or start a discussion...'"
+              :placeholder="selectedProduct ? 'Ask your question about this product...' : 'What\'s on your mind? Share updates, ask about products, or start a discussion...'",
               rows="4"
               class="post-textarea"
             ></textarea>
@@ -446,6 +379,77 @@
     
     <BottomNavigation active-tab="/community" @navigate="handleBottomNavigation" />
   </div>
+
+  <!-- Comments Modal -->
+  <div class="modal-overlay" v-if="activeCommentsPostId" @click="closeComments">
+    <div class="modal-content comments-modal" @click.stop>
+      <div class="modal-header">
+        <h3>Comments</h3>
+        <button class="close-modal" @click="closeComments">
+          <X :size="20" />
+        </button>
+      </div>
+      <div class="modal-body comments-body">
+        <div class="comments-list" v-if="currentPost?.replies?.length">
+          <div class="comment-item" v-for="(comment, index) in currentPost.replies.slice().reverse()" :key="index">
+            <div class="comment-avatar">
+              <img v-if="comment.userPhoto" :src="comment.userPhoto" alt="Commenter avatar">
+              <User v-else :size="16" />
+            </div>
+            <div class="comment-content clean">
+              <div class="comment-author">{{ comment.userName }}</div>
+              <div class="comment-text">{{ comment.content }}</div>
+              <div class="comment-actions">
+                <span class="comment-time">{{ formatTime(comment.createdAt) }}</span>
+                <button class="comment-action">Like</button>
+                <button class="comment-action">Reply</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="comment-composer">
+          <div class="comment-avatar">
+            <img v-if="userProfile?.profileImageUrl" :src="userProfile.profileImageUrl" alt="Your avatar">
+            <User v-else :size="16" />
+          </div>
+          <div class="comment-input-container">
+            <input
+              type="text"
+              v-model="commentTexts[activeCommentsPostId]"
+              :placeholder="`Comment as ${getCurrentUserName()}...`"
+              @keyup.enter="submitComment(activeCommentsPostId)"
+              class="comment-input"
+            />
+            <button
+              v-if="commentTexts[activeCommentsPostId]?.trim()"
+              @click="submitComment(activeCommentsPostId)"
+              class="send-comment-btn"
+            >
+              <Send :size="14" />
+            </button>
+          </div>
+        </div>
+        <div class="comment-identity-toggle responsive">
+          <button
+            class="comment-id-btn"
+            :class="{ active: !commentAsAnonymous[activeCommentsPostId] }"
+            @click.prevent="setCommentAnonymous(activeCommentsPostId, false)"
+          >
+            <User :size="12" />
+            <span>Me</span>
+          </button>
+          <button
+            class="comment-id-btn"
+            :class="{ active: !!commentAsAnonymous[activeCommentsPostId] }"
+            @click.prevent="setCommentAnonymous(activeCommentsPostId, true)"
+          >
+            <EyeOff :size="12" />
+            <span>Anonymous</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -489,8 +493,7 @@ import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
 
 const router = useRouter();
 const route = useRoute();
-const showProfileMenu = ref(false);
-const profileRef = ref(null);
+const myPostsOnly = ref(false);
 const cartItems = ref([]);
 const isLoading = ref(true);
 const posts = ref([]);
@@ -498,14 +501,19 @@ const searchQuery = ref('');
 const showNewPostModal = ref(false);
 const fileInput = ref(null);
 const currentUser = ref(null);
+const userProfile = ref(null); // Firestore users/{uid}
 const activeReactionMenu = ref(null);
 const activePostMenu = ref(null);
-const expandedComments = ref([]);
+const expandedComments = ref([]); // legacy, no longer used inline
+const activeCommentsPostId = ref(null);
+const currentPost = computed(() => posts.value.find(p => p.id === activeCommentsPostId.value));
 const commentTexts = reactive({});
+const commentAsAnonymous = reactive({});
 const showProductSelector = ref(false);
 const productSearchQuery = ref('');
 const availableProducts = ref([]);
 const selectedProduct = ref(null);
+const productId = ref(null);
 
 const newPost = ref({
   content: '',
@@ -531,6 +539,9 @@ const filteredPosts = computed(() => {
       (post.productName && post.productName.toLowerCase().includes(query))
     );
   }
+  if (myPostsOnly.value && currentUser.value) {
+    result = result.filter(post => post.userId === currentUser.value.uid);
+  }
   
   return result.sort((a, b) => {
     const aTime = a.createdAt?.toDate?.() || new Date(a.createdAt);
@@ -550,7 +561,7 @@ const filteredProducts = computed(() => {
 });
 
 const hasActiveFilters = computed(() => {
-  return searchQuery.value;
+  return !!searchQuery.value || !!myPostsOnly.value;
 });
 
 const formatTime = (timestamp) => {
@@ -562,7 +573,7 @@ const formatTime = (timestamp) => {
     if (typeof timestamp === 'object' && timestamp.toDate) {
       date = timestamp.toDate();
     } else if (timestamp instanceof Date) {
-      date = timestamp;
+      date = date;
     } else if (typeof timestamp === 'number') {
       date = new Date(timestamp);
     } else {
@@ -614,6 +625,11 @@ const getReactionColor = (reactionType) => {
     angry: '#e74c3c'
   };
   return colors[reactionType] || '#4a90e2';
+};
+
+const getReactionEmoji = (reactionType) => {
+  const map = { like: '👍', love: '❤️', laugh: '😂', wow: '😮', sad: '😢', angry: '😠' };
+  return map[reactionType] || '👍';
 };
 
 const getProductPrice = (product) => {
@@ -706,6 +722,7 @@ const clearSearch = () => {
 
 const clearAllFilters = () => {
   searchQuery.value = '';
+  myPostsOnly.value = false;
 };
 
 const openNewPostModal = () => {
@@ -732,6 +749,17 @@ const closeNewPostModal = () => {
   }
 };
 
+const getCurrentUserName = () => {
+  const up = userProfile.value;
+  if (up?.username) return up.username;
+  const full = [up?.firstName, up?.lastName].filter(Boolean).join(' ');
+  return full || currentUser.value?.displayName || 'Anonymous Farmer';
+};
+
+const getCurrentUserPhoto = () => {
+  return userProfile.value?.profileImageUrl || currentUser.value?.photoURL || null;
+};
+
 const submitPost = async () => {
   if (!isValidPost.value) return;
   
@@ -745,8 +773,8 @@ const submitPost = async () => {
     const postData = {
       content: newPost.value.content,
       userId: user.uid,
-      userName: newPost.value.isAnonymous ? 'Anonymous Farmer' : (user.displayName || 'Anonymous Farmer'),
-      userPhoto: newPost.value.isAnonymous ? null : (user.photoURL || null),
+      userName: newPost.value.isAnonymous ? 'Anonymous Farmer' : getCurrentUserName(),
+      userPhoto: newPost.value.isAnonymous ? null : getCurrentUserPhoto(),
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       image: newPost.value.image,
@@ -778,12 +806,39 @@ const submitPost = async () => {
   }
 };
 
-const toggleReactionMenu = (postId) => {
-  if (!currentUser.value) {
-    router.push('/login');
-    return;
-  }
+let longPressTimer = null;
+let longPressTriggered = false;
+let suppressClickUntil = 0;
+
+const onReactionClick = (postId) => {
+  if (!currentUser.value) { router.push('/login'); return; }
+  if (Date.now() < suppressClickUntil) { return; }
+  if (longPressTriggered) { longPressTriggered = false; return; }
+  // desktop/single tap: open/close menu
   activeReactionMenu.value = activeReactionMenu.value === postId ? null : postId;
+};
+
+const onReactionTouchStart = (postId) => {
+  longPressTriggered = false;
+  clearTimeout(longPressTimer);
+  longPressTimer = setTimeout(() => {
+    longPressTriggered = true;
+    activeReactionMenu.value = postId;
+  }, 400);
+};
+
+const onReactionTouchEnd = (postId) => {
+  clearTimeout(longPressTimer);
+  if (!longPressTriggered) {
+    // quick tap: toggle Like
+    addReaction(postId, 'like');
+  suppressClickUntil = Date.now() + 300;
+  }
+};
+
+const onReactionTouchCancel = () => {
+  clearTimeout(longPressTimer);
+  longPressTriggered = false;
 };
 
 const togglePostMenu = (postId) => {
@@ -836,18 +891,13 @@ const addReaction = async (postId, reactionType) => {
   }
 };
 
-const toggleComments = (postId) => {
-  if (!currentUser.value) {
-    router.push('/login');
-    return;
-  }
-  
-  const index = expandedComments.value.indexOf(postId);
-  if (index > -1) {
-    expandedComments.value.splice(index, 1);
-  } else {
-    expandedComments.value.push(postId);
-  }
+const openComments = (postId) => {
+  if (!currentUser.value) { router.push('/login'); return; }
+  activeCommentsPostId.value = postId;
+};
+
+const closeComments = () => {
+  activeCommentsPostId.value = null;
 };
 
 const submitComment = async (postId) => {
@@ -856,11 +906,12 @@ const submitComment = async (postId) => {
   
   try {
     const user = auth.currentUser;
+    const asAnon = !!commentAsAnonymous[postId];
     const commentData = {
       content: commentText,
-      userId: user.uid,
-      userName: user.displayName || 'Anonymous Farmer',
-      userPhoto: user.photoURL || null,
+      userId: asAnon ? null : user.uid,
+      userName: asAnon ? 'Anonymous Farmer' : getCurrentUserName(),
+      userPhoto: asAnon ? null : getCurrentUserPhoto(),
       createdAt: Date.now()
     };
     
@@ -870,7 +921,8 @@ const submitComment = async (postId) => {
       replyCount: increment(1)
     });
     
-    commentTexts[postId] = '';
+  commentTexts[postId] = '';
+  commentAsAnonymous[postId] = asAnon; // keep last choice per thread
   } catch (error) {
     console.error('Error submitting comment:', error);
     alert('Failed to submit comment. Please try again.');
@@ -913,12 +965,12 @@ const getUserReaction = (postId) => {
 };
 
 const navigateToPath = (path) => {
-  showProfileMenu.value = false;
   router.push(path);
 };
 
-const toggleProfileMenu = () => {
-  showProfileMenu.value = !showProfileMenu.value;
+const toggleMyPosts = () => {
+  if (!currentUser.value) { router.push('/login'); return; }
+  myPostsOnly.value = !myPostsOnly.value;
 };
 
 const handleBottomNavigation = (path) => {
@@ -926,15 +978,16 @@ const handleBottomNavigation = (path) => {
 };
 
 const handleClickOutside = (event) => {
-  if (profileRef.value && !profileRef.value.contains(event.target)) {
-    showProfileMenu.value = false;
-  }
   if (!event.target.closest('.reaction-button')) {
     activeReactionMenu.value = null;
   }
   if (!event.target.closest('.post-menu')) {
     activePostMenu.value = null;
   }
+};
+
+const setCommentAnonymous = (postId, value) => {
+  commentAsAnonymous[postId] = value;
 };
 
 const signOut = async () => {
@@ -979,8 +1032,19 @@ const fetchPosts = async () => {
       isLoading.value = false;
     });
     
-    onAuthStateChanged(auth, (user) => {
+    onAuthStateChanged(auth, async (user) => {
       currentUser.value = user;
+      if (user) {
+        try {
+          const snap = await getDoc(doc(db, 'users', user.uid));
+          userProfile.value = snap.exists() ? snap.data() : null;
+        } catch (err) {
+          console.error('Error loading user profile:', err);
+          userProfile.value = null;
+        }
+      } else {
+        userProfile.value = null;
+      }
     });
     
     return unsubscribePosts;
@@ -1010,7 +1074,8 @@ onMounted(async () => {
   
   // Check for product reference from route params
   if (route.query.productId) {
-    fetchProductForReference(route.query.productId);
+    productId.value = route.query.productId;
+    fetchProductForReference(productId.value);
   }
 });
 
@@ -1061,13 +1126,12 @@ onUnmounted(() => {
 }
 
 .search-bar {
-  flex: 1;
-  background-color: white;
-  border-radius: 20px;
   display: flex;
   align-items: center;
+  background-color: white;
+  border-radius: 20px;
   padding: 0 15px;
-  height: 40px;
+  flex: 1;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
@@ -1108,6 +1172,11 @@ onUnmounted(() => {
 .icon-button:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.icon-button.active {
+  background-color: #e6f0ff;
+  color: #1b6eff;
 }
 
 .cart-badge {
@@ -1526,6 +1595,7 @@ onUnmounted(() => {
 
 .post-content {
   padding: 15px;
+  text-align: left; /* ensure left alignment */
 }
 
 .post-text {
@@ -1535,6 +1605,7 @@ onUnmounted(() => {
   line-height: 1.4;
   white-space: pre-wrap;
   word-wrap: break-word;
+  text-align: left; /* ensure left alignment */
 }
 
 /* Product Reference Card - Responsive */
@@ -1608,6 +1679,25 @@ onUnmounted(() => {
   width: 100%;
   height: auto;
   display: block;
+}
+
+/* Desktop and larger screens - limit image size */
+@media (min-width: 768px) {
+  .post-image img {
+    /* Center the image and make it slightly bigger */
+    max-width: 500px;
+    width: auto;
+    margin: 0 auto;
+    display: block;
+  }
+  
+  .image-preview {
+    /* Center the preview image and make it slightly bigger */
+    max-width: 500px;
+    width: auto;
+    margin: 0 auto;
+    display: block;
+  }
 }
 
 /* Post Engagement */
@@ -1732,6 +1822,11 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
+.reaction-emoji-inline {
+  font-size: 16px;
+  line-height: 1;
+}
+
 /* Comments Section */
 .comments-section {
   border-top: 1px solid #e4e6ea;
@@ -1743,6 +1838,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   margin-bottom: 12px;
+  flex-wrap: wrap; /* allow wrapping on small screens */
 }
 
 .comment-avatar {
@@ -1764,7 +1860,7 @@ onUnmounted(() => {
 }
 
 .comment-input-container {
-  flex: 1;
+  flex: 1 1 200px; /* grow and shrink, with a sensible min width */
   display: flex;
   align-items: center;
   background-color: #f0f2f5;
@@ -1772,13 +1868,29 @@ onUnmounted(() => {
   padding: 8px 12px;
 }
 
-.comment-input {
-  flex: 1;
-  border: none;
-  background: none;
-  outline: none;
-  font-size: 14px;
-  color: #050505;
+
+.comment-identity-toggle {
+  display: flex;
+  gap: 6px;
+  margin-left: 8px;
+}
+
+.comment-id-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  border-radius: 12px;
+  border: 1px solid #dce1e7;
+  background: #fff;
+  color: #5a6472;
+}
+
+.comment-id-btn.active {
+  background: #e6f0ff;
+  color: #1b6eff;
+  border-color: #c8dcff;
 }
 
 .send-comment-btn {
@@ -1812,6 +1924,7 @@ onUnmounted(() => {
 .comment-content {
   flex: 1;
   min-width: 0;
+  text-align: left;
 }
 
 .comment-bubble {
@@ -1835,6 +1948,13 @@ onUnmounted(() => {
   color: #050505;
   line-height: 1.3;
   word-wrap: break-word;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.comment-count.clickable {
+  cursor: pointer;
+  text-decoration: underline;
 }
 
 .comment-actions {
@@ -2311,6 +2431,16 @@ onUnmounted(() => {
 
 /* Mobile First - Small screens (320px - 480px) */
 @media (max-width: 480px) {
+  .comment-composer {
+    gap: 6px;
+  }
+  .comment-input-container {
+    border-radius: 16px;
+    padding: 6px 10px;
+  }
+  .comment-bubble {
+    border-radius: 14px;
+  }
   .community-page {
     padding-bottom: 70px;
   }
