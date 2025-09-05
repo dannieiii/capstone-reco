@@ -5,14 +5,15 @@
       <div class="main-content">
         <header class="header">
           <div class="header-title">
+            <!-- Added back button to the left of Edit Profile title -->
+            <button @click="goBack" class="back-button">
+              <ChevronLeft size="20" />
+            </button>
             <h2>Edit Profile</h2>
           </div>
           
           <div class="user-profile">
-            <div class="notification-icon">
-              <Bell size="20" />
-              <span class="notification-badge">5</span>
-            </div>
+            <!-- Removed notification icon section -->
             <div class="avatar">
               <UserCircle size="32" class="profile-icon" />
             </div>
@@ -88,8 +89,8 @@
   import { db } from '@/firebase/firebaseConfig';
   import { doc, getDoc, updateDoc } from 'firebase/firestore';
   import AdminSidebar from '@/components/AdminSidebar.vue';
-  import { Bell, UserCircle } from 'lucide-vue-next';
-  
+  import { ChevronLeft, UserCircle } from 'lucide-vue-next';
+
   // Firebase Auth
   const auth = getAuth();
   
@@ -176,6 +177,10 @@
     }
   };
   
+  const goBack = () => {
+    window.history.back();
+  };
+
   onMounted(() => {
     fetchAdminData(); // Fetch admin data when the component is mounted
   });
@@ -204,6 +209,13 @@
     border-bottom: 1px solid #e5e7eb;
   }
   
+  .header-title {
+    /* Added flex layout for back button and title */
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  
   .header-title h2 {
     margin: 0;
     font-size: 24px;
@@ -215,36 +227,6 @@
     display: flex;
     align-items: center;
     gap: 15px;
-  }
-  
-  .notification-icon {
-    position: relative;
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background-color: #f3f4f6;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #6b7280;
-    cursor: pointer;
-    border: 1px solid #e5e7eb;
-  }
-  
-  .notification-badge {
-    position: absolute;
-    top: -5px;
-    right: -5px;
-    background-color: #ef4444;
-    color: white;
-    font-size: 12px;
-    padding: 2px 6px;
-    border-radius: 50%;
-    width: 18px;
-    height: 18px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
   }
   
   .avatar {
@@ -334,6 +316,31 @@
   
   .save-btn:active,
   .change-password-btn:active {
+    transform: translateY(1px);
+  }
+  
+  /* Added back button styles */
+  .back-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background-color: #ffffff;
+    color: #6b7280;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .back-button:hover {
+    background-color: #f9fafb;
+    border-color: #d1d5db;
+    color: #374151;
+  }
+
+  .back-button:active {
     transform: translateY(1px);
   }
   </style>

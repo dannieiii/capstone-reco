@@ -11,8 +11,8 @@
 
   <!-- Sidebar -->
   <div class="sidebar-overlay" 
-       v-if="isMobile && isMobileSidebarOpen" 
-       @click="toggleMobileSidebar"></div>
+       @click="toggleMobileSidebar" 
+       v-if="isMobile && isMobileSidebarOpen"></div>
   
   <div class="sidebar" :class="{ 
     'dark-mode': isDarkMode, 
@@ -78,7 +78,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import { 
   LayoutDashboard, 
   Sprout, 
@@ -99,7 +99,7 @@ import {
 import { db } from '@/firebase/firebaseConfig';
 import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
 import { getAuth, signOut } from 'firebase/auth';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 
 const props = defineProps({
   initialActiveItem: {
@@ -107,6 +107,9 @@ const props = defineProps({
     default: 'Dashboard'
   }
 });
+
+const router = useRouter();
+const route = useRoute();
 
 const activeItem = ref(props.initialActiveItem);
 const isDarkMode = ref(false);
@@ -117,7 +120,33 @@ const mobileBreakpoint = 768;
 const unreadNotifications = ref(0);
 const chatMessages = ref(); // Keep existing chat badge
 const showLogoutModal = ref(false);
-const router = useRouter();
+
+const getActiveItemFromRoute = (currentRoute) => {
+  const path = currentRoute.path;
+  
+  // Map routes to menu item names
+  const routeMap = {
+    '/seller-dashboard': 'Dashboard',
+    '/products': 'Farm Products',
+    '/seller/forecasting': 'Forecasting',
+    '/harvest-calendar': 'Harvest Calendar',
+    '/seller/customer': 'Customers',
+    '/seller/analytics': 'Analytics',
+    '/orders': 'Orders',
+    '/notifications': 'Notifications',
+    '/seller/chat': 'Chat',
+    '/seller/feedbacks': 'Feedback',
+    '/seller/reports': 'Reports',
+    '/sellerhelp': 'Help'
+  };
+  
+  return routeMap[path] || 'Dashboard';
+};
+
+watch(() => route.path, (newPath) => {
+  const newActiveItem = getActiveItemFromRoute(route);
+  activeItem.value = newActiveItem;
+}, { immediate: true });
 
 // Real-time notification listener
 const setupNotificationListener = () => {
@@ -240,7 +269,7 @@ const setDarkMode = () => {
 const toggleSidebar = () => {
   isCollapsed.value = !isCollapsed.value;
   localStorage.setItem('sidebarCollapsed', isCollapsed.value);
-x  // Broadcast sidebar state so pages can adjust their layout
+  // Broadcast sidebar state so pages can adjust their layout
   try {
     window.dispatchEvent(new CustomEvent('sidebar:toggled', { detail: { collapsed: isCollapsed.value } }));
   } catch {}
@@ -266,6 +295,8 @@ onMounted(() => {
   
   // Setup notification listener
   setupNotificationListener();
+
+  activeItem.value = getActiveItemFromRoute(route);
 
   // Emit initial state for consumers
   try {

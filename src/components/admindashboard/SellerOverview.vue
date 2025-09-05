@@ -113,7 +113,6 @@ onMounted(() => {
 });
 </script>
 
-
 <style scoped>
 .dashboard-card {
   background-color: #fff;
@@ -170,6 +169,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 10px;
+  text-align: left;
 }
 
 .seller-avatar {
@@ -180,6 +180,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .profile-icon {
@@ -188,11 +189,13 @@ onMounted(() => {
 
 .seller-name {
   font-weight: 500;
+  text-align: left;
 }
 
 .seller-location {
   font-size: 0.8rem;
   color: #6b7280;
+  text-align: left;
 }
 
 .status-badge {

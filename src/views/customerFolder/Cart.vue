@@ -410,6 +410,8 @@ export default {
   align-items: center;
   justify-content: center;
   color: white;
+  background: none;
+  border: none;
 }
 
 .header h1 {

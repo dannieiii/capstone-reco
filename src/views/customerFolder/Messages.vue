@@ -148,6 +148,7 @@
           v-model="newMessage"
           @keyup.enter="sendMessage"
           :disabled="sendingMessage"
+          class="chat-input-input"
         />
         <button class="send-button" @click="sendMessage" :disabled="!newMessage.trim() || sendingMessage">
           <Send size="18" />
@@ -159,6 +160,9 @@
       <Bell size="20" />
       <span>{{ notificationMessage }}</span>
     </div>
+
+    <!-- Added BottomNavigation component, only show when not in individual chat view -->
+    <BottomNavigation v-if="!selectedConversation" />
   </div>
 </template>
 
@@ -193,6 +197,7 @@ import {
 import { onAuthStateChanged } from 'firebase/auth';
 import { db, auth } from '@/firebase/firebaseConfig';
 import { useRouter } from 'vue-router';
+import BottomNavigation from '@/components/BottomNavigation.vue';
 
 export default {
   name: 'MessagesPage',
@@ -205,6 +210,7 @@ export default {
     Paperclip,
     Send,
     Bell,
+    BottomNavigation
   },
   setup() {
     const router = useRouter();
@@ -322,9 +328,8 @@ export default {
         }
       }
 
-  // Prefer actual full names; avoid generic placeholders like "User"
-  const sellerNameResolved = bestSellerName(sellerData);
-  const sellerName = sellerNameResolved || sellerData.farmName || 'Seller';
+      const sellerNameResolved = bestSellerName(sellerData);
+      const sellerName = sellerNameResolved || sellerData.farmName || 'Seller';
 
       return {
         id: docSnapshot.id,
@@ -333,7 +338,7 @@ export default {
         sellerId: otherId,
         sellerName,
         farmName: sellerData.farmName || '',
-  sellerPhoto: sellerData.profileImageUrl || sellerData.photoURL || '',
+        sellerPhoto: sellerData.profileImageUrl || sellerData.photoURL || '',
         sellerOnline: !!sellerData.online,
         lastMessage: data.lastMessage || '',
         lastMessageTime: data.lastMessageTime || data.updatedAt || data.createdAt || null,
@@ -705,7 +710,7 @@ export default {
 
 <style scoped>
 .messages-page {
-  height: 100%;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   padding-bottom: 80px;
@@ -884,6 +889,7 @@ export default {
   padding: 20px 15px;
   background-color: #f5f5f5;
   overflow-y: auto;
+  min-height: 0;
 }
 
 .tabs {
@@ -1069,6 +1075,7 @@ export default {
   z-index: 100;
   display: flex;
   flex-direction: column;
+  height: 100vh;
 }
 
 .chat-header {
@@ -1120,6 +1127,7 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-height: 0;
 }
 
 .chat-message {
@@ -1174,13 +1182,34 @@ export default {
   border-top: 1px solid #eee;
 }
 
-.chat-input input {
+.chat-input-input {
   flex: 1;
-  padding: 10px 15px;
+  padding: 12px 15px;
   border: 1px solid #ddd;
-  border-radius: 20px;
+  border-radius: 25px;
   font-size: 14px;
-  margin: 0 10px;
+  outline: none;
+  margin-right: 10px;
+  background-color: #f8f9fa;
+}
+
+.chat-input-input:focus {
+  border-color: #2e5c31;
+  background-color: white;
+}
+
+@media (min-width: 768px) {
+  .chat-input {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 101;
+  }
+  
+  .chat-messages {
+    padding-bottom: 80px; /* Add space for fixed input */
+  }
 }
 
 .send-button {

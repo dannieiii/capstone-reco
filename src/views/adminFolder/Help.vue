@@ -3,8 +3,8 @@
     <AdminSidebar />
     <div class="main-content">
       <div class="page-header">
-        <h1 class="page-title">Help & Support</h1>
-        <p class="page-subtitle">Find answers and get assistance</p>
+        <h1 class="page-title">Help & Documentation</h1>
+        <p class="page-subtitle">Find answers and learn how to use the system</p>
       </div>
       
       <div class="help-container">
@@ -103,35 +103,7 @@
           </div>
           
           <div class="help-sidebar">
-            <div class="contact-card">
-              <h3>Need More Help?</h3>
-              <p>Can't find what you're looking for? Contact our support team.</p>
-              <div class="contact-methods">
-                <div class="contact-method">
-                  <Mail size="18" />
-                  <div>
-                    <strong>Email Support</strong>
-                    <p>support@farmxpress.com</p>
-                  </div>
-                </div>
-                <div class="contact-method">
-                  <Phone size="18" />
-                  <div>
-                    <strong>Phone Support</strong>
-                    <p>+63 123 456 7890</p>
-                  </div>
-                </div>
-                <div class="contact-method">
-                  <MessageCircle size="18" />
-                  <div>
-                    <strong>Live Chat</strong>
-                    <p>Available 24/7</p>
-                  </div>
-                </div>
-              </div>
-              <button class="btn-primary">Contact Support</button>
-            </div>
-            
+            <!-- Removed contact card, kept only FAQ section -->
             <div class="faq-card">
               <h3>Frequently Asked Questions</h3>
               <div class="faq-item">
@@ -145,6 +117,35 @@
               <div class="faq-item">
                 <h4>Can I customize the dashboard?</h4>
                 <p>Yes, you can rearrange widgets and customize the layout in Settings.</p>
+              </div>
+              <div class="faq-item">
+                <h4>How do I approve new seller registrations?</h4>
+                <p>Navigate to User Management > Pending Approvals to review and approve new sellers.</p>
+              </div>
+              <div class="faq-item">
+                <h4>Where can I view system performance metrics?</h4>
+                <p>System performance data is available in the Reports & Analytics section under System Health.</p>
+              </div>
+              <div class="faq-item">
+                <h4>How do I set up automated notifications?</h4>
+                <p>Go to System Settings > Notification Settings to configure automated alerts and notifications.</p>
+              </div>
+            </div>
+            
+            <!-- Added additional help resources section -->
+            <div class="resources-card">
+              <h3>Additional Resources</h3>
+              <div class="resource-item">
+                <h4>System Requirements</h4>
+                <p>Minimum browser and system requirements for optimal performance.</p>
+              </div>
+              <div class="resource-item">
+                <h4>Keyboard Shortcuts</h4>
+                <p>Learn useful keyboard shortcuts to navigate the admin panel efficiently.</p>
+              </div>
+              <div class="resource-item">
+                <h4>Data Export Guidelines</h4>
+                <p>Best practices for exporting and handling system data.</p>
               </div>
             </div>
           </div>
@@ -163,10 +164,7 @@ import {
   Store, 
   BarChart, 
   Settings, 
-  AlertCircle, 
-  Mail, 
-  Phone, 
-  MessageCircle 
+  AlertCircle
 } from 'lucide-vue-next';
 </script>
 
@@ -307,53 +305,48 @@ import {
   gap: 1.5rem;
 }
 
-.contact-card, .faq-card {
+.faq-card, .resources-card {
   background: white;
   padding: 1.5rem;
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-.contact-card h3, .faq-card h3 {
+.faq-card h3, .resources-card h3 {
   font-size: 1.25rem;
   font-weight: 600;
   color: #2e5c31;
   margin: 0 0 1rem 0;
 }
 
-.contact-card p {
+.faq-card p {
   color: #6c757d;
   margin: 0 0 1.5rem 0;
 }
 
-.contact-methods {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
+.resource-item {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e9ecef;
 }
 
-.contact-method {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
+.resource-item:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
 }
 
-.contact-method svg {
+.resource-item h4 {
+  font-size: 0.95rem;
+  font-weight: 600;
   color: #2e5c31;
-  margin-top: 0.25rem;
+  margin: 0 0 0.5rem 0;
 }
 
-.contact-method strong {
-  display: block;
-  color: #2e5c31;
-  font-size: 0.9rem;
-}
-
-.contact-method p {
-  margin: 0;
+.resource-item p {
   font-size: 0.85rem;
   color: #6c757d;
+  margin: 0;
 }
 
 .btn-primary {
