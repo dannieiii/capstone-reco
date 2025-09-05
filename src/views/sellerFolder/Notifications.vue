@@ -114,7 +114,7 @@
             <div class="notification-content">
               <div class="notification-header">
                 <h4 class="notification-title">{{ notification.title }}</h4>
-                <span class="notification-time">{{ formatTime(notification.createdAt) }}</span>
+                <span class="notification-time">{{ formatTime(notification.createdAt || notification.timestamp) }}</span>
               </div>
               
               <!-- Short preview message for price warnings -->
@@ -135,22 +135,22 @@
                   <div class="price-change-item">
                     <span class="label">Min Price</span>
                     <div class="prices">
-                      <span class="num old">₱{{ formatPrice(notification.priceDetails?.minPrice?.old) }}</span>
+                      <span class="num old">₱{{ fmtNotifPrice(notification, 'min', 'old') }}</span>
                       <span class="arrow">→</span>
-                      <span class="num new">₱{{ formatPrice(notification.priceDetails?.minPrice?.new) }}</span>
-                      <span class="delta" :class="getPriceChangeClass(notification.priceDetails?.minPrice?.old, notification.priceDetails?.minPrice?.new)">
-                        {{ getPriceChangePercentage(notification.priceDetails?.minPrice?.old, notification.priceDetails?.minPrice?.new) }}
+                      <span class="num new">₱{{ fmtNotifPrice(notification, 'min', 'new') }}</span>
+                      <span class="delta" :class="priceChangeClassFromNotif(notification, 'min')">
+                        {{ priceChangePercentFromNotif(notification, 'min') }}
                       </span>
                     </div>
                   </div>
                   <div class="price-change-item">
                     <span class="label">Max Price</span>
                     <div class="prices">
-                      <span class="num old">₱{{ formatPrice(notification.priceDetails?.maxPrice?.old) }}</span>
+                      <span class="num old">₱{{ fmtNotifPrice(notification, 'max', 'old') }}</span>
                       <span class="arrow">→</span>
-                      <span class="num new">₱{{ formatPrice(notification.priceDetails?.maxPrice?.new) }}</span>
-                      <span class="delta" :class="getPriceChangeClass(notification.priceDetails?.maxPrice?.old, notification.priceDetails?.maxPrice?.new)">
-                        {{ getPriceChangePercentage(notification.priceDetails?.maxPrice?.old, notification.priceDetails?.maxPrice?.new) }}
+                      <span class="num new">₱{{ fmtNotifPrice(notification, 'max', 'new') }}</span>
+                      <span class="delta" :class="priceChangeClassFromNotif(notification, 'max')">
+                        {{ priceChangePercentFromNotif(notification, 'max') }}
                       </span>
                     </div>
                   </div>
@@ -350,6 +350,7 @@ import {
   ChevronLeft, 
   ChevronRight,
   Package,
+  CreditCard,
   AlertCircle,
   AlertTriangle,
   Info,
@@ -390,6 +391,11 @@ const retryCount = ref(0);
 const maxRetries = 3;
 const showWarningModal = ref(false);
 const selectedWarning = ref(null);
+// Maintain separate buckets so we can merge notifications from sellerId and userId listeners
+const notifBySeller = ref([]);
+const notifByUser = ref([]);
+let unsubscribeBySeller = null;
+let unsubscribeByUser = null;
 
 // Computed properties
 const unreadCount = computed(() => 
@@ -408,11 +414,16 @@ const priceUpdatesCount = computed(() =>
   notifications.value.filter(n => n.type === 'price_update' && !n.read).length
 );
 
+const paymentNoticesCount = computed(() =>
+  notifications.value.filter(n => n.type === 'order' && (n.subtype === 'payment_proof' || n.subtype === 'payment_received') && !n.read).length
+);
+
 const filterOptions = computed(() => [
   { key: 'all', label: 'All', icon: List, count: notifications.value.length },
   { key: 'unread', label: 'Unread', icon: Bell, count: unreadCount.value },
   { key: 'new_order', label: 'New Orders', icon: ShoppingCart, count: newOrdersCount.value },
   { key: 'price_update', label: 'Price Updates', icon: TrendingUp, count: priceUpdatesCount.value },
+  { key: 'payments', label: 'Payments', icon: CreditCard, count: paymentNoticesCount.value },
   { key: 'price_warning', label: 'Price Warnings', icon: AlertTriangle, count: priceWarningsCount.value }
 ]);
 
@@ -421,7 +432,11 @@ const filteredNotifications = computed(() => {
   
   if (activeFilter.value === 'unread') {
     filtered = filtered.filter(n => !n.read);
-  } else if (activeFilter.value !== 'all') {
+  } else if (activeFilter.value === 'new_order') {
+    filtered = filtered.filter(n => n.type === 'new_order');
+  } else if (activeFilter.value === 'payments') {
+    filtered = filtered.filter(n => n.type === 'order' && (n.subtype === 'payment_proof' || n.subtype === 'payment_received'));
+  } else if (activeFilter.value === 'price_update' || activeFilter.value === 'price_warning') {
     filtered = filtered.filter(n => n.type === activeFilter.value);
   }
   
@@ -464,14 +479,15 @@ const closeWarningModal = () => {
   selectedWarning.value = null;
 };
 
-const getNotificationIcon = (type) => {
+const getNotificationIcon = (type, subtype) => {
   const icons = {
     new_order: ShoppingCart,
     status_update: Package,
     alert: AlertCircle,
     analytics: TrendingUp,
     price_warning: AlertTriangle,
-    price_update: TrendingUp,
+  price_update: TrendingUp,
+  order: subtype === 'payment_proof' || subtype === 'payment_received' ? CreditCard : Package,
     product_deactivated: Ban,
     product_reactivated: Check
   };
@@ -500,6 +516,7 @@ const getNotificationIconClass = (notification) => {
   if (notification.type === 'product_deactivated') return `${baseClass} deactivated-icon`;
   if (notification.type === 'new_order') return `${baseClass} order-icon`;
   if (notification.type === 'price_update') return `${baseClass} price-update-icon`;
+  if (notification.type === 'order' && (notification.subtype === 'payment_proof' || notification.subtype === 'payment_received')) return `${baseClass} price-update-icon`;
   return baseClass;
 };
 
@@ -540,6 +557,46 @@ const getPriceChangePercentage = (oldPrice, newPrice) => {
   const percentage = ((newPrice - oldPrice) / oldPrice) * 100;
   const sign = percentage > 0 ? '+' : '';
   return `${sign}${percentage.toFixed(1)}%`;
+};
+
+// Helpers to normalize priceDetails from different senders (legacy/new schemas)
+const pickNumber = (v, fallback = 0) => {
+  const n = Number(v);
+  return isFinite(n) ? n : fallback;
+};
+
+const extractNotifPrices = (notification) => {
+  const pd = notification?.priceDetails || {};
+  // Possible shapes:
+  // 1) { minPrice: { old, new }, maxPrice: { old, new } }
+  // 2) { oldPrice, newPrice, priceType, minPrice, maxPrice }
+  // 3) { minPrice, maxPrice } numbers only
+  const oldMin = pd.minPrice?.old ?? pd.oldMinPrice ?? (pd.priceType === 'Min Price' ? pd.oldPrice : undefined);
+  const newMin = pd.minPrice?.new ?? pd.newMinPrice ?? pd.minPrice ?? (pd.priceType === 'Min Price' ? pd.newPrice : undefined);
+  const oldMax = pd.maxPrice?.old ?? pd.oldMaxPrice ?? (pd.priceType === 'Max Price' ? pd.oldPrice : undefined);
+  const newMax = pd.maxPrice?.new ?? pd.newMaxPrice ?? pd.maxPrice ?? (pd.priceType === 'Max Price' ? pd.newPrice : undefined);
+  return {
+    min: { old: pickNumber(oldMin, 0), new: pickNumber(newMin, 0) },
+    max: { old: pickNumber(oldMax, 0), new: pickNumber(newMax, 0) }
+  };
+};
+
+const fmtNotifPrice = (notification, which, kind) => {
+  const prices = extractNotifPrices(notification);
+  const val = which === 'min' ? prices.min[kind] : prices.max[kind];
+  return formatPrice(val);
+};
+
+const priceChangeClassFromNotif = (notification, which) => {
+  const prices = extractNotifPrices(notification);
+  const p = which === 'min' ? prices.min : prices.max;
+  return getPriceChangeClass(p.old, p.new);
+};
+
+const priceChangePercentFromNotif = (notification, which) => {
+  const prices = extractNotifPrices(notification);
+  const p = which === 'min' ? prices.min : prices.max;
+  return getPriceChangePercentage(p.old, p.new);
 };
 
 const formatTime = (timestamp) => {
@@ -585,6 +642,7 @@ const getEmptyMessage = () => {
     all: "You don't have any notifications yet.",
     unread: "All caught up! No unread notifications.",
     new_order: "No new orders at the moment.",
+  payments: "No payment notices yet.",
     price_update: "No price updates available.",
     price_warning: "No price warnings."
   };
@@ -691,114 +749,92 @@ const setupNotificationListener = async () => {
     return;
   }
 
-  currentSellerId.value = currentUser.uid;
-
+  // Resolve seller document ID for this user
+  let sellerDocId = null;
   try {
-    // Query for notifications sent to this seller - try both userId and sellerId fields
-    const notificationQuery = query(
-      collection(db, 'notifications'),
-      where('sellerId', '==', currentUser.uid),
-      limit(100)
-    );
-
-    // Alternative query for userId field (fallback)
-    const alternativeQuery = query(
-      collection(db, 'notifications'),
-      where('userId', '==', currentUser.uid),
-      limit(100)
-    );
-
-    // Try to get data first to test if basic query works
-    const snapshot = await getDocs(notificationQuery);
-    console.log(`Found ${snapshot.docs.length} notifications with sellerId`);
-
-    // Try alternative query if first one returns empty
-    let finalQuery = notificationQuery;
-    if (snapshot.docs.length === 0) {
-      const altSnapshot = await getDocs(alternativeQuery);
-      console.log(`Found ${altSnapshot.docs.length} notifications with userId`);
-      if (altSnapshot.docs.length > 0) {
-        finalQuery = alternativeQuery;
-      }
+    const sellersSnap = await getDocs(query(collection(db, 'sellers'), where('userId', '==', currentUser.uid), limit(1)));
+    if (!sellersSnap.empty) {
+      sellerDocId = sellersSnap.docs[0].id;
+      currentSellerId.value = sellerDocId;
+    } else {
+      // fallback to user uid if no seller doc
+      currentSellerId.value = currentUser.uid;
     }
-
-    // If basic query works, set up the listener
-    const unsubscribe = onSnapshot(
-      finalQuery,
-      (snapshot) => {
-        const notificationData = snapshot.docs.map(doc => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            ...data,
-            // Ensure read status is computed correctly
-            read: data.read || !!data.readAt
-          };
-        });
-        
-        // Sort on client side since we can't use complex orderBy without index
-        // Try multiple timestamp field names for compatibility
-        notifications.value = notificationData.sort((a, b) => {
-          const dateA = a.createdAt?.toDate?.() || a.timestamp?.toDate?.() || new Date(a.createdAt || a.timestamp || 0);
-          const dateB = b.createdAt?.toDate?.() || b.timestamp?.toDate?.() || new Date(b.createdAt || b.timestamp || 0);
-          return dateB - dateA;
-        });
-        
-        loading.value = false;
-        connectionError.value = false;
-        retryCount.value = 0;
-        
-        console.log(`✅ Loaded ${notifications.value.length} notifications successfully`);
-        console.log(`📊 Notification breakdown:`, {
-          total: notifications.value.length,
-          unread: notifications.value.filter(n => !n.read).length,
-          priceUpdates: notifications.value.filter(n => n.type === 'price_update').length,
-          priceWarnings: notifications.value.filter(n => n.type === 'price_warning').length,
-          newOrders: notifications.value.filter(n => n.type === 'new_order').length
-        });
-        
-        // Log recent price update notifications for debugging
-        const recentPriceUpdates = notifications.value
-          .filter(n => n.type === 'price_update')
-          .slice(0, 3);
-        if (recentPriceUpdates.length > 0) {
-          console.log(`🔔 Recent price update notifications:`, recentPriceUpdates.map(n => ({
-            product: n.productName,
-            unit: n.unit,
-            message: n.message,
-            timestamp: n.createdAt || n.timestamp
-          })));
-        }
-      },
-      (error) => {
-        console.error('Error in notification listener:', error);
-        loading.value = false;
-        connectionError.value = true;
-        
-        // If it's an index error, provide helpful message
-        if (error.code === 'failed-precondition') {
-          console.warn('Firestore index required. Using fallback query...');
-        }
-        
-        // Auto-retry with exponential backoff
-        if (retryCount.value < maxRetries) {
-          const delay = Math.pow(2, retryCount.value) * 1000; // 1s, 2s, 4s
-          setTimeout(() => {
-            console.log(`Retrying connection (attempt ${retryCount.value + 1}/${maxRetries})...`);
-            retryConnection();
-          }, delay);
-        }
-      }
-    );
-
-    return unsubscribe;
-  } catch (error) {
-    console.error('Error setting up notification listener:', error);
-    loading.value = false;
-    connectionError.value = true;
-    notifications.value = [];
-    return null;
+  } catch (e) {
+    console.warn('Failed to resolve seller document ID, falling back to uid', e);
+    currentSellerId.value = currentUser.uid;
   }
+
+  // Cleanup existing listeners if any
+  if (unsubscribeBySeller) { try { unsubscribeBySeller(); } catch {} unsubscribeBySeller = null; }
+  if (unsubscribeByUser) { try { unsubscribeByUser(); } catch {} unsubscribeByUser = null; }
+
+  const sellerQuery = query(
+    collection(db, 'notifications'),
+    where('sellerId', '==', sellerDocId || currentUser.uid),
+    limit(200)
+  );
+  const userQuery = query(
+    collection(db, 'notifications'),
+    where('userId', '==', currentUser.uid),
+    limit(200)
+  );
+
+  const sortAndMerge = () => {
+    // Merge arrays and dedupe by id
+    const map = new Map();
+    [...notifBySeller.value, ...notifByUser.value].forEach(n => {
+      map.set(n.id, n);
+    });
+    const merged = Array.from(map.values());
+    notifications.value = merged.sort((a, b) => {
+      const aDate = a.createdAt?.toDate?.() || a.timestamp?.toDate?.() || new Date(a.createdAt || a.timestamp || 0);
+      const bDate = b.createdAt?.toDate?.() || b.timestamp?.toDate?.() || new Date(b.createdAt || b.timestamp || 0);
+      return bDate - aDate;
+    });
+    loading.value = false;
+    connectionError.value = false;
+    retryCount.value = 0;
+    console.log(`✅ Loaded ${notifications.value.length} notifications (merged)`);
+  };
+
+  const mapSnapshot = (snapshot) => snapshot.docs.map(doc => {
+    const data = doc.data();
+    return {
+      id: doc.id,
+      ...data,
+      read: data.read || !!data.readAt
+    };
+  });
+
+  unsubscribeBySeller = onSnapshot(
+    sellerQuery,
+    (snapshot) => {
+      notifBySeller.value = mapSnapshot(snapshot);
+      sortAndMerge();
+    },
+    (error) => {
+      console.error('Error in sellerId notifications listener:', error);
+      connectionError.value = true;
+    }
+  );
+
+  unsubscribeByUser = onSnapshot(
+    userQuery,
+    (snapshot) => {
+      notifByUser.value = mapSnapshot(snapshot);
+      sortAndMerge();
+    },
+    (error) => {
+      console.error('Error in userId notifications listener:', error);
+      connectionError.value = true;
+    }
+  );
+
+  return () => {
+    if (unsubscribeBySeller) unsubscribeBySeller();
+    if (unsubscribeByUser) unsubscribeByUser();
+  };
 };
 
 onMounted(async () => {
@@ -814,9 +850,8 @@ onMounted(async () => {
   
   // Cleanup on unmount
   onUnmounted(() => {
-    if (unsubscribe && typeof unsubscribe === 'function') {
-      unsubscribe();
-    }
+  try { if (unsubscribeBySeller) unsubscribeBySeller(); } catch {}
+  try { if (unsubscribeByUser) unsubscribeByUser(); } catch {}
   });
 });
 </script>

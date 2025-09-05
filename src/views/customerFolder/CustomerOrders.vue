@@ -77,6 +77,15 @@
             </div>
             
             <div class="order-actions">
+              <!-- Pay/Paid button for manual GCash: green when proof uploaded, orange otherwise -->
+              <button 
+                v-if="order.paymentMethod === 'gcash_manual' && order.paymentStatus !== 'paid' && (order.paymentStatus === 'unpaid' || order.paymentStatus === 'availing' || order.paymentStatus === 'paying' || order.status === 'Pending')"
+                :class="['pay-btn', order.paymentProofUrl ? 'pay-btn-green' : '']"
+                @click="payOrder(order)"
+              >
+                <ShoppingCart size="14" />
+                {{ order.paymentProofUrl ? 'Paid' : 'Pay Order' }}
+              </button>
               <button 
                 v-if="order.status === 'Processing' || order.status === 'Shipped'" 
                 class="track-btn"
@@ -343,6 +352,7 @@ import {
   FileText
 } from 'lucide-vue-next';
 import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { useRouter } from 'vue-router';
 import { getFirestore, collection, query, where, getDocs, getDoc, doc, onSnapshot } from 'firebase/firestore';
 import { serverTimestamp, updateDoc, runTransaction, increment } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
@@ -368,6 +378,7 @@ export default {
     FileText
   },
   setup() {
+  const router = useRouter();
     const loading = ref(true);
     const activeTab = ref('active');
     const orders = ref([]);
@@ -559,6 +570,7 @@ export default {
           ordersData.push({
             id: orderDoc.id,
             orderCode: data.orderCode,
+            groupOrderCode: data.groupOrderCode,
             productId: data.productId,
             productImage: data.productImage,
             productName: data.productName,
@@ -567,6 +579,9 @@ export default {
             unitPrice: data.unitPrice,
             totalPrice: data.totalPrice,
             status: data.status,
+            paymentMethod: data.paymentMethod || data.payment_type || null,
+            paymentStatus: data.paymentStatus || data.payStatus || null,
+            paymentProofUrl: data.paymentProofUrl || null,
             createdAt: data.createdAt,
             userId: data.userId,
             sellerId: sellerId, // Add sellerId to order data
@@ -622,6 +637,7 @@ export default {
           ordersData.push({
             id: doc.id,
             orderCode: data.orderCode,
+            groupOrderCode: data.groupOrderCode,
             productId: data.productId,
             productImage: data.productImage,
             productName: data.productName,
@@ -630,6 +646,9 @@ export default {
             unitPrice: data.unitPrice,
             totalPrice: data.totalPrice,
             status: data.status,
+            paymentMethod: data.paymentMethod || data.payment_type || null,
+            paymentStatus: data.paymentStatus || data.payStatus || null,
+            paymentProofUrl: data.paymentProofUrl || null,
             createdAt: data.createdAt,
             userId: data.userId,
             sellerId: sellerId, // Add sellerId to order data
@@ -640,6 +659,12 @@ export default {
         
         orders.value = ordersData;
       });
+    };
+
+    const payOrder = (order) => {
+      const code = order.groupOrderCode || order.orderCode;
+      if (!code) return;
+      router.push({ path: '/payment/upload', query: { order: code } });
     };
 
     const getStatusMessage = (status) => {
@@ -1041,6 +1066,7 @@ export default {
       markAsReceived,
       cancelOrder,
       submitReview
+  , payOrder
     };
   }
 }
@@ -1364,6 +1390,18 @@ export default {
 .order-actions {
   display: flex;
   gap: 10px;
+}
+
+.pay-btn {
+  background-color: #fff3e0;
+  color: #f57722;
+  border: 1px solid #f57722;
+}
+
+.pay-btn-green {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+  border: 1px solid #2e7d32;
 }
 
 .track-btn, .reorder-btn, .cancel-btn, .review-btn, .reviewed-btn, .receive-btn, .refund-btn {

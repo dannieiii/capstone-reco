@@ -94,17 +94,6 @@
             <div class="card-period">Below DA minimum</div>
           </div>
         </div>
-        
-        <div class="summary-card">
-          <div class="card-icon">
-            <Store size="24" />
-          </div>
-          <div class="card-content">
-            <h3>Active Sellers</h3>
-            <div class="card-value">{{ sellersCount }}</div>
-            <div class="card-period">{{ flaggedSellers.length }} flagged</div>
-          </div>
-        </div>
       </div>
 
       <!-- Price Monitoring View -->
@@ -1555,7 +1544,7 @@ const generatePDFContent = () => {
   content += `- Total Products Monitored: ${monitoredProducts.value.length}\n`;
   content += `- Overpriced Products: ${overpricedProducts.value.length}\n`;
   content += `- Average Price Deviation: ${avgDeviation.value}\n`;
-  content += `- Active Sellers: ${sellersCount.value}\n\n`;
+  content += `\n`;
   
   content += 'DETAILED ANALYSIS:\n\n';
   

@@ -267,36 +267,53 @@
             </div>
           </div>
           <div class="modal-body">
-            <div class="order-info-section">
-              <div class="info-group">
-                <h3>Customer Information</h3>
-                <p><strong>Name:</strong> {{ selectedOrder.username }}</p>
-                <p><strong>User ID:</strong> {{ selectedOrder.userId }}</p>
+            <div class="order-details-grid">
+              <div class="details-left">
+                <div class="info-group">
+                  <h3>Customer Information</h3>
+                  <p><strong>Name:</strong> {{ selectedOrder.username }}</p>
+                </div>
+                
+                <div class="info-group">
+                  <h3>Delivery Information</h3>
+                  <p><strong>Address:</strong> {{ selectedOrder.Location?.address || getAddressDisplay(selectedOrder.Location) }}</p>
+                  <p v-if="selectedOrder.Location?.name"><strong>Name/Alias:</strong> {{ selectedOrder.Location.name }}</p>
+                  <p v-if="selectedOrder.Location?.locationNotes || selectedOrder.Location?.notes">
+                    <strong>Instructions:</strong> {{ selectedOrder.Location.locationNotes || selectedOrder.Location.notes }}
+                  </p>
+                  <p v-if="selectedOrder.deliveryOption"><strong>Delivery Option:</strong> {{ selectedOrder.deliveryOption }}</p>
+                  <p v-if="selectedOrder.deliveryFee"><strong>Delivery Fee:</strong> ₱{{ selectedOrder.deliveryFee.toFixed(2) }}</p>
+                </div>
+                
+                <div class="info-group">
+                  <h3>Order Details</h3>
+                  <p><strong>Date:</strong> {{ formatDateTime(selectedOrder.timestamp || selectedOrder.createdAt) }}</p>
+                  <p><strong>Status:</strong> 
+                    <span :class="['status-badge', normalizeStatusClass(selectedOrder.status)]">
+                      {{ selectedOrder.status }}
+                    </span>
+                  </p>
+                  <p><strong>Payment Method:</strong> {{ selectedOrder.paymentMethod || 'Cash on Delivery' }}</p>
+                  <p v-if="selectedOrder.gcashNumber"><strong>GCash Number:</strong> {{ selectedOrder.gcashNumber }}</p>
+                  <p><strong>Payment Status:</strong> {{ selectedOrder.payStatus || 'Unpaid' }}</p>
+                </div>
               </div>
               
-              <div class="info-group">
-                <h3>Delivery Information</h3>
-                <p><strong>Address:</strong> {{ selectedOrder.Location?.address || getAddressDisplay(selectedOrder.Location) }}</p>
-                <p v-if="selectedOrder.Location?.name"><strong>Name/Alias:</strong> {{ selectedOrder.Location.name }}</p>
-                <p v-if="selectedOrder.Location?.locationNotes || selectedOrder.Location?.notes">
-                  <strong>Instructions:</strong> {{ selectedOrder.Location.locationNotes || selectedOrder.Location.notes }}
-                </p>
-                <p v-if="selectedOrder.deliveryOption"><strong>Delivery Option:</strong> {{ selectedOrder.deliveryOption }}</p>
-                <p v-if="selectedOrder.deliveryFee"><strong>Delivery Fee:</strong> ₱{{ selectedOrder.deliveryFee.toFixed(2) }}</p>
-              </div>
-              
-              <div class="info-group">
-                <h3>Order Details</h3>
-                <p><strong>Date:</strong> {{ formatDateTime(selectedOrder.timestamp || selectedOrder.createdAt) }}</p>
-                <p><strong>Type:</strong> <span :class="['type-badge', orderTypeClass(selectedOrder.orderType, selectedOrder.isPreOrder)]">{{ orderTypeLabel(selectedOrder.orderType, selectedOrder.isPreOrder) }}</span></p>
-                <p><strong>Status:</strong> 
-                  <span :class="['status-badge', normalizeStatusClass(selectedOrder.status)]">
-                    {{ selectedOrder.status }}
-                  </span>
-                </p>
-                <p><strong>Payment Method:</strong> {{ selectedOrder.paymentMethod || 'Cash on Delivery' }}</p>
-                <p v-if="selectedOrder.gcashNumber"><strong>GCash Number:</strong> {{ selectedOrder.gcashNumber }}</p>
-                <p><strong>Payment Status:</strong> {{ selectedOrder.payStatus || 'Unpaid' }}</p>
+              <div class="details-right" v-if="selectedOrder.paymentProofUrl || selectedOrder.paymentProofNote">
+                <div class="info-group">
+                  <h3>Payment Proof</h3>
+                  <div v-if="selectedOrder.paymentProofUrl" class="proof-block">
+                    <p v-if="selectedOrder.paymentSenderName" class="proof-sender">
+                      <strong>Name of Sender:</strong> {{ selectedOrder.paymentSenderName }}
+                    </p>
+                    <strong>Reference Image:</strong>
+                    <div class="proof-image">
+                      <img :src="selectedOrder.paymentProofUrl" alt="Payment proof" />
+                    </div>
+                    <a :href="selectedOrder.paymentProofUrl" target="_blank" rel="noopener" class="view-link">Open full image</a>
+                  </div>
+                  <p v-if="selectedOrder.paymentProofNote" class="proof-note">Note: {{ selectedOrder.paymentProofNote }}</p>
+                </div>
               </div>
             </div>
             
@@ -1012,6 +1029,16 @@ const printReceipt = () => {
   // Format the date for the receipt
   const orderDate = formatDateTime(order.timestamp || order.createdAt);
   
+  // Determine payment status label for receipt
+  const paymentStatusDisplay = (() => {
+    const raw = (order.payStatus && order.payStatus !== 'unpaid') ? order.payStatus : (order.paymentStatus || 'unpaid');
+    if (!raw) return 'Unpaid';
+    const v = ('' + raw).toLowerCase();
+    if (v === 'availing') return 'Availing';
+    if (v === 'paying') return 'Paying';
+    return v.charAt(0).toUpperCase() + v.slice(1);
+  })();
+
   // Create receipt HTML content with escaped closing tags
   const receiptContent = `
     <!DOCTYPE html>
@@ -1076,6 +1103,7 @@ const printReceipt = () => {
             <h3>Order Details</h3>
             <p><strong>Status:</strong> <span class="status-badge status-${order.status.toLowerCase()}">${order.status}</span></p>
             <p><strong>Payment:</strong> ${order.paymentMethod || 'Cash on Delivery'}</p>
+            <p><strong>Payment Status:</strong> ${paymentStatusDisplay}</p>
             <p><strong>Order ID:</strong> ${order.id}</p>
           </div>
         </div>
@@ -1379,6 +1407,14 @@ const exportAsPDF = () => {
   color: #666;
   font-weight: 500;
 }
+
+/* Payment proof block */
+.proof-block { margin-top: 8px; }
+.proof-sender { margin: 0 0 6px 0; font-size: 13px; color: #374151; }
+.proof-image { margin-top: 6px; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; background: #fafafa; }
+.proof-image img { display: block; width: 100%; max-width: 360px; max-height: 280px; object-fit: contain; }
+.view-link { display: inline-block; margin-top: 6px; color: #2e5c31; text-decoration: underline; font-size: 13px; }
+.proof-note { margin-top: 4px; font-size: 12px; color: #4b5563; }
 
 /* Order type badges */
 .type-badge {
@@ -2089,6 +2125,15 @@ const exportAsPDF = () => {
   padding: 20px;
 }
 
+.order-details-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 24px;
+}
+
+.details-left, .details-right { min-width: 0; }
+.details-right { align-self: start; }
+
 .order-info-section {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -2394,9 +2439,8 @@ const exportAsPDF = () => {
     width: 100%;
   }
   
-  .order-info-section {
-    grid-template-columns: 1fr;
-  }
+  .order-details-grid { grid-template-columns: 1fr; }
+  .order-info-section { grid-template-columns: 1fr; }
   
   .modal-actions {
     flex-direction: column;

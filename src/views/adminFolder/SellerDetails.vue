@@ -126,9 +126,17 @@
               <div class="detail-item">
                 <span class="detail-label">Account Name</span>
                 <span class="detail-value">{{ seller.paymentInfo.accountName || 'N/A' }}</span>
-              </div>              <div class="detail-item">
+              </div>
+              <div class="detail-item">
                 <span class="detail-label">Account Number</span>
                 <span class="detail-value">{{ seller.paymentInfo.accountNumber || 'N/A' }}</span>
+              </div>
+              <div class="detail-item qr-cell">
+                <span class="detail-label">QR Code</span>
+                <div v-if="seller.paymentInfo && seller.paymentInfo.qrUrl" class="qr-thumb-wrap" title="GCash QR Code">
+                  <img :src="seller.paymentInfo.qrUrl" alt="GCash QR Code" class="qr-thumb" />
+                </div>
+                <span v-else class="detail-value">N/A</span>
               </div>
             </div>
           </div>          <!-- Verification Documents Section -->
@@ -708,6 +716,31 @@
     font-size: 1rem;
     color: #2c3e50;
     font-weight: 500;
+  }
+
+  /* QR Code thumbnail */
+  .qr-thumb-wrap {
+    border: 1px dashed #cbd5e1;
+    border-radius: 8px;
+    padding: 6px;
+    background: #fff;
+  display: inline-flex; /* keep content-sized */
+  align-self: flex-start; /* prevent stretching to full width in flex column */
+  width: auto;
+  }
+  .qr-thumb {
+    width: 72px;
+    height: 72px;
+    object-fit: contain;
+    display: block;
+  }
+
+  /* Align QR cell like other fields (label above, value/box left) */
+  .qr-cell {
+    align-items: flex-start;
+  }
+  .qr-cell .detail-label {
+    text-align: left;
   }
   
   .documents-grid {

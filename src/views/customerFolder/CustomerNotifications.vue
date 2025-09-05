@@ -61,38 +61,25 @@
               <span class="notification-time">{{ formatTime(notification.timestamp || notification.createdAt) }}</span>
             </div>
             
-            <p class="notification-message">{{ notification.message }}</p>
+            <!-- Message: override for price updates to show concise range -->
+            <p v-if="notification.type !== 'price_update'" class="notification-message">{{ notification.message }}</p>
+            <p v-else class="notification-message">{{ formatPriceUpdateMessage(notification) }}</p>
             
-            <!-- Price Update Details -->
+            <!-- Price Update Details (simplified) -->
             <div v-if="notification.type === 'price_update'" class="price-update-details">
               <div class="product-info">
                 <strong>{{ notification.productName }}</strong>
-                <span class="category-badge">{{ notification.category }}</span>
+                <span v-if="notification.category || notification.productCategory" class="category-badge">{{ notification.category || notification.productCategory }}</span>
               </div>
-              <div class="price-comparison">
-                <div class="price-row">
-                  <span class="price-label">Min Price:</span>
-                  <span class="old-price">₱{{ notification.oldMinPrice?.toFixed(2) }}</span>
-                  <span class="arrow">→</span>
-                  <span class="new-price">₱{{ notification.newMinPrice?.toFixed(2) }}</span>
-                  <span :class="['price-change', getPriceChangeClass(notification.oldMinPrice, notification.newMinPrice)]">
-                    {{ getPriceChangeText(notification.oldMinPrice, notification.newMinPrice) }}
-                  </span>
-                </div>
-                <div class="price-row">
-                  <span class="price-label">Max Price:</span>
-                  <span class="old-price">₱{{ notification.oldMaxPrice?.toFixed(2) }}</span>
-                  <span class="arrow">→</span>
-                  <span class="new-price">₱{{ notification.newMaxPrice?.toFixed(2) }}</span>
-                  <span :class="['price-change', getPriceChangeClass(notification.oldMaxPrice, notification.newMaxPrice)]">
-                    {{ getPriceChangeText(notification.oldMaxPrice, notification.newMaxPrice) }}
-                  </span>
-                </div>
+              <div class="price-range-row">
+                <span class="price-label">Updated Price:</span>
+                <span class="price-range">{{ formatPriceRange(notification) }}</span>
               </div>
               <div class="notification-actions">
                 <button 
                   class="action-btn primary" 
                   @click.stop="viewProduct(notification.productId)"
+                  v-if="notification.productId"
                 >
                   <Eye size="14" />
                   View Product
@@ -100,7 +87,7 @@
                 <button 
                   class="action-btn secondary" 
                   @click.stop="addToFavorites(notification.productId)"
-                  v-if="!isInFavorites(notification.productId)"
+                  v-if="notification.productId && !isInFavorites(notification.productId)"
                 >
                   <Heart size="14" />
                   Add to Favorites
@@ -199,7 +186,8 @@ import {
   serverTimestamp,
   getDocs,
   or,
-  and
+  and,
+  limit
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 
@@ -211,6 +199,19 @@ const currentPage = ref(1);
 const itemsPerPage = 10;
 const currentCustomerId = ref('');
 const favoriteProducts = ref([]);
+// Favorite product price listeners and cache
+const favoriteUnsubs = new Map(); // productId -> unsubscribe fn
+const priceRefCache = new Map(); // key `${productId}|${unit}` -> { min, max }
+const initializedProducts = new Set();
+// Maintain separate buckets as in seller view to merge multiple listeners
+const notifByCustomer = ref([]);
+const notifByUser = ref([]);
+let unsubscribeByCustomer = null;
+let unsubscribeByUser = null;
+
+// Local cache for order statuses to detect changes
+const orderStatusCache = new Map();
+let ordersUnsubscribe = null;
 
 // Computed properties
 const unreadCount = computed(() => 
@@ -333,6 +334,55 @@ const getEmptyMessage = () => {
   return messages[activeFilter.value] || "No notifications found.";
 };
 
+// Helpers to format price update content
+const peso = (v) => {
+  const n = Number(v);
+  if (!isFinite(n)) return '';
+  return `₱${n.toFixed(2)}`;
+};
+
+// Normalize range from multiple possible schemas: top-level or nested in priceDetails
+const pickNumber = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
+const getPriceRange = (n) => {
+  const pd = n?.priceDetails || {};
+  const min =
+    pd.minPrice?.new ??
+    pd.newMinPrice ??
+    pd.minPrice ??
+    n.newMinPrice ??
+    n.minPrice ??
+    n.priceMin ??
+    null;
+  const max =
+    pd.maxPrice?.new ??
+    pd.newMaxPrice ??
+    pd.maxPrice ??
+    n.newMaxPrice ??
+    n.maxPrice ??
+    n.priceMax ??
+    null;
+  const unit = n.unit || pd.unit || n.units || 'per kg';
+  return { min: pickNumber(min), max: pickNumber(max), unit };
+};
+
+const formatPriceRange = (n) => {
+  const { min, max, unit } = getPriceRange(n);
+  if (min != null && max != null) return `${peso(min)} - ${peso(max)} ${unit}`;
+  if (min != null) return `${peso(min)} ${unit}`;
+  if (max != null) return `${peso(max)} ${unit}`;
+  return 'N/A';
+};
+
+const formatPriceUpdateMessage = (n) => {
+  const name = n.productName || n.product || 'Product';
+  const range = formatPriceRange(n);
+  return `${name} is ${range}.`;
+};
+
 const handleNotificationClick = async (notification) => {
   if (!notification.read) {
     await markAsRead(notification.id);
@@ -366,6 +416,8 @@ const addToFavorites = async (productId) => {
       });
       
       favoriteProducts.value.push(productId);
+  // Start listening to this product's price reference
+  attachFavoritePriceListener(productId);
     }
   } catch (error) {
     console.error('Error adding to favorites:', error);
@@ -413,53 +465,79 @@ const setupNotificationListener = async () => {
   
   if (!currentUser) {
     loading.value = false;
-    return;
+    return null;
   }
 
   currentCustomerId.value = currentUser.uid;
 
-  try {
-    // Fixed query structure using and() to wrap composite filters
-    const notificationsQuery = query(
-      collection(db, 'notifications'),
-      and(
-        or(
-          where('customerId', '==', currentUser.uid),
-          where('userId', '==', currentUser.uid)
-        ),
-        where('recipientType', '==', 'customer')
-      )
-    );
+  // Cleanup existing listeners if any
+  try { if (unsubscribeByCustomer) unsubscribeByCustomer(); } catch {}
+  try { if (unsubscribeByUser) unsubscribeByUser(); } catch {}
+  unsubscribeByCustomer = null;
+  unsubscribeByUser = null;
 
-    const unsubscribe = onSnapshot(
-      notificationsQuery,
-      (snapshot) => {
-        notifications.value = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        
-        loading.value = false;
-        console.log(`Loaded ${notifications.value.length} customer notifications`);
-      },
-      (error) => {
-        console.error('Error in notification listener:', error);
-        loading.value = false;
-        
-        // Fallback: try a simpler query if composite query fails
-        setupFallbackListener();
-      }
-    );
+  const customerQuery = query(
+    collection(db, 'notifications'),
+    where('customerId', '==', currentUser.uid),
+    limit(200)
+  );
+  const userQuery = query(
+    collection(db, 'notifications'),
+    where('userId', '==', currentUser.uid),
+    limit(200)
+  );
 
-    return unsubscribe;
-  } catch (error) {
-    console.error('Error setting up notification listener:', error);
+  const sortAndMerge = () => {
+    const map = new Map();
+    [...notifByCustomer.value, ...notifByUser.value].forEach(n => {
+      map.set(n.id, n);
+    });
+    const merged = Array.from(map.values());
+    notifications.value = merged.sort((a, b) => {
+      const aDate = a.createdAt?.toDate?.() || a.timestamp?.toDate?.() || new Date(a.createdAt || a.timestamp || 0);
+      const bDate = b.createdAt?.toDate?.() || b.timestamp?.toDate?.() || new Date(b.createdAt || b.timestamp || 0);
+      return bDate - aDate;
+    });
     loading.value = false;
-    
-    // Try fallback approach
-    setupFallbackListener();
-    return null;
-  }
+  };
+
+  const mapSnapshot = (snapshot) => snapshot.docs.map(doc => {
+    const data = doc.data();
+    return {
+      id: doc.id,
+      ...data,
+      read: data.read || !!data.readAt
+    };
+  });
+
+  unsubscribeByCustomer = onSnapshot(
+    customerQuery,
+    (snapshot) => {
+      notifByCustomer.value = mapSnapshot(snapshot);
+      sortAndMerge();
+    },
+    (error) => {
+      console.error('Error in customerId notifications listener:', error);
+      loading.value = false;
+    }
+  );
+
+  unsubscribeByUser = onSnapshot(
+    userQuery,
+    (snapshot) => {
+      notifByUser.value = mapSnapshot(snapshot);
+      sortAndMerge();
+    },
+    (error) => {
+      console.error('Error in userId notifications listener:', error);
+      loading.value = false;
+    }
+  );
+
+  return () => {
+    try { if (unsubscribeByCustomer) unsubscribeByCustomer(); } catch {}
+    try { if (unsubscribeByUser) unsubscribeByUser(); } catch {}
+  };
 };
 
 const setupFallbackListener = async () => {
@@ -512,7 +590,9 @@ const loadFavoriteProducts = async () => {
       );
       
       const snapshot = await getDocs(favoritesQuery);
-      favoriteProducts.value = snapshot.docs.map(doc => doc.data().productId);
+  favoriteProducts.value = snapshot.docs.map(doc => doc.data().productId);
+  // Attach listeners for each favorite product
+  favoriteProducts.value.forEach(pid => attachFavoritePriceListener(pid));
     }
   } catch (error) {
     console.error('Error loading favorite products:', error);
@@ -520,15 +600,197 @@ const loadFavoriteProducts = async () => {
 };
 
 onMounted(async () => {
-  const unsubscribe = await setupNotificationListener();
+  const notificationsUnsub = await setupNotificationListener();
   await loadFavoriteProducts();
-  
+  const ordersListenerUnsub = await setupOrderStatusListener();
+
   onUnmounted(() => {
-    if (unsubscribe && typeof unsubscribe === 'function') {
-      unsubscribe();
-    }
+    try { if (notificationsUnsub) notificationsUnsub(); } catch {}
+    try { if (unsubscribeByCustomer) unsubscribeByCustomer(); } catch {}
+    try { if (unsubscribeByUser) unsubscribeByUser(); } catch {}
+    try { if (ordersListenerUnsub) ordersListenerUnsub(); } catch {}
+    // Detach favorite listeners
+    try {
+      favoriteUnsubs.forEach(unsub => { try { unsub(); } catch {} });
+      favoriteUnsubs.clear();
+    } catch {}
   });
 });
+
+// Listen for the current customer's orders and create notifications on status changes
+const setupOrderStatusListener = async () => {
+  const auth = getAuth();
+  const currentUser = auth.currentUser;
+
+  if (!currentUser) return null;
+
+  currentCustomerId.value = currentUser.uid;
+
+  try {
+    const ordersQuery = query(
+      collection(db, 'orders'),
+      where('userId', '==', currentUser.uid)
+    );
+
+    let initialized = false;
+
+    ordersUnsubscribe = onSnapshot(
+      ordersQuery,
+      async (snapshot) => {
+        // Use docChanges to handle added/modified docs efficiently
+        const changes = snapshot.docChanges();
+
+        // On first run, populate cache without sending notifications
+        if (!initialized) {
+          snapshot.forEach(docSnap => {
+            const data = docSnap.data();
+            orderStatusCache.set(docSnap.id, data.status || 'Pending');
+          });
+          initialized = true;
+          return;
+        }
+
+        // For subsequent updates, process modifications
+        for (const change of changes) {
+          if (change.type === 'modified') {
+            const docSnap = change.doc;
+            const data = docSnap.data();
+            const prevStatus = orderStatusCache.get(docSnap.id);
+            const currentStatus = data.status || 'Pending';
+
+            if (prevStatus && prevStatus !== currentStatus) {
+              // Compose message
+              const orderCode = data.orderCode || docSnap.id.slice(0, 6);
+              const phrases = {
+                Pending: `We've received your order #${orderCode}. It's now pending confirmation.`,
+                Processing: `Order #${orderCode} is already On Processing.`,
+                'On Processing': `Order #${orderCode} is already On Processing.`,
+                Shipped: `Order #${orderCode} is on the way. You'll be notified upon arrival.`,
+                Delivered: `Order #${orderCode} has been delivered. Please verify your items.`,
+                'Order Received': `Thanks! We've marked order #${orderCode} as received.`,
+                'Refund Processing': `Your refund request for order #${orderCode} is being processed.`,
+                Cancelled: `Order #${orderCode} has been cancelled.`
+              };
+
+              try {
+                await addDoc(collection(db, 'notifications'), {
+                  type: 'order_update',
+                  recipientType: 'customer',
+                  customerId: currentUser.uid,
+                  userId: currentUser.uid,
+                  sellerId: data.sellerId || null,
+                  title: `Order update: ${currentStatus}`,
+                  message: phrases[currentStatus] || `Order #${orderCode} status updated to ${currentStatus}.`,
+                  orderDetails: {
+                    orderId: docSnap.id,
+                    orderCode: data.orderCode || orderCode,
+                    amount: Number(data.totalPrice || 0)
+                  },
+                  status: currentStatus,
+                  read: false,
+                  createdAt: serverTimestamp(),
+                  timestamp: serverTimestamp()
+                });
+              } catch (err) {
+                console.error('Error creating order update notification:', err);
+              }
+            }
+
+            // Update cache
+            orderStatusCache.set(docSnap.id, currentStatus);
+          } else if (change.type === 'added') {
+            // Track new orders without sending a notification on initial add
+            const docSnap = change.doc;
+            const data = docSnap.data();
+            orderStatusCache.set(docSnap.id, data.status || 'Pending');
+          }
+        }
+      },
+      (error) => {
+        console.error('Error in orders listener (customer):', error);
+      }
+    );
+
+    return ordersUnsubscribe;
+  } catch (error) {
+    console.error('Error setting up order status listener:', error);
+    return null;
+  }
+};
+
+// Listen to product price reference for favorites, and create a notification on changes
+const attachFavoritePriceListener = (productId) => {
+  if (!productId || favoriteUnsubs.has(productId)) return; // already listening
+
+  const productRef = doc(collection(db, 'productPrices'), productId);
+  const unsub = onSnapshot(
+    productRef,
+    async (snap) => {
+      if (!snap.exists()) return;
+      const data = snap.data();
+      const unitPricing = data.unitPricing || {};
+
+      // On first snapshot, prime the cache and don't notify
+      const isInitialized = initializedProducts.has(productId);
+
+      for (const [unit, pricing] of Object.entries(unitPricing)) {
+        const min = Number(pricing.newMinPrice ?? pricing.minPrice ?? 0);
+        const max = Number(pricing.newMaxPrice ?? pricing.maxPrice ?? 0);
+        const key = `${productId}|${unit}`;
+        const prev = priceRefCache.get(key);
+
+        if (!prev) {
+          priceRefCache.set(key, { min, max });
+          continue; // first seen
+        }
+
+        const changed = min !== prev.min || max !== prev.max;
+        priceRefCache.set(key, { min, max });
+
+        if (isInitialized && changed) {
+          // Create a concise customer notification
+          try {
+            const auth = getAuth();
+            const currentUser = auth.currentUser;
+            if (!currentUser) return;
+
+            await addDoc(collection(db, 'notifications'), {
+              type: 'price_update',
+              recipientType: 'customer',
+              customerId: currentUser.uid,
+              userId: currentUser.uid,
+              productId: productId,
+              productName: data.productName || 'Product',
+              productCategory: data.category || null,
+              unit: unit,
+              title: 'Price Update Alert',
+              message: `${data.productName || 'Product'} is ${peso(min)} - ${peso(max)} ${unit}.`,
+              priceDetails: {
+                unit,
+                minPrice: min,
+                maxPrice: max,
+                source: 'product_reference_change'
+              },
+              read: false,
+              createdAt: serverTimestamp(),
+              timestamp: serverTimestamp()
+            });
+          } catch (e) {
+            console.error('Error creating customer price_update notification:', e);
+          }
+        }
+      }
+
+      // Mark initialized after processing first snapshot
+      if (!isInitialized) initializedProducts.add(productId);
+    },
+    (err) => {
+      console.error('Favorite product price listener error:', err);
+    }
+  );
+
+  favoriteUnsubs.set(productId, unsub);
+};
 </script>
 
 <style scoped>
@@ -677,8 +939,8 @@ onMounted(async () => {
   margin: 0;
 }
 
-.notifications-list {
-  divide-y: 1px solid #e5e7eb;
+.notification-item + .notification-item {
+  border-top: 1px solid #e5e7eb;
 }
 
 .notification-item {
@@ -784,17 +1046,23 @@ onMounted(async () => {
 }
 
 .price-comparison {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 8px;
+  display: none;
 }
 
 .price-row {
+  display: none;
+}
+
+.price-range-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 0.8rem;
+  font-size: 0.9rem;
+}
+
+.price-range {
+  font-weight: 700;
+  color: #1f2937;
 }
 
 .price-label {
