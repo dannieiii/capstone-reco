@@ -11,6 +11,15 @@ import 'leaflet/dist/leaflet.css';
 
 let app;
 
+// Ensure the tab title always reflects our brand
+const setAppTitle = (to) => {
+  const base = 'FarmXpress';
+  const page = to && to.meta && to.meta.title ? `${to.meta.title} | ${base}` : base;
+  if (typeof document !== 'undefined') document.title = page;
+};
+// Set immediately for first load
+setAppTitle();
+
 // Check if the user is logged in and email is verified
 onAuthStateChanged(auth, async (user) => {
   if (user) {
@@ -37,5 +46,7 @@ onAuthStateChanged(auth, async (user) => {
       .use(store)
       .use(router)
       .mount('#app');
+  // Update title on every route change
+  router.afterEach((to) => setAppTitle(to));
   }
 });

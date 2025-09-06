@@ -137,11 +137,13 @@ const notifySeller = async (product) => {
     const message = `Your product "${product.productName}" appears to be priced below the D.A. minimum for ${unit?.type}. Consider reviewing your price to ensure fair value for your goods.`;
     await addDoc(collection(db, 'notifications'), {
       userId: product.sellerId,
-      title: 'Pricing Reminder',
+      sellerId: product.sellerId,
+      title: 'Underprice Notice',
       message,
-      type: 'reminder',
+      type: 'underprice_warning',
       read: false,
       timestamp: serverTimestamp(),
+      createdAt: serverTimestamp(),
       productId: product.id,
       link: `/seller/products/edit/${product.id}`
     });

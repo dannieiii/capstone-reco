@@ -118,7 +118,7 @@
               </div>
               
               <!-- Short preview message for price warnings -->
-              <p v-if="notification.type === 'price_warning'" class="notification-message">
+              <p v-if="notification.type === 'price_warning' || notification.type === 'final_warning'" class="notification-message">
                 Your product "{{ notification.productName }}" is priced {{ formatDeviation(notification.deviation) }} above the recommended price.
               </p>
               
@@ -158,7 +158,7 @@
               </div>
               
               <!-- Price Warning Preview -->
-              <div v-if="notification.type === 'price_warning'" class="price-warning-preview">
+              <div v-if="notification.type === 'price_warning' || notification.type === 'final_warning'" class="price-warning-preview">
                 <div class="warning-preview-info">
                   <span class="product-name">{{ notification.productName }}</span>
                   <span class="warning-level-badge" :class="getWarningLevelClass(notification.warningLevel)">
@@ -355,6 +355,7 @@ import {
   AlertTriangle,
   Info,
   TrendingUp,
+  TrendingDown,
   Edit,
   MessageCircle,
   Ban,
@@ -395,7 +396,10 @@ const selectedWarning = ref(null);
 const notifBySeller = ref([]);
 const notifByUser = ref([]);
 let unsubscribeBySeller = null;
+let unsubscribeBySellerUid = null; // listen to sellerId written as user UID
 let unsubscribeByUser = null;
+// buckets for merged streams
+const notifBySellerUid = ref([]);
 
 // Computed properties
 const unreadCount = computed(() => 
@@ -407,7 +411,7 @@ const newOrdersCount = computed(() =>
 );
 
 const priceWarningsCount = computed(() => 
-  notifications.value.filter(n => n.type === 'price_warning' && !n.read).length
+  notifications.value.filter(n => (n.type === 'price_warning' || n.type === 'final_warning') && !n.read).length
 );
 
 const priceUpdatesCount = computed(() => 
@@ -418,13 +422,18 @@ const paymentNoticesCount = computed(() =>
   notifications.value.filter(n => n.type === 'order' && (n.subtype === 'payment_proof' || n.subtype === 'payment_received') && !n.read).length
 );
 
+const underpriceCount = computed(() =>
+  notifications.value.filter(n => (n.type === 'underprice_warning' || n.type === 'reminder') && !n.read).length
+);
+
 const filterOptions = computed(() => [
   { key: 'all', label: 'All', icon: List, count: notifications.value.length },
   { key: 'unread', label: 'Unread', icon: Bell, count: unreadCount.value },
   { key: 'new_order', label: 'New Orders', icon: ShoppingCart, count: newOrdersCount.value },
   { key: 'price_update', label: 'Price Updates', icon: TrendingUp, count: priceUpdatesCount.value },
   { key: 'payments', label: 'Payments', icon: CreditCard, count: paymentNoticesCount.value },
-  { key: 'price_warning', label: 'Price Warnings', icon: AlertTriangle, count: priceWarningsCount.value }
+  { key: 'price_warning', label: 'Price Warnings', icon: AlertTriangle, count: priceWarningsCount.value },
+  { key: 'underprice', label: 'Underprice', icon: TrendingDown, count: underpriceCount.value }
 ]);
 
 const filteredNotifications = computed(() => {
@@ -436,8 +445,12 @@ const filteredNotifications = computed(() => {
     filtered = filtered.filter(n => n.type === 'new_order');
   } else if (activeFilter.value === 'payments') {
     filtered = filtered.filter(n => n.type === 'order' && (n.subtype === 'payment_proof' || n.subtype === 'payment_received'));
-  } else if (activeFilter.value === 'price_update' || activeFilter.value === 'price_warning') {
-    filtered = filtered.filter(n => n.type === activeFilter.value);
+  } else if (activeFilter.value === 'price_update') {
+    filtered = filtered.filter(n => n.type === 'price_update');
+  } else if (activeFilter.value === 'price_warning') {
+    filtered = filtered.filter(n => n.type === 'price_warning' || n.type === 'final_warning');
+  } else if (activeFilter.value === 'underprice') {
+    filtered = filtered.filter(n => n.type === 'underprice_warning' || n.type === 'reminder');
   }
   
   return filtered.sort((a, b) => {
@@ -485,7 +498,10 @@ const getNotificationIcon = (type, subtype) => {
     status_update: Package,
     alert: AlertCircle,
     analytics: TrendingUp,
-    price_warning: AlertTriangle,
+  price_warning: AlertTriangle,
+  final_warning: AlertTriangle,
+  underprice_warning: TrendingDown,
+  reminder: TrendingDown,
   price_update: TrendingUp,
   order: subtype === 'payment_proof' || subtype === 'payment_received' ? CreditCard : Package,
     product_deactivated: Ban,
@@ -497,7 +513,7 @@ const getNotificationIcon = (type, subtype) => {
 const getNotificationClasses = (notification) => {
   const classes = [];
   if (!notification.read) classes.push('unread');
-  if (notification.type === 'price_warning') {
+  if (notification.type === 'price_warning' || notification.type === 'final_warning') {
     classes.push('price-warning');
     if (notification.isFinalWarning) classes.push('final-warning');
   }
@@ -509,7 +525,7 @@ const getNotificationClasses = (notification) => {
 
 const getNotificationIconClass = (notification) => {
   const baseClass = 'notification-icon';
-  if (notification.type === 'price_warning') {
+  if (notification.type === 'price_warning' || notification.type === 'final_warning') {
     if (notification.isFinalWarning) return `${baseClass} final-warning-icon`;
     return `${baseClass} warning-icon`;
   }
@@ -519,6 +535,8 @@ const getNotificationIconClass = (notification) => {
   if (notification.type === 'order' && (notification.subtype === 'payment_proof' || notification.subtype === 'payment_received')) return `${baseClass} price-update-icon`;
   return baseClass;
 };
+
+const isPriceWarning = (n) => n?.type === 'price_warning' || n?.type === 'final_warning';
 
 const getWarningLevelClass = (level) => {
   switch (level) {
@@ -644,7 +662,8 @@ const getEmptyMessage = () => {
     new_order: "No new orders at the moment.",
   payments: "No payment notices yet.",
     price_update: "No price updates available.",
-    price_warning: "No price warnings."
+  price_warning: "No price warnings.",
+  underprice: "No underprice notices."
   };
   return messages[activeFilter.value] || "No notifications found.";
 };
@@ -663,7 +682,7 @@ const handleNotificationClick = async (notification) => {
 };
 
 const navigateToEditProduct = (productId) => {
-  window.location.href = `/seller/products/edit/${productId}`;
+  window.location.href = `/edit-product/${productId}`;
 };
 
 const acknowledgeWarning = async (notification) => {
@@ -684,11 +703,12 @@ const acknowledgeWarning = async (notification) => {
       originalWarningId: notification.id
     });
     
-    closeWarningModal();
-    alert('Warning acknowledged. Please update your product price to comply with guidelines.');
+  closeWarningModal();
+  // Optional: show a non-blocking in-app toast instead of alert
+  console.log('Warning acknowledged. Please update your product price to comply with guidelines.');
   } catch (error) {
     console.error('Error acknowledging warning:', error);
-    alert('Failed to acknowledge warning. Please try again.');
+  console.error('Failed to acknowledge warning. Please try again.');
   }
 };
 
@@ -774,6 +794,12 @@ const setupNotificationListener = async () => {
     where('sellerId', '==', sellerDocId || currentUser.uid),
     limit(200)
   );
+  // Some notifications may have sellerId set to the user's UID instead of seller doc ID
+  const sellerUidQuery = sellerDocId && sellerDocId !== currentUser.uid ? query(
+    collection(db, 'notifications'),
+    where('sellerId', '==', currentUser.uid),
+    limit(200)
+  ) : null;
   const userQuery = query(
     collection(db, 'notifications'),
     where('userId', '==', currentUser.uid),
@@ -783,7 +809,7 @@ const setupNotificationListener = async () => {
   const sortAndMerge = () => {
     // Merge arrays and dedupe by id
     const map = new Map();
-    [...notifBySeller.value, ...notifByUser.value].forEach(n => {
+  [...notifBySeller.value, ...(notifBySellerUid.value || []), ...notifByUser.value].forEach(n => {
       map.set(n.id, n);
     });
     const merged = Array.from(map.values());
@@ -819,6 +845,19 @@ const setupNotificationListener = async () => {
     }
   );
 
+  if (sellerUidQuery) {
+    unsubscribeBySellerUid = onSnapshot(
+      sellerUidQuery,
+      (snapshot) => {
+        notifBySellerUid.value = mapSnapshot(snapshot);
+        sortAndMerge();
+      },
+      (error) => {
+        console.error('Error in sellerId (uid) notifications listener:', error);
+      }
+    );
+  }
+
   unsubscribeByUser = onSnapshot(
     userQuery,
     (snapshot) => {
@@ -833,6 +872,7 @@ const setupNotificationListener = async () => {
 
   return () => {
     if (unsubscribeBySeller) unsubscribeBySeller();
+  if (unsubscribeBySellerUid) unsubscribeBySellerUid();
     if (unsubscribeByUser) unsubscribeByUser();
   };
 };
@@ -851,6 +891,7 @@ onMounted(async () => {
   // Cleanup on unmount
   onUnmounted(() => {
   try { if (unsubscribeBySeller) unsubscribeBySeller(); } catch {}
+  try { if (unsubscribeBySellerUid) unsubscribeBySellerUid(); } catch {}
   try { if (unsubscribeByUser) unsubscribeByUser(); } catch {}
   });
 });

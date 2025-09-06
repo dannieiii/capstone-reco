@@ -371,14 +371,15 @@ const fetchProducts = async () => {
   try {
     const q = query(fbCollection(db, 'products'), where('sellerId', '==', user.uid));
     const querySnapshot = await getDocs(q);
-    products.value = querySnapshot.docs.map((doc) => {
+  products.value = querySnapshot.docs.map((doc) => {
       const data = doc.data();
       return {
         id: doc.id,
         productName: data.productName || 'No Name',
         category: data.category || 'No Category',
-        status: data.status || 'available',
-        isActive: data.isActive !== undefined ? data.isActive : true,
+    status: data.status || 'available',
+    // Treat admin deactivated products as inactive in UI
+    isActive: (data.isActive !== undefined ? data.isActive : true) && (data.status !== 'inactive'),
         isOnSale: data.isOnSale || false,
         isPreOrder: data.isPreOrder || false,
         wholesaleAvailable: data.wholesaleAvailable || false,

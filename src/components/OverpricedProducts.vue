@@ -427,6 +427,33 @@
       </div>
     </div>
   </div>
+
+  <!-- Confirm Action Modal (replaces browser confirm) -->
+  <div v-if="showConfirmModal" class="modal-overlay" @click="cancelConfirm">
+    <div class="modal-content" @click.stop>
+      <div class="modal-header">
+        <h2>{{ confirmKind === 'deactivate' ? 'Confirm Deactivation' : 'Confirm Reactivation' }}</h2>
+        <button class="close-btn" @click="cancelConfirm">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p v-if="confirmKind === 'deactivate'">
+          Are you sure you want to deactivate "{{ confirmTarget?.productName }}"? This will remove it from the marketplace.
+        </p>
+        <p v-else>
+          Are you sure you want to reactivate "{{ confirmTarget?.productName }}"?
+        </p>
+      </div>
+      <div class="modal-actions">
+        <button class="secondary-btn" @click="cancelConfirm">Cancel</button>
+        <button class="primary-btn" @click="confirmProceed">
+          <i class="fas" :class="confirmKind === 'deactivate' ? 'fa-ban' : 'fa-check-circle'"></i>
+          {{ confirmKind === 'deactivate' ? 'Deactivate' : 'Reactivate' }}
+        </button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -459,7 +486,17 @@ const props = defineProps({
 });
 
 // Emits
-const emit = defineEmits(['send-warning', 'view-seller', 'product-deactivated', 'refresh-products']);
+const emit = defineEmits(['send-warning', 'view-seller', 'product-deactivated', 'refresh-products', 'status']);
+
+// Local helper to notify parent with a toast-like status message
+const notify = (type, text) => {
+  try {
+    emit('status', type, text);
+  } catch (e) {
+    // Fallback if parent isn't listening
+    console[type === 'error' ? 'error' : 'log'](text);
+  }
+};
 
 // Reactive data
 const selectedWarningLevel = ref('');
@@ -496,6 +533,11 @@ const warningMessage = ref('');
 const includeGuidelines = ref(true);
 const requestResponse = ref(true);
 const isManualWarning = ref(false);
+
+// Confirm modal state
+const showConfirmModal = ref(false);
+const confirmTarget = ref(null);
+const confirmKind = ref('deactivate'); // 'deactivate' | 'reactivate'
 
 // Data
 const sellers = ref([]);
@@ -752,11 +794,11 @@ const downloadCSV = () => {
       document.body.removeChild(link);
     }
     
-    alert(`CSV export completed! Downloaded ${csvData.length} records.`);
+  notify('success', `CSV export completed! Downloaded ${csvData.length} records.`);
     
   } catch (error) {
     console.error('CSV export error:', error);
-    alert('Failed to export CSV. Please try again.');
+  notify('error', 'Failed to export CSV. Please try again.');
   }
 };
 
@@ -813,11 +855,11 @@ const downloadPDF = () => {
       printWindow.print();
     };
     
-    alert('PDF preview opened in new window. Use your browser\'s print function to save as PDF.');
+  notify('success', 'PDF preview opened in new window. Use your browser\'s print function to save as PDF.');
     
   } catch (error) {
     console.error('PDF export error:', error);
-    alert('Failed to generate PDF. Please try again.');
+  notify('error', 'Failed to generate PDF. Please try again.');
   }
 };
 
@@ -1242,19 +1284,10 @@ const sendIndividualWarning = (product) => {
   showWarningModal.value = true;
 };
 
-const deactivateProduct = async (product) => {
-  const confirmed = confirm(`Are you sure you want to deactivate "${product.productName}"? This will remove it from the marketplace.`);
-  if (!confirmed) return;
-  
-  try {
-    await deactivateProductById(product.id, 'manual');
-    alert('Product deactivated successfully!');
-    emit('product-deactivated', product.id);
-    await refreshData();
-  } catch (error) {
-    console.error('Error deactivating product:', error);
-    alert('Failed to deactivate product. Please try again.');
-  }
+const deactivateProduct = (product) => {
+  confirmTarget.value = product;
+  confirmKind.value = 'deactivate';
+  showConfirmModal.value = true;
 };
 
 const deactivateProductById = async (productId, reason = 'manual') => {
@@ -1284,34 +1317,50 @@ const deactivateProductById = async (productId, reason = 'manual') => {
   }
 };
 
-const reactivateProduct = async (product) => {
-  const confirmed = confirm(`Are you sure you want to reactivate "${product.productName}"?`);
-  if (!confirmed) return;
-  
+const reactivateProduct = (product) => {
+  confirmTarget.value = product;
+  confirmKind.value = 'reactivate';
+  showConfirmModal.value = true;
+};
+
+const cancelConfirm = () => {
+  showConfirmModal.value = false;
+  confirmTarget.value = null;
+};
+
+const confirmProceed = async () => {
+  const product = confirmTarget.value;
+  showConfirmModal.value = false;
+  if (!product) return;
   try {
-    const productRef = doc(db, 'products', product.id);
-    await updateDoc(productRef, {
-      status: 'active',
-      reactivatedAt: serverTimestamp()
-    });
-    
-    // Create notification for seller
-    await addDoc(collection(db, 'notifications'), {
-      sellerId: product.sellerId,
-      type: 'product_reactivated',
-      title: 'Product Reactivated',
-      message: `Your product "${product.productName}" has been reactivated. Please ensure pricing complies with D.A. guidelines to avoid automatic warnings.`,
-      productId: product.id,
-      productName: product.productName,
-      read: false,
-      createdAt: serverTimestamp()
-    });
-    
-    alert('Product reactivated successfully!');
+    if (confirmKind.value === 'deactivate') {
+      await deactivateProductById(product.id, 'manual');
+      notify('success', 'Product deactivated successfully!');
+      emit('product-deactivated', product.id);
+    } else {
+      const productRef = doc(db, 'products', product.id);
+      await updateDoc(productRef, {
+        status: 'active',
+        reactivatedAt: serverTimestamp()
+      });
+      await addDoc(collection(db, 'notifications'), {
+        sellerId: product.sellerId,
+        type: 'product_reactivated',
+        title: 'Product Reactivated',
+        message: `Your product "${product.productName}" has been reactivated. Please ensure pricing complies with D.A. guidelines to avoid automatic warnings.`,
+        productId: product.id,
+        productName: product.productName,
+        read: false,
+        createdAt: serverTimestamp()
+      });
+      notify('success', 'Product reactivated successfully!');
+    }
     await refreshData();
   } catch (error) {
-    console.error('Error reactivating product:', error);
-    alert('Failed to reactivate product. Please try again.');
+    console.error('Error performing action:', error);
+    notify('error', 'Operation failed. Please try again.');
+  } finally {
+    confirmTarget.value = null;
   }
 };
 
@@ -1401,11 +1450,11 @@ const confirmSendWarning = async () => {
   try {
     await sendWarningNotification(warningTarget.value, false); // false = manual
     closeWarningModal();
-    alert('Warning sent successfully!');
+  notify('success', 'Warning sent successfully!');
     await refreshData();
   } catch (error) {
     console.error('Error sending warning:', error);
-    alert('Failed to send warning. Please try again.');
+  notify('error', 'Failed to send warning. Please try again.');
   }
 };
 
@@ -1886,6 +1935,44 @@ onUnmounted(() => {
 
 .export-option:last-child {
   border-radius: 0 0 4px 4px;
+}
+
+/* Confirm modal leverages existing modal styles */
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: #fff;
+  border-radius: 8px;
+  width: 90%;
+  max-width: 520px;
+  overflow: hidden;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #eee;
+}
+
+.modal-body { padding: 16px; }
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid #eee;
 }
 
 .refresh-btn {

@@ -352,6 +352,7 @@
         @view-seller="handleViewSeller"
         @product-deactivated="handleProductDeactivated"
         @refresh-products="refreshData"
+        @status="showStatus"
       />
 
       <!-- Underpriced Products View -->
@@ -2642,7 +2643,7 @@ tr:hover {
 .status-message {
   position: fixed;
   top: 20px;
-  right: 20px;
+  left: 20px;
   padding: 12px 16px;
   border-radius: 6px;
   display: flex;

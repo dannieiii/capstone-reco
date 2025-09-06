@@ -650,6 +650,48 @@ export default {
     }
   },
   methods: {
+    // Refresh the view when the route param/productId changes
+    async refreshForProductChange() {
+      // Reset key UI/state pieces before fetching
+      this.product = null;
+      this.farmName = 'Loading farm...';
+      this.sellerId = '';
+      this.areasCovered = [];
+      this.availableUnits = [];
+      this.selectedUnit = null;
+      this.quantity = 1;
+      this.showAddToCartModalVisible = false;
+      this.showBuyNowModalVisible = false;
+      this.modalSelectedUnit = '';
+      this.modalQuantity = 1;
+
+      // Fetch the new product and dependent data
+      await this.fetchProduct();
+
+      // Apply forced mode from route if valid for this product
+      const mode = this.$route?.query?.mode;
+      this.selectedPurchaseType = 'normal';
+      if (mode === 'preorder' && this.isPreOrderProduct) {
+        this.selectedPurchaseType = 'preorder';
+      } else if (mode === 'wholesale' && this.isWholesaleProduct) {
+        this.selectedPurchaseType = 'wholesale';
+        if (this.quantity < this.wholesaleMinQty) this.quantity = this.wholesaleMinQty;
+      }
+
+      if (this.sellerId) {
+        await this.fetchFarmDetails();
+      }
+
+      await this.fetchRelatedProducts();
+      await this.incrementViewCount();
+
+      // Scroll to top for better UX when navigating between products
+      try {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } catch (e) {
+        // no-op in environments without window
+      }
+    },
     increaseModalQuantity() {
       const maxQuantity = this.getMaxQuantity(this.modalSelectedUnit);
       if (this.modalQuantity < maxQuantity) {
@@ -1473,6 +1515,26 @@ async handleBuyNowConfirm() {
   isOutOfStock(unit) {
     return this.getMaxQuantity(unit) === 0;
   },
+  },
+  watch: {
+    // When the route changes to a new product (same component instance), reload data
+    productId(newVal, oldVal) {
+      if (newVal && newVal !== oldVal) {
+        this.refreshForProductChange();
+      }
+    },
+    // If only the mode query changes, update purchase type accordingly
+    '$route.query.mode'(newMode, oldMode) {
+      if (!this.product) return;
+      if (newMode === 'preorder' && this.isPreOrderProduct) {
+        this.selectedPurchaseType = 'preorder';
+      } else if (newMode === 'wholesale' && this.isWholesaleProduct) {
+        this.selectedPurchaseType = 'wholesale';
+        if (this.quantity < this.wholesaleMinQty) this.quantity = this.wholesaleMinQty;
+      } else if (!newMode) {
+        this.selectedPurchaseType = 'normal';
+      }
+    }
   },
   async mounted() {
   console.log('Component mounted, productId:', this.productId);

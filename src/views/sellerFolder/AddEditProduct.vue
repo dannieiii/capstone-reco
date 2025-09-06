@@ -16,7 +16,15 @@
       </header>
 
       <!-- Status Ribbons -->
-      <div v-if="product.status === 'limited' || product.isOnSale || product.isPreOrder" class="status-ribbons">
+      <div v-if="product.status === 'inactive'" class="status-ribbons">
+        <div class="status-badge inactive">
+          <svg class="badge-icon" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM7 9a1 1 0 012 0v4a1 1 0 11-2 0V9zm3-3a1 1 0 112 0v7a1 1 0 11-2 0V6z" clip-rule="evenodd"></path>
+          </svg>
+          Inactive by Admin
+        </div>
+      </div>
+      <div v-else-if="product.status === 'limited' || product.isOnSale || product.isPreOrder" class="status-ribbons">
         <div v-if="product.status === 'limited'" class="status-badge limited">
           <svg class="badge-icon" fill="currentColor" viewBox="0 0 20 20">
             <path fill-rule="evenodd" d="M17.707 9.293a1 1 0 010 1.414l-7 7a1 1 0 01-1.414 0l-7-7A.997.997 0 012 10V5a3 3 0 013-3h5c.256 0 .512.098.707.293l7 7zM5 6a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"></path>
@@ -1160,11 +1168,12 @@
 
             <div class="form-group">
               <label>Status *</label>
-              <select v-model="product.status" required>
+              <select v-model="product.status" :disabled="product.status === 'inactive'" required>
                 <option value="available">Available</option>
                 <option value="limited">Limited Stock</option>
                 <option value="preorder">Pre-order Only</option>
               </select>
+              <small v-if="product.status === 'inactive'" class="inactive-note">This product was deactivated by DA Admin. Contact support to reactivate.</small>
             </div>
           </div>
 
