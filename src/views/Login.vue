@@ -36,10 +36,12 @@
       <button 
         class="login-button" 
         @click="login"
-        :disabled="isLocked"
-        :class="{ 'locked': isLocked }"
+        :disabled="isLocked || isLoading"
+        :class="{ 'locked': isLocked, 'loading': isLoading }"
       >
-        <span v-if="!isLocked">Login</span>
+        <span v-if="isLoading" class="spinner" aria-hidden="true"></span>
+        <span v-if="isLoading">Signing in…</span>
+        <span v-else-if="!isLocked">Login</span>
         <span v-else>Locked - {{ formatTime(remainingTime) }}</span>
       </button>
       
@@ -52,11 +54,13 @@
       <button 
         class="google-button" 
         @click="loginWithGoogle"
-        :disabled="isLocked"
-        :class="{ 'locked': isLocked }"
+        :disabled="isLocked || isLoading"
+        :class="{ 'locked': isLocked, 'loading': isLoading }"
       >
-        <img src="@/assets/google.png" alt="Google" class="google-icon" />
-        <span v-if="!isLocked">Continue with Google</span>
+        <span v-if="isLoading" class="spinner" aria-hidden="true"></span>
+        <img v-if="!isLoading" src="@/assets/google.png" alt="Google" class="google-icon" />
+        <span v-if="isLoading">Connecting…</span>
+        <span v-else-if="!isLocked">Continue with Google</span>
         <span v-else>Account Temporarily Locked</span>
       </button>
 
@@ -84,6 +88,7 @@ export default {
       loginAttempts: 0,
       maxAttempts: 5,
       isLocked: false,
+  isLoading: false,
       lockoutTime: 300000, // 5 minutes in milliseconds
       remainingTime: 0,
       countdownInterval: null,
@@ -92,7 +97,7 @@ export default {
     methods: {
       async login() {
         // Check if user is currently locked out
-        if (this.isLocked) {
+        if (this.isLocked || this.isLoading) {
           this.showAlert(`Too many failed attempts. Please wait ${this.formatTime(this.remainingTime)} before trying again.`, 'error');
           return;
         }
@@ -110,6 +115,7 @@ export default {
         }
         
         try {
+          this.isLoading = true;
           const userCredential = await signInWithEmailAndPassword(auth, this.email, this.password);
           const user = userCredential.user;
 
@@ -117,6 +123,7 @@ export default {
             // Sign out the user since they're not verified
             await auth.signOut();
             this.showAlert('Please verify your email before logging in. Check your inbox for the verification link.', 'warning');
+            this.isLoading = false;
             return;
           }
 
@@ -158,17 +165,20 @@ export default {
             // Show error message for failed attempts (but not remaining attempts count)
             this.showAlert(errorMessage, 'error');
           }
+        } finally {
+          this.isLoading = false;
         }
       },
 
     async loginWithGoogle() {
       // Check if user is currently locked out
-      if (this.isLocked) {
+      if (this.isLocked || this.isLoading) {
         this.showAlert(`Too many failed attempts. Please wait ${this.formatTime(this.remainingTime)} before trying again.`, 'error');
         return;
       }
 
       try {
+        this.isLoading = true;
         const result = await signInWithPopup(auth, googleProvider);
         const user = result.user;
         
@@ -203,6 +213,7 @@ export default {
           setTimeout(() => {
             this.$router.push('/');
           }, 1500);
+          this.isLoading = false;
           return;
         }
         
@@ -221,6 +232,8 @@ export default {
         }
         
         this.showAlert(errorMessage, 'error');
+      } finally {
+        this.isLoading = false;
       }
     },
 
@@ -838,6 +851,34 @@ input::placeholder {
 .login-button:disabled {
   cursor: not-allowed;
   opacity: 0.7;
+}
+
+/* Loading state */
+.login-button.loading,
+.google-button.loading {
+  position: relative;
+  pointer-events: none;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 8px;
+  animation: spin 0.8s linear infinite;
+}
+
+/* Dark spinner for light button */
+.google-button.loading .spinner {
+  border-color: rgba(0, 0, 0, 0.2);
+  border-top-color: #333;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 /* Social Login Divider */

@@ -82,11 +82,12 @@
         <div class="checkout-section">
           <button 
             class="checkout-btn" 
-            :disabled="!hasSelectedItems"
+            :disabled="!hasSelectedItems || hasMultipleSelectedSellers"
             @click="proceedToCheckout"
           >
             Proceed to Checkout ({{ selectedItemsCount }} items)
           </button>
+          <p v-if="hasMultipleSelectedSellers" class="single-seller-warning">Please select items from one seller only to proceed.</p>
         </div>
       </template>
     </div>
@@ -284,24 +285,22 @@ export default {
       return selectedItemsCount.value > 0;
     });
 
-    // Multi-seller detection
-    const uniqueSellers = computed(() => {
-      const sellers = new Set();
-      cartItems.value.forEach(item => {
-        if (item.sellerId) {
-          sellers.add(item.sellerId);
-        }
+    // Single-seller enforcement based on SELECTED items only
+    const selectedSellerIds = computed(() => {
+      const set = new Set();
+      cartItems.value.filter(i => i.selected).forEach(i => {
+        if (i.sellerId) set.add(i.sellerId);
       });
-      return Array.from(sellers);
+      return Array.from(set);
     });
 
-    const uniqueSellersCount = computed(() => {
-      return uniqueSellers.value.length;
-    });
+    const hasMultipleSelectedSellers = computed(() => selectedSellerIds.value.length > 1);
 
-    const hasMultipleSellers = computed(() => {
-      return uniqueSellersCount.value > 1;
-    });    const proceedToCheckout = () => {
+    const proceedToCheckout = () => {
+      if (hasMultipleSelectedSellers.value) {
+        alert('Please checkout items from a single seller only. Deselect items from other sellers.');
+        return;
+      }
       const selectedItems = cartItems.value.filter(item => item.selected);
       
       // Log multi-seller information
@@ -364,8 +363,7 @@ export default {
       deliveryFee,
       selectedItemsCount,
       hasSelectedItems,
-      uniqueSellersCount,
-      hasMultipleSellers,
+  hasMultipleSelectedSellers,
       showRemoveModal,
       itemToRemove,
       goBack,
@@ -688,6 +686,12 @@ export default {
 .checkout-btn:disabled {
   background-color: #ccc;
   cursor: not-allowed;
+}
+
+.single-seller-warning {
+  margin-top: 8px;
+  color: #c0392b;
+  font-size: 13px;
 }
 
 /* Modal Styles */

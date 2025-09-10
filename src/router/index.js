@@ -45,6 +45,7 @@ import FarmStore from '../views/customerFolder/FarmStore.vue';
 import CommunityView from '../views/customerFolder/CommunityView.vue';
 import CustomerNotifications from '../views/customerFolder/CustomerNotifications.vue';
 import PaymentUpload from '../views/customerFolder/PaymentUpload.vue';
+//cusotmer
 
 // Payment components
 import PaymentSuccess from '../components/gcashalerts/PaymentSuccess.vue';
@@ -70,6 +71,7 @@ import HelpSeller from '@/views/sellerFolder/HelpSeller.vue';
 import HarvestCalendarPage from '@/views/sellerFolder/HarvestCalendarPage.vue';
 import Notifications from '@/views/sellerFolder/Notifications.vue';
 import Feedback from '@/views/sellerFolder/Feedback.vue';
+//seeller
 
 
 const routes = [

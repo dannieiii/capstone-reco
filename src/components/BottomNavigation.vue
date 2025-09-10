@@ -41,10 +41,6 @@
       <span>Notifications</span>
     </button>
 
-    <!-- Top-right login alert toast -->
-    <div v-if="toastVisible" class="nav-toast" role="status" aria-live="polite">
-      {{ toastMessage }}
-    </div>
   </div>
 </template>
 
@@ -53,6 +49,7 @@ import { Home, MessagesSquare, MessageCircle, Package, Bell } from 'lucide-vue-n
 import { auth } from '@/firebase/firebaseConfig';
 
 export default {
+  emits: ['auth-required'],
   components: {
     Home,
     MessagesSquare,
@@ -63,9 +60,7 @@ export default {
   data() {
     return {
       iconSize: 24,
-      toastVisible: false,
-      toastMessage: '',
-      toastTimer: null
+      
     };
   },
   methods: {
@@ -75,7 +70,7 @@ export default {
       const isLoggedIn = !!auth.currentUser;
 
       if (requiresAuth && !isLoggedIn) {
-        this.showLoginAlert(label);
+        this.$emit('auth-required', { label, path });
         return;
       }
 
@@ -88,16 +83,6 @@ export default {
         return this.$route.path === '/';
       }
       return this.$route.path.startsWith(path);
-    },
-    showLoginAlert(label) {
-      const name = label || 'this section';
-      this.toastMessage = `You cannot open ${name}. Please log in first.`;
-      this.toastVisible = true;
-      if (this.toastTimer) clearTimeout(this.toastTimer);
-      this.toastTimer = setTimeout(() => {
-        this.toastVisible = false;
-        this.toastTimer = null;
-      }, 3500);
     }
   }
 }
@@ -159,25 +144,5 @@ export default {
   height: 6px;
   background-color: #2e5c31;
   border-radius: 50%;
-}
-
-/* Top-right toast for unauthenticated navigation */
-.nav-toast {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  background: #2e5c31;
-  color: #fff;
-  padding: 10px 14px;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  font-size: 13px;
-  z-index: 1000;
-  animation: navToastIn 0.2s ease-out;
-}
-
-@keyframes navToastIn {
-  from { opacity: 0; transform: translateY(-6px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 </style>

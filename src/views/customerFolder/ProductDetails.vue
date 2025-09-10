@@ -73,6 +73,18 @@
             {{ unit }}
           </button>
         </div>
+        <!-- Dynamic per-unit note: show seller-defined weights for sack/kaing/bundle; counts for tray/tali -->
+        <div class="unit-weight-note" v-if="selectedUnit">
+          <template v-if="['sack','kaing','bundle'].includes(selectedUnit.toLowerCase()) && unitWeightKg !== null">
+            <small>Approx. {{ unitWeightKg }} kg per {{ selectedUnit }}</small>
+          </template>
+          <template v-else-if="selectedUnit.toLowerCase() === 'tray' && Number(product?.itemsPerTray) > 0">
+            <small>{{ Number(product.itemsPerTray) }} items per Tray</small>
+          </template>
+          <template v-else-if="selectedUnit.toLowerCase() === 'tali' && Number(product?.itemsPerTali) > 0">
+            <small>{{ Number(product.itemsPerTali) }} bunches per Tali</small>
+          </template>
+        </div>
       </div>
       
       <!-- Product Stats Info -->
@@ -263,6 +275,22 @@
               <span>Price per {{ modalSelectedUnit }}:</span>
               <span>₱{{ getUnitPrice(modalSelectedUnit).toFixed(2) }}</span>
             </div>
+            <div v-if="['sack','kaing','bundle','kg'].includes((modalSelectedUnit||'').toLowerCase())" class="price-row">
+              <span>Weight per {{ modalSelectedUnit }}:</span>
+              <span>{{ modalUnitWeightKg !== null ? (modalUnitWeightKg + ' kg') : '—' }}</span>
+            </div>
+            <div v-else-if="(modalSelectedUnit||'').toLowerCase() === 'tray' && Number(product?.itemsPerTray) > 0" class="price-row">
+              <span>Items per Tray:</span>
+              <span>{{ Number(product.itemsPerTray) }}</span>
+            </div>
+            <div v-else-if="(modalSelectedUnit||'').toLowerCase() === 'tali' && Number(product?.itemsPerTali) > 0" class="price-row">
+              <span>Bunches per Tali:</span>
+              <span>{{ Number(product.itemsPerTali) }}</span>
+            </div>
+            <div v-if="modalEstimatedTotalWeightKg !== null" class="price-row">
+              <span>Estimated total weight:</span>
+              <span>{{ modalEstimatedTotalWeightKg }} kg</span>
+            </div>
             <div class="price-row total">
               <span>Total:</span>
               <span>₱{{ (getUnitPrice(modalSelectedUnit) * modalQuantity).toFixed(2) }}</span>
@@ -337,6 +365,22 @@
             <div class="price-row">
               <span>Price per {{ modalSelectedUnit }}:</span>
               <span>₱{{ getUnitPrice(modalSelectedUnit).toFixed(2) }}</span>
+            </div>
+            <div v-if="['sack','kaing','bundle','kg'].includes((modalSelectedUnit||'').toLowerCase())" class="price-row">
+              <span>Weight per {{ modalSelectedUnit }}:</span>
+              <span>{{ modalUnitWeightKg !== null ? (modalUnitWeightKg + ' kg') : '—' }}</span>
+            </div>
+            <div v-else-if="(modalSelectedUnit||'').toLowerCase() === 'tray' && Number(product?.itemsPerTray) > 0" class="price-row">
+              <span>Items per Tray:</span>
+              <span>{{ Number(product.itemsPerTray) }}</span>
+            </div>
+            <div v-else-if="(modalSelectedUnit||'').toLowerCase() === 'tali' && Number(product?.itemsPerTali) > 0" class="price-row">
+              <span>Bunches per Tali:</span>
+              <span>{{ Number(product.itemsPerTali) }}</span>
+            </div>
+            <div v-if="modalEstimatedTotalWeightKg !== null" class="price-row">
+              <span>Estimated total weight:</span>
+              <span>{{ modalEstimatedTotalWeightKg }} kg</span>
             </div>
             <div class="price-row total">
               <span>Total:</span>
@@ -647,6 +691,42 @@ export default {
         return 'No delivery areas available';
       }
       return `Available in ${this.areasCovered.join(', ')}`;
+    },
+    // Unit weight mapping and estimates (seller-defined)
+    unitWeightMap() {
+      const p = this.product || {};
+      const norm = (v) => {
+        const n = Number(v);
+        return !isNaN(n) && n > 0 ? n : null;
+      };
+      return {
+        sack: norm(p.sackWeight),
+        kaing: norm(p.kaingWeight),
+        bundle: norm(p.bundleWeight),
+        kg: 1
+      };
+    },
+    unitWeightKg() {
+      const unit = (this.selectedUnit || '').toLowerCase();
+      if (unit in this.unitWeightMap) return this.unitWeightMap[unit];
+      if (unit === 'kg') return 1;
+      return null;
+    },
+    estimatedTotalWeightKg() {
+      if (this.unitWeightKg === null) return null;
+      const qty = Number(this.quantity) || 0;
+      return this.unitWeightKg * qty;
+    },
+    modalUnitWeightKg() {
+      const unit = (this.modalSelectedUnit || '').toLowerCase();
+      if (unit in this.unitWeightMap) return this.unitWeightMap[unit];
+      if (unit === 'kg') return 1;
+      return null;
+    },
+    modalEstimatedTotalWeightKg() {
+      if (this.modalUnitWeightKg === null) return null;
+      const qty = Number(this.modalQuantity) || 0;
+      return this.modalUnitWeightKg * qty;
     }
   },
   methods: {
@@ -1399,6 +1479,18 @@ export default {
           sellerId: this.sellerId,
           // Persist the intended order type so checkout/seller can identify it
           orderType: this.selectedPurchaseType || 'normal',
+          // Include seller-defined weight per unit for relevant units
+          weight: (() => {
+            const u = (this.modalSelectedUnit||'').toLowerCase();
+            if (u === 'kg') return 1; // per unit is 1 kg
+            if (u === 'sack') return Number(this.product?.sackWeight) || null;
+            if (u === 'kaing') return Number(this.product?.kaingWeight) || null;
+            if (u === 'bundle') return Number(this.product?.bundleWeight) || null;
+            return null;
+          })(),
+          // Include counts for tray/tali (display-only in checkout)
+          itemsPerTray: Number(this.product?.itemsPerTray) || null,
+          itemsPerTali: Number(this.product?.itemsPerTali) || null,
           cartStatus: false,
           createdAt: serverTimestamp()
         };
@@ -1437,7 +1529,15 @@ async handleBuyNowConfirm() {
         productId: this.productId,
         productName: this.productName,
         productImage: this.productImage,
-        weight: this.modalQuantity,
+        // Weight per unit (kg) for relevant units; quantity handled by checkout
+        weight: (() => {
+          const u = (this.modalSelectedUnit||'').toLowerCase();
+          if (u === 'kg') return 1;
+          if (u === 'sack') return Number(this.product?.sackWeight) || null;
+          if (u === 'kaing') return Number(this.product?.kaingWeight) || null;
+          if (u === 'bundle') return Number(this.product?.bundleWeight) || null;
+          return null;
+        })(),
         packagingType: this.modalSelectedUnit,
         totalPrice: unitPrice * this.modalQuantity,
         sellerId: this.sellerId,
@@ -1447,6 +1547,8 @@ async handleBuyNowConfirm() {
         price: unitPrice,
         unit: this.modalSelectedUnit,
         quantity: this.modalQuantity,
+        itemsPerTray: Number(this.product?.itemsPerTray) || null,
+        itemsPerTali: Number(this.product?.itemsPerTali) || null,
         // Pass along the intended purchase type to checkout
         orderType: this.selectedPurchaseType || 'normal',
         isBuyNow: true
@@ -1756,6 +1858,7 @@ async handleBuyNowConfirm() {
   color: white;
   border-color: #2e5c31;
 }
+.unit-weight-note { margin-top: 8px; color: #6b7280; font-size: 12px; }
 
 /* Product Stats Container */
 .product-stats-container {

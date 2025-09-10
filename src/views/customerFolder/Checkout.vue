@@ -59,6 +59,18 @@
                 <h3>{{ item.productName || 'Unnamed Product' }}</h3>
                 <span class="unit">Unit: {{ item.unit }}</span>
               </div>
+              <div class="weight" v-if="getEstimatedItemWeightKg(item) !== null">
+                <small>Est. {{ getEstimatedItemWeightKg(item) }} kg ({{ item.quantity }} × {{ displayPerUnitWeight(item) }})</small>
+              </div>
+                  <div class="weight" v-else-if="['sack','kaing','bundle','kg'].includes((item.unit||'').toLowerCase())">
+                <small>Weight per {{ item.unit }}: {{ Number(item.weight) > 0 ? Number(item.weight) + ' kg' : '—' }}</small>
+              </div>
+              <div class="weight" v-else-if="item && item.unit && item.unit.toLowerCase() === 'tray' && Number(item.itemsPerTray) > 0">
+                <small>{{ Number(item.itemsPerTray) }} items per Tray</small>
+              </div>
+              <div class="weight" v-else-if="item && item.unit && item.unit.toLowerCase() === 'tali' && Number(item.itemsPerTali) > 0">
+                <small>{{ Number(item.itemsPerTali) }} bunches per Tali</small>
+              </div>
               
               <div class="price-quantity-controls">
                 <div class="quantity-controls">
@@ -144,31 +156,7 @@
               </div>
             </div>
           </div>
-          <!-- Multiple sellers: show a card per seller -->
-          <div class="payment-guide" v-else-if="isMultiSeller">
-            <div class="guide-card" style="grid-template-columns: 1fr;">
-              <div v-for="s in sellersList" :key="s.id" class="guide-left">
-                <p class="seller-line"><strong>Seller:</strong> {{ s.displayName }}</p>
-                <p class="seller-line"><strong>GCash No.:</strong> {{ s.gcash?.number || s.contactNumber || '—' }}</p>
-                <div class="qr-wrapper">
-                  <div v-if="s.gcash?.qrUrl" class="qr-image">
-                    <img :src="s.gcash.qrUrl" alt="Seller QR Code" @click="openQrModal(s.gcash.qrUrl)" />
-                  </div>
-                  <div v-else class="qr-placeholder">QR Code not available</div>
-                  <p class="qr-caption">Seller QR Code</p>
-                </div>
-              </div>
-              <div class="guide-right">
-                <h4>How to pay</h4>
-                <ol class="steps">
-                  <li>Pay each seller separately by scanning their QR code.</li>
-                  <li>Enter the amount for the items from that seller.</li>
-                  <li>Confirm payment and keep the receipt.</li>
-                  <li>Upload the receipts on the next page to complete verification.</li>
-                </ol>
-              </div>
-            </div>
-          </div>
+          <!-- Multiple sellers flow removed; cart now enforces single-seller checkout -->
         </div>
       </div>
       
@@ -782,9 +770,14 @@ export default {
               unitPrice: unitPrice,
               quantity: Number(item.quantity) || 1,
               unit: item.unit || item.packagingType || 'piece',
+              // Preserve weight (kg) if provided by Cart/Product
+              weight: (Number(item.weight) && Number(item.weight) > 0) ? Number(item.weight) : null,
               totalPrice: unitPrice * (Number(item.quantity) || 1),
               cartItemId: item.cartItemId,
-              orderType
+              orderType,
+              // Pass through tray/tali counts for display
+              itemsPerTray: (Number(item.itemsPerTray) && Number(item.itemsPerTray) > 0) ? Number(item.itemsPerTray) : null,
+              itemsPerTali: (Number(item.itemsPerTali) && Number(item.itemsPerTali) > 0) ? Number(item.itemsPerTali) : null
             });
           }
           
@@ -927,7 +920,7 @@ export default {
   const sellersList = computed(() => Object.keys(sellersMap.value).map(id => ({ id, ...sellersMap.value[id] })));
   const isMultiSeller = computed(() => new Set(orderItems.value.map(i => i.sellerId)).size > 1);
     
-    // Delivery options
+  // Delivery options
     const deliveryOption = ref('standard');
       // Order success
     const showSuccessModal = ref(false);
@@ -943,7 +936,7 @@ export default {
       return `${address.barangay}, ${address.municipality}, ${address.province}`;
     };
     
-    // Distance calculation functions
+  // Distance calculation functions
     const calculateDistance = (lat1, lon1, lat2, lon2) => {
       const R = 6371; // Radius of the Earth in kilometers
       const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -1118,24 +1111,68 @@ export default {
       calculateDeliveryDistance();
     };
 
-    // Delivery fee calculations based on distance
+    // Total order weight (kg): sum of each item's per-unit weight * quantity.
+    // Fallback: if unit contains 'kg' and weight not provided, assume 1 kg per unit.
+    const totalWeightKg = computed(() => {
+      try {
+        return orderItems.value.reduce((sum, item) => {
+          const qty = Number(item.quantity) || 0;
+          const w = Number(item.weight);
+          if (!isNaN(w) && w > 0) {
+            return sum + (w * qty);
+          }
+          const unitStr = (item.unit || '').toString().toLowerCase();
+          if (unitStr.includes('kg') || unitStr.includes('kilogram')) {
+            return sum + (1 * qty);
+          }
+          return sum;
+        }, 0);
+      } catch (e) {
+        return 0;
+      }
+    });
+
+    // Delivery fee calculations based on distance and total weight
     const standardDeliveryFee = computed(() => {
       if (deliveryDistance.value > 0) {
-        // 8 pesos per kilometer for standard delivery, minimum 60 pesos
-        const fee = Math.max(deliveryDistance.value * 8, 60);
+        // Weight-tiered per-km rate: 1–10 kg => ₱3/km, 11kg+ => ₱5/km
+        const ratePerKm = (totalWeightKg.value || 0) <= 10 ? 3 : 5;
+        // Minimum fee remains ₱60 for standard
+        const fee = Math.max(deliveryDistance.value * ratePerKm, 60);
         return Math.round(fee); // Round to whole number
       }
-      return 80; // Default fallback increased from 50
+      return 60; // Fallback to minimum when distance unavailable
     });
 
     const expressDeliveryFee = computed(() => {
       if (deliveryDistance.value > 0) {
-        // 12 pesos per kilometer for express delivery, minimum 100 pesos
-        const fee = Math.max(deliveryDistance.value * 12, 100);
+        // Apply the same weight-tiered base rate with an express multiplier
+        const baseRatePerKm = (totalWeightKg.value || 0) <= 10 ? 3 : 5;
+        const EXPRESS_MULTIPLIER = 1.5; // Keep express pricier than standard
+        const fee = Math.max(deliveryDistance.value * baseRatePerKm * EXPRESS_MULTIPLIER, 100);
         return Math.round(fee); // Round to whole number
       }
-      return 200; // Default fallback increased from 120
+      return 100; // Fallback to express minimum when distance unavailable
     });
+
+      // UI helpers: use payload-provided weight; avoid static maps
+      const displayPerUnitWeight = (item) => {
+        const u = (item?.unit || '').toString().toLowerCase();
+        if (u === 'kg') return '1 kg/kg';
+        const w = Number(item?.weight);
+        if (!isNaN(w) && w > 0) return `${w} kg/${item.unit}`;
+        return `${item.unit}`;
+      };
+      const getEstimatedItemWeightKg = (item) => {
+        // If explicit weight per unit exists on item, prefer it
+        const qty = Number(item?.quantity) || 0;
+        const perUnit = Number(item?.weight);
+        if (!isNaN(perUnit) && perUnit > 0) return perUnit * qty;
+        const unitStr = (item?.unit || '').toString().toLowerCase();
+        if (unitStr.includes('kg')) return qty * 1;
+        // No weight available for this unit
+        return null;
+      };
     
     // Helper function to generate order code
     const generateOrderCode = () => {
@@ -1428,7 +1465,14 @@ export default {
       try {
         if (!auth.currentUser) throw new Error('User not authenticated');
 
-        // Group items by seller for separate payments
+        // Guard: Single-seller only (Cart enforces this, but double-check)
+        const uniqueSellerIds = Array.from(new Set(orderItems.value.map(i => i.sellerId).filter(Boolean)));
+        if (uniqueSellerIds.length > 1) {
+          showNotificationMessage('Please checkout items from one seller only.', 'error');
+          return;
+        }
+
+        // Group items by seller (will be single group)
         const itemsBySeller = {};
         orderItems.value.forEach(item => {
           const sellerId = item.sellerId;
@@ -1444,17 +1488,9 @@ export default {
           console.log(`Seller ${sellerId}: ${itemsBySeller[sellerId].length} items`);
         });
 
-        // Handle multiple sellers by creating separate orders for each seller
+  // Create order(s) (single seller expected)
         const sellerIds = Object.keys(itemsBySeller);
-        console.log(`Processing orders for ${sellerIds.length} seller(s)`);
-        
-        // If multiple sellers, show informative message
-        if (sellerIds.length > 1) {
-          showNotificationMessage(
-            `Processing ${sellerIds.length} separate orders for different sellers. Each seller will receive their own order.`,
-            'info'
-          );
-        }
+  console.log(`Processing orders for ${sellerIds.length} seller(s)`);
 
   // Process orders for each seller separately
         const allOrderCodes = [];
@@ -1594,10 +1630,10 @@ export default {
                   refundId: null,
                   refundrequestdAt: null,
                   sellerContact: null, // Will be populated later if needed
-                  // Multi-seller order metadata
-                  isMultiSellerOrder: sellerIds.length > 1,
-                  totalSellersCount: sellerIds.length,
-                  relatedOrderCodes: allOrderCodes.filter(code => code !== orderCode) // Other order codes for this customer
+                  // Multi-seller order metadata removed; always single-seller
+                  isMultiSellerOrder: false,
+                  totalSellersCount: 1,
+                  relatedOrderCodes: []
                 });
 
                 // Create sale record with accurate financial data
@@ -1623,9 +1659,9 @@ export default {
                   depositStatus: productIsPreOrder ? 'unpaid' : null,
                   // Order type for reporting
                   orderType: item.orderType || (productIsPreOrder ? 'preorder' : 'normal'),
-                  // Multi-seller order metadata
-                  isMultiSellerOrder: sellerIds.length > 1,
-                  totalSellersCount: sellerIds.length
+                  // Multi-seller order metadata removed; always single-seller
+                  isMultiSellerOrder: false,
+                  totalSellersCount: 1
                 });
               }
             });
@@ -1752,17 +1788,12 @@ export default {
           sendingEmail.value = false;
         }
         
-        // For cash on delivery, show success modal
+  // For cash on delivery, show success modal
         showSuccessModal.value = true;
         canCancel.value = true;
         
-        // Create success message based on number of orders
-        let successMessage;
-        if (successfulOrders.length === 1) {
-          successMessage = 'Order placed successfully! Check your email for confirmation.';
-        } else {
-          successMessage = `${successfulOrders.length} orders placed successfully! Each seller will process their items separately. Check your email for confirmations.`;
-        }
+  // Single-seller success message
+  const successMessage = 'Order placed successfully! Check your email for confirmation.';
         
         showNotificationMessage(successMessage, 'success');
 
@@ -1887,6 +1918,7 @@ export default {
       isBuyNow,
       subtotal,
       deliveryFee,
+  totalWeightKg,
       standardDeliveryFee,
       expressDeliveryFee,
       tax,
@@ -1899,6 +1931,9 @@ export default {
       placeholderImage,
       increaseQuantity,
       decreaseQuantity,
+  // per-item weight display
+  getEstimatedItemWeightKg,
+  displayPerUnitWeight,
       
       // Distance calculation
       deliveryDistance,

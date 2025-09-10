@@ -5,20 +5,49 @@ const favicons = require('favicons').default;
 const Jimp = require('jimp');
 
 const root = path.resolve(__dirname, '..');
-const inputCandidates = [
+// Build candidate list dynamically so slight filename differences still work
+const assetsDir = path.join(root, 'src', 'assets');
+let inputCandidates = [];
+try {
+  const files = fs.readdirSync(assetsDir).filter(f => /\.png$/i.test(f));
+  // Prefer any filename that contains 'green'
+  const greenRegexOrder = [
+    /farmx.*icon.*green.*\.png/i,
+    /farmx.*green.*\.png/i,
+    /green.*\.png/i,
+  ];
+  for (const rx of greenRegexOrder) {
+    const match = files.find(f => rx.test(f));
+    if (match) {
+      inputCandidates.push(path.join(assetsDir, match));
+      break; // take the first best green match
+    }
+  }
+} catch {}
+
+// Add explicit known names (green then white) and final fallbacks
+inputCandidates = inputCandidates.concat([
+  path.join(root, 'src', 'assets', 'farmxpress-icon(green).png'),
+  path.join(root, 'src', 'assets', 'farmxpress-icon-green.png'),
+  path.join(root, 'src', 'assets', 'farmxpress-icongreen.png'),
+  // White fallbacks
+  path.join(root, 'src', 'assets', 'farmxpress-iconwhite.png'),
+  path.join(root, 'src', 'assets', 'logowhite.png'),
+  // Generic fallbacks
   path.join(root, 'src', 'assets', 'icon.png'),
   path.join(root, 'src', 'assets', 'logo.png'),
-  path.join(root, 'src', 'assets', 'logowhite.png')
-];
+]);
 
 const outputPublic = path.join(root, 'public');
 const outputIconsDir = path.join(outputPublic, 'img', 'icons');
 
 const source = inputCandidates.find(p => fs.existsSync(p));
 if (!source) {
-  console.error('Icon not found. Please add src/assets/icon.png (or logo.png/logowhite.png)');
+  console.error('Icon not found. Please add src/assets/farmxpress-icon(green).png (or farmxpress-icon-green.png / farmxpress-icongreen.png). Fallbacks include farmxpress-iconwhite.png, icon.png, logo.png, logowhite.png');
   process.exit(1);
 }
+
+console.log('Using app icon source:', path.relative(root, source));
 
 const config = {
   path: '/img/icons',
@@ -41,17 +70,20 @@ const config = {
 (async () => {
   try {
   await fse.ensureDir(outputIconsDir);
+  // Clean existing icons to avoid stale files from previous runs
+  await fse.emptyDir(outputIconsDir);
 
   // 1) Preprocess: trim transparent margins and scale to fill a square canvas
   const original = await Jimp.read(source);
-  // Autocrop with tolerance to remove outer ring if it has low alpha
-  original.autocrop({ tolerance: 0.0001, cropOnlyFrames: false });
+  // Autocrop with stronger tolerance to remove subtle transparent borders
+  original.autocrop({ tolerance: 0.01, cropOnlyFrames: false });
 
   const targetSize = 1024; // high base resolution for crisp downscales
-  // Compute scale to fit the longest side to target, with a slight margin (5%)
+  const ZOOM_FACTOR = 1.16; // slight overfill to appear larger on desktop tiles
+  // Compute scale to fit the longest side to target with no extra margin
   const w = original.bitmap.width;
   const h = original.bitmap.height;
-  const scale = (targetSize * 0.98) / Math.max(w, h);
+  const scale = (targetSize / Math.max(w, h)) * ZOOM_FACTOR;
   const resized = original.clone().resize(Math.round(w * scale), Math.round(h * scale), Jimp.RESIZE_BICUBIC);
 
   // Create transparent square canvas and center the image

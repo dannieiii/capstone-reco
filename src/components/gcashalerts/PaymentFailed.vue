@@ -54,7 +54,7 @@ import { ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/firebase/firebaseConfig';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+// Cloud Functions are no longer used
 
 export default {
   name: 'PaymentFailed',
@@ -68,8 +68,7 @@ export default {
     const orderData = ref(null);
     const errorMessage = ref('');
     const isRetrying = ref(false);
-    const functions = getFunctions();
-    const createGcashPayment = httpsCallable(functions, 'createGcashPayment');
+  // Removed Cloud Functions usage for payment retry
 
     const fetchOrderDetails = async () => {
       try {
@@ -112,24 +111,12 @@ export default {
     };
 
     const retryPayment = async () => {
+      // Payments via GCash are disabled. Navigate user to orders to pick another method.
       if (!orderData.value || isRetrying.value) return;
-
+      isRetrying.value = true;
       try {
-        isRetrying.value = true;
-        errorMessage.value = '';
-
-        const paymentResult = await createGcashPayment({
-          amount: orderData.value.totalPrice,
-          orderCode: orderData.value.orderCode,
-          customerName: orderData.value.username,
-          customerEmail: orderData.value.email
-        });
-
-        // Redirect to GCash payment page
-        window.location.href = paymentResult.data.paymentUrl;
-      } catch (error) {
-        console.error('Error retrying payment:', error);
-        errorMessage.value = 'Failed to create payment. Please try again later.';
+        errorMessage.value = 'Online payment is disabled. Please choose Cash on Delivery or contact support.';
+        setTimeout(() => router.push('/customer/orders'), 800);
       } finally {
         isRetrying.value = false;
       }

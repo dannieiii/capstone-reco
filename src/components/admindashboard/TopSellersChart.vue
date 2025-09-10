@@ -198,8 +198,8 @@ const fetchSellersData = async () => {
         ...sellerData 
       }
       
-      // Fetch sales data for this seller (same logic as Sellers.vue)
-      const salesData = await fetchSellerSalesData(seller.userId || docSnapshot.id)
+      // Fetch sales data for this seller: only 'Order Received' or 'Completed'
+      const salesData = await fetchSellerSalesData({ sellerDocId: docSnapshot.id, sellerUserId: seller.userId })
       seller.totalSales = salesData.totalSales
       seller.totalOrders = salesData.totalOrders
       
@@ -228,25 +228,41 @@ const fetchSellersData = async () => {
   }
 }
 
-const fetchSellerSalesData = async (sellerId) => {
+const fetchSellerSalesData = async ({ sellerDocId, sellerUserId }) => {
   try {
-    // Same logic as Sellers.vue for fetching sales data
-    const ordersQuery = query(
-      collection(db, "orders"),
-      where("sellerId", "==", sellerId)
+    // Query orders using both possible IDs, then filter statuses
+    const ids = [sellerDocId, sellerUserId].filter(Boolean)
+    if (ids.length === 0) return { totalSales: 0, totalOrders: 0 }
+
+    const snapshots = await Promise.all(
+      ids.map((sid) => getDocs(query(collection(db, 'orders'), where('sellerId', '==', sid))))
     )
-    
-    const ordersSnapshot = await getDocs(ordersQuery)
+
+    const seen = new Set()
     let totalSales = 0
     let totalOrders = 0
-    
-    ordersSnapshot.forEach((doc) => {
-      const orderData = doc.data()
-      const itemPrice = orderData.itemPrice || (orderData.unitPrice * orderData.quantity) || orderData.totalPrice || 0
-      totalSales += itemPrice
-      totalOrders++
+
+    snapshots.forEach((snap) => {
+      snap.forEach((d) => {
+        if (seen.has(d.id)) return
+        seen.add(d.id)
+        const o = d.data()
+        const status = (o.status || '').toLowerCase()
+        // Only finalized revenue: Order Received or Completed
+        if (status !== 'order received' && status !== 'completed') return
+
+        const itemPrice = Number(o.itemPrice) || 0
+        const unitPrice = Number(o.unitPrice) || 0
+        const qty = Number(o.quantity) || 0
+        const totalPrice = Number(o.totalPrice) || 0
+        const amount = itemPrice || (unitPrice && qty ? unitPrice * qty : 0) || totalPrice
+        if (Number.isFinite(amount)) {
+          totalSales += amount
+          totalOrders += 1
+        }
+      })
     })
-    
+
     return { totalSales, totalOrders }
   } catch (error) {
     console.error("Error fetching seller sales data:", error)

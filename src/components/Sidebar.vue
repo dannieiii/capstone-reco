@@ -21,8 +21,8 @@
     'mobile-open': isMobileSidebarOpen
   }">
     <div class="logo-container">
-      <div class="logo-content">
-        <img src="@/assets/logowhite.png" alt="Logo" class="sidebar-logo" v-if="!isMobile" />
+    <div class="logo-content">
+  <img src="@/assets/farmxpress-iconwhite.png" alt="Logo" class="sidebar-logo" v-if="!isMobile" />
         <h1 class="logo-text">FarmXpress</h1>
       </div>
       <button class="desktop-hamburger" @click="toggleSidebar" v-if="!isMobile">

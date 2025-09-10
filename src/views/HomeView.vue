@@ -1,5 +1,79 @@
 <template>
   <div class="home-page">
+    <!-- Notification toast -->
+    <Notification 
+      v-if="showNotification"
+      :message="notificationMessage"
+      :type="notificationType"
+      :visible="showNotification"
+      @close="showNotification = false"
+    />
+    
+    <!-- Login Required Modal (style aligned with ProductDetails.vue) -->
+    <div v-if="showLoginModal" class="modal-overlay">
+      <div class="login-modal" @click.stop>
+        <div class="login-header">
+          <button class="close-button" @click="closeLoginModal">&times;</button>
+        </div>
+        <div class="login-content">
+          <div class="app-branding">
+            <img src="@/assets/logo.png" alt="FarmXpress Logo" class="logo" />
+            <h1 class="app-title">FarmXpress</h1>
+            <h3 class="app-subtitle">MOBILE APP</h3>
+          </div>
+          <div class="login-form">
+            <div class="input-group">
+              <div class="input-wrapper">
+                <User size="18" class="input-icon" />
+                <input type="email" placeholder="Email address" class="login-input" v-model="loginEmail" />
+              </div>
+            </div>
+            <div class="input-group">
+              <div class="input-wrapper">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="input-icon">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                  <circle cx="12" cy="16" r="1"/>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                </svg>
+                <input :type="showPassword ? 'text' : 'password'" placeholder="Password" class="login-input" v-model="loginPassword" />
+                <button type="button" class="password-toggle" @click="showPassword = !showPassword">
+                  <svg v-if="showPassword" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                  </svg>
+                  <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                    <line x1="1" y1="1" x2="23" y2="23"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="form-options">
+              <label class="remember-me">
+                <input type="checkbox" v-model="rememberMe" />
+                <span class="checkmark"></span>
+                Remember Me
+              </label>
+              <a href="#" class="forgot-password" @click.prevent="goToForgotPassword">Forgot Password?</a>
+            </div>
+            <button class="login-button" @click="handleInlineEmailLogin" :disabled="isLoggingIn">
+              {{ isLoggingIn ? 'Logging in...' : 'Login' }}
+            </button>
+            <div class="login-divider"><span>or</span></div>
+            <button class="google-login-btn" @click="loginWithGoogleInline">
+              <svg width="18" height="18" viewBox="0 0 18 18">
+                <path fill="#4285F4" d="M16.51 8H8.98v3h4.3c-.18 1-.74 1.48-1.6 2.04v2.01h2.6a7.8 7.8 0 0 0 2.38-5.88c0-.57-.05-.66-.15-1.18z"/>
+                <path fill="#34A853" d="M8.98 17c2.16 0 3.97-.72 5.3-1.94l-2.6-2.04a4.8 4.8 0 0 1-7.18-2.53H1.83v2.07A8 8 0 0 0 8.98 17z"/>
+                <path fill="#FBBC05" d="M4.5 10.49a4.8 4.8 0 0 1 0-3.07V5.35H1.83a8 8 0 0 0 0 7.17l2.67-2.03z"/>
+                <path fill="#EA4335" d="M8.98 4.72c1.16 0 2.23.4 3.06 1.2l2.3-2.3A8 8 0 0 0 1.83 5.35L4.5 7.42c.64-1.9 2.26-3.2 4.48-3.2z"/>
+              </svg>
+              Continue with Google
+            </button>
+            <p class="signup-text">Don't have an account? <a href="#" @click.prevent="goToSignup" class="signup-link">Create an account</a></p>
+          </div>
+        </div>
+      </div>
+    </div>
     <div class="header">
       <div class="search-container">
         
@@ -209,9 +283,13 @@
                 <Share2 size="16" />
                 Share this App
               </button>
-              <button class="menu-item logout" @click="confirmLogout">
+              <button v-if="isLoggedIn" class="menu-item logout" @click="confirmLogout">
                 <LogOut size="16" />
                 Logout
+              </button>
+              <button v-else class="menu-item logout" @click="goToLogin">
+                <LogIn size="16" />
+                Login
               </button>
             </div>
           </div>
@@ -738,13 +816,14 @@
     </div>
     </div>
     
-    <bottom-navigation active-tab="/" @navigate="handleBottomNavigation" />
+  <bottom-navigation active-tab="/" @navigate="handleBottomNavigation" @auth-required="handleAuthRequired" />
   </div>
 </template>
 
 <script>
 import BottomNavigation from '@/components/BottomNavigation.vue';
 import ProductRating from '@/components/ProductRating.vue';
+import Notification from '@/components/Notification.vue';
 import { 
   Search, 
   ShoppingCart, 
@@ -757,6 +836,7 @@ import {
   Shield, 
   Share2, 
   LogOut,
+  LogIn,
   Briefcase,
   Eye,
   ShoppingBag,
@@ -774,12 +854,13 @@ import { onMounted, onUnmounted, ref, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { signOut, onAuthStateChanged } from 'firebase/auth';
 import { auth, db } from '@/firebase/firebaseConfig';
-import { collection, getDocs, doc, getDoc, query, orderBy, limit, where } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, query, orderBy, limit, where, addDoc, updateDoc } from 'firebase/firestore';
 
 export default {
   components: {
     BottomNavigation,
     ProductRating,
+  Notification,
     Search,
     ShoppingCart,
     MapPin,
@@ -791,6 +872,7 @@ export default {
     Shield,
     Share2,
     LogOut,
+  LogIn,
     Briefcase,
     Eye,
     ShoppingBag,
@@ -1428,6 +1510,16 @@ const fetchProducts = async () => {
       userIsSeller: false, // Track if user is already a seller
       userIsVerified: false, // Track if user is verified
       userHasPendingApplication: false, // Track if user has pending seller application
+  isLoggedIn: false,
+  showNotification: false,
+  notificationMessage: '',
+  notificationType: 'info',
+  showLoginModal: false,
+  loginEmail: '',
+  loginPassword: '',
+  showPassword: false,
+  rememberMe: false,
+  isLoggingIn: false,
     };
   },
   methods: {
@@ -1445,6 +1537,18 @@ const fetchProducts = async () => {
     formatPrice(price) {
       return parseFloat(price).toFixed(2);
     },
+    handleAuthRequired({ label }) {
+      const name = label || 'this section';
+      this.notificationMessage = `You cannot open ${name}. Please log in first.`;
+      this.notificationType = 'error';
+      this.showNotification = true;
+      this.showLoginModal = true;
+    },
+    closeLoginModal() { this.showLoginModal = false; },
+    async handleInlineEmailLogin() { this.$router.push('/login'); },
+    async loginWithGoogleInline() { this.$router.push('/login'); },
+    goToForgotPassword() { this.$router.push('/resetpassword'); },
+    goToSignup() { this.$router.push('/register'); },
 
     // Compute the display price for pre-order products (prefer per-unit pre-order, then generic)
     getPreOrderDisplayPrice(product) {
@@ -1537,6 +1641,15 @@ const fetchProducts = async () => {
         console.error('Error logging out:', error);
       }
     },
+    goToLogin() {
+      this.showProfileMenu = false;
+      this.$router.push('/login');
+    },
+    showLoginRequired(message = 'You cannot open this. Please log in first.') {
+      this.notificationMessage = message;
+      this.notificationType = 'error';
+      this.showNotification = true;
+    },
     viewProduct(product) {
       const productId = product.id || product.productId;
       if (!productId) {
@@ -1551,9 +1664,85 @@ const fetchProducts = async () => {
     handleTabChange(tab) {
       console.log(`Changed to tab: ${tab}`);
     },
-    addToCart(product) {
-      console.log(`Added ${product.name || product.productName} to cart`);
-      this.cartItems.push({...product, quantity: 1});
+    async addToCart(product) {
+      try {
+        // Require login to add to cart (cart is stored per-user in Firestore)
+        if (!auth.currentUser) {
+          this.$router.push('/login');
+          return;
+        }
+
+        const userId = auth.currentUser.uid;
+
+        // Pick a sensible default unit based on available prices (order mirrors UI)
+        const unitCandidates = [
+          { key: 'kg', priceField: 'pricePerKilo', stockField: 'stockPerKilo' },
+          { key: 'sack', priceField: 'pricePerSack', stockField: 'stockPerSack' },
+          { key: 'tali', priceField: 'pricePerTali', stockField: 'stockPerTali' },
+          { key: 'kaing', priceField: 'pricePerKaing', stockField: 'stockPerKaing' },
+          { key: 'bundle', priceField: 'pricePerBundle', stockField: 'stockPerBundle' },
+          { key: 'tray', priceField: 'pricePerTray', stockField: 'stockPerTray' },
+          { key: 'piece', priceField: 'pricePerPiece', stockField: 'stockPerPiece' },
+        ];
+
+        const chosen = unitCandidates.find(u => Number(product[u.priceField]) > 0 && Number(product[u.stockField]) > 0)
+          || unitCandidates.find(u => Number(product[u.priceField]) > 0)
+          || unitCandidates[0];
+
+        const basePrice = Number(product[chosen.priceField] || 0);
+        const price = product.isOnSale ? this.calculateSalePrice(basePrice, product.discountPercentage || product.discount) : basePrice;
+
+        // Derive per-unit weight when applicable
+        let weight = 0;
+        if (chosen.key === 'kg') weight = 1;
+        else if (chosen.key === 'sack') weight = Number(product.sackWeight || 0) || 0;
+        else if (chosen.key === 'kaing') weight = Number(product.kaingWeight || 0) || 0;
+        else if (chosen.key === 'bundle') weight = Number(product.bundleWeight || 0) || 0;
+
+        const productId = product.id || product.productId;
+        const productName = product.productName || product.name || 'Product';
+        const productImage = product.image || product.photoUrl || '';
+        const farmName = product.farmName || product.sellerName || product.shopName || product.storeName || '';
+        const sellerId = product.sellerId || product.ownerId || product.userId || '';
+
+        // If item with same product + unit already exists, increase quantity instead of adding duplicate
+        const existingQuery = query(
+          collection(db, 'carts'),
+          where('userId', '==', userId),
+          where('productId', '==', productId)
+        );
+        const existingSnap = await getDocs(existingQuery);
+        const existing = existingSnap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .find(it => (it.packagingType || it.unit) === chosen.key && it.cartStatus !== true);
+
+        if (existing) {
+          await updateDoc(doc(db, 'carts', existing.id), {
+            quantity: (existing.quantity || 1) + 1
+          });
+        } else {
+          const cartDoc = {
+            userId,
+            sellerId,
+            productId,
+            productName,
+            productImage,
+            farmName,
+            quantity: 1,
+            price: Number(price) || 0,
+            unitPrice: Number(price) || 0,
+            packagingType: chosen.key,
+            weight, // kg per unit when applicable (0 for non-weighted units)
+            selected: true,
+            cartStatus: false
+          };
+          await addDoc(collection(db, 'carts'), cartDoc);
+          // Update local badge count optimistically
+          this.cartItems.push({ ...cartDoc });
+        }
+      } catch (error) {
+        console.error('Error adding to cart:', error);
+      }
     },
     navigateToPath(path, query = null) {
       console.log('🔄 Navigating to:', path);
@@ -1565,6 +1754,12 @@ const fetchProducts = async () => {
       
       this.showProfileMenu = false;
       this.showFilterMenu = false;
+
+      // Block opening Messages when not logged in
+      if (!this.isLoggedIn && path === '/messages') {
+        this.showLoginRequired('You cannot open Messages. Please log in first.');
+        return;
+      }
       
       if (query) {
         this.router.push({ path, query });
@@ -1573,6 +1768,11 @@ const fetchProducts = async () => {
       }
     },
     handleBottomNavigation(path) {
+      // Block opening Messages when not logged in via bottom navigation
+      if (!this.isLoggedIn && path === '/messages') {
+        this.showLoginRequired('You cannot open Messages. Please log in first.');
+        return;
+      }
       this.router.push(path);
     },
     
@@ -1653,6 +1853,7 @@ const fetchProducts = async () => {
   
   // Only fetch user info if logged in
   onAuthStateChanged(auth, (user) => {
+  this.isLoggedIn = !!user;
     if (user) {
       this.fetchUserInfo();
     } else {
@@ -3644,5 +3845,149 @@ html {
   font-size: 14px;
   font-weight: 600;
   line-height: 1.2;
+}
+
+/* Login Modal Styles (aligned with ProductDetails.vue) */
+.login-modal {
+  background: linear-gradient(135deg, #e8f5e8, #f0f9f0);
+  border-radius: 20px 20px 0 0;
+  width: 100%;
+  max-width: 400px;
+  animation: slideUpModal 0.3s ease-out;
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.1);
+}
+
+@keyframes slideUpModal {
+  from { transform: translateX(-50%) translateY(100%); }
+  to { transform: translateX(-50%) translateY(0); }
+}
+
+.login-header {
+  display: flex;
+  justify-content: flex-end;
+  padding: 15px 20px 0;
+}
+
+.login-header .close-button {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #666;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-content {
+  padding: 20px 30px 40px;
+  text-align: center;
+}
+
+.app-branding { margin-bottom: 40px; }
+.logo { width: 60px; height: 60px; margin-bottom: 15px; }
+.app-title { font-size: 2rem; font-weight: 700; color: #2e5c31; margin: 0 0 5px; letter-spacing: -0.5px; }
+.app-subtitle { font-size: 1rem; color: #2e5c31; margin: 0; font-weight: 400; letter-spacing: 1px; }
+
+.login-form { max-width: 320px; margin: 0 auto; }
+.input-group { margin-bottom: 20px; }
+.input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: white;
+  border-radius: 25px;
+  border: 1px solid #e5e7eb;
+  padding: 0 14px;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.input-wrapper:focus-within { border-color: #2e5c31; box-shadow: 0 0 0 4px rgba(46, 92, 49, 0.08); }
+.input-icon { color: #7a8b7c; }
+
+.login-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  padding: 14px 10px;
+  font-size: 0.95rem;
+  color: #1f2937;
+}
+.login-input::placeholder { color: #9aa7a0; }
+
+.password-toggle { background: transparent; border: none; cursor: pointer; padding: 6px; color: #6b7280; }
+
+.form-options {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 25px;
+  font-size: 0.9rem;
+}
+.remember-me { display: flex; align-items: center; cursor: pointer; color: #2e5c31; font-weight: 500; }
+.remember-me input[type="checkbox"] { width: 16px; height: 16px; margin-right: 8px; accent-color: #2e5c31; }
+.checkmark { display: none; }
+.forgot-password { color: #2e5c31; text-decoration: none; font-weight: 500; }
+.forgot-password:hover { text-decoration: underline; }
+
+.login-button {
+  width: 100%;
+  padding: 15px;
+  background: linear-gradient(135deg, #2e5c31, #1e4a21);
+  color: white;
+  border: none;
+  border-radius: 25px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: 20px;
+  text-decoration: none;
+}
+.login-button:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(46, 92, 49, 0.3); }
+.login-button:disabled { opacity: 0.7; cursor: not-allowed; }
+
+.login-divider { position: relative; margin: 20px 0; text-align: center; }
+.login-divider::before { content: ''; position: absolute; top: 50%; left: 0; right: 0; height: 1px; background-color: #e0e0e0; }
+.login-divider span { background: linear-gradient(135deg, #e8f5e8, #f0f9f0); padding: 0 15px; color: #666; font-size: 0.9rem; }
+
+.google-login-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 25px;
+  font-size: 1rem;
+  font-weight: 500;
+  border: 1px solid #e0e0e0;
+  background-color: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: 20px;
+}
+.google-login-btn:hover { background-color: #f9f9f9; transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); }
+
+.signup-text { font-size: 0.9rem; color: #666; margin: 0; }
+.signup-link { color: #2e5c31; text-decoration: none; font-weight: 600; }
+.signup-link:hover { text-decoration: underline; }
+
+/* Align overlay for login modal */
+.modal-overlay:has(.login-modal) { align-items: flex-end; }
+
+@media (max-width: 480px) {
+  .login-modal { width: 100%; border-radius: 20px 20px 0 0; }
+  .login-content { padding: 15px 20px 30px; }
+  .login-form { max-width: 100%; }
+  .app-title { font-size: 1.8rem; }
+  .input-wrapper { padding: 0 15px; }
+  .login-input { padding: 12px 0; font-size: 0.95rem; }
 }
 </style>

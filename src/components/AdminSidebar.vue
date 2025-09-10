@@ -1,7 +1,7 @@
 <template>
   <div class="sidebar" :class="{ 'dark-mode': isDarkMode }">
     <div class="logo-container">
-      <img src="@/assets/logowhite.png" alt="FarmXpress Logo" class="logo-image">
+  <img src="@/assets/farmxpress-iconwhite.png" alt="FarmXpress Logo" class="logo-image">
       <div class="logo-text-container">
         <h1 class="logo-text">FarmXpress</h1>
         <span class="admin-badge">ADMIN</span>
