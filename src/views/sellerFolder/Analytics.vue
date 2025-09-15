@@ -105,7 +105,7 @@
               <div class="chart-legend">
                 <div class="legend-item">
                   <span class="legend-color" style="background-color: #2e5c31;"></span>
-                  <span>Revenue</span>
+                  <span>Sales</span>
                 </div>
                 <div class="legend-item">
                   <span class="legend-color" style="background-color: #4a8f4d;"></span>
@@ -1410,7 +1410,7 @@ const initSalesChart = (labels, revenueData, profitData) => {
       labels: labels,
       datasets: [
         {
-          label: 'Revenue',
+          label: 'Sales',
           data: revenueData,
           borderColor: '#2e5c31',
           backgroundColor: 'rgba(46, 92, 49, 0.1)',
