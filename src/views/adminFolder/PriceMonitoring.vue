@@ -208,6 +208,7 @@
                 <option value="">All Products</option>
                 <option value="da-reference">D.A. Reference Products</option>
                 <option value="custom">Custom Products</option>
+                <option value="inactive">Inactive Products</option>
               </select>
             </div>
             
@@ -312,6 +313,14 @@
                         </button>
                         <button class="icon-btn export-btn" @click="exportProductToPDF(product)" title="Export Product">
                           <Download class="action-icon" :size="18"/>
+                        </button>
+                        <button 
+                          v-if="selectedProductType === 'inactive' && isEligibleForActivation(product)"
+                          class="icon-btn activate-btn"
+                          @click="activateProduct(product)"
+                          title="Activate Product"
+                        >
+                          <CheckCircle class="action-icon" :size="18"/>
                         </button>
                       </div>
                     </td>
@@ -578,6 +587,7 @@ const products = ref([]);
 const daProducts = ref([]);
 const sellers = ref([]);
 const monitoredProducts = ref([]);
+const inactiveProducts = ref([]);
 const overpricedProducts = ref([]);
 const underpricedProducts = ref([]);
 const customProducts = ref([]);
@@ -734,9 +744,10 @@ const processProductAnalysis = async () => {
   const overpriced = [];
   const underpriced = [];
   const custom = [];
+  const inactiveAnalyzed = [];
 
   for (const product of products.value) {
-    if (!product || product.status === 'inactive') continue;
+    if (!product) continue;
 
     const sellerName = getSellerName(product.sellerId);
     const daReference = findDAReference(product);
@@ -824,23 +835,27 @@ const processProductAnalysis = async () => {
       } else if (maxDeviation > 10) {
         analyzedProduct.warningLevel = 'mild';
       }
-
-      overpriced.push(analyzedProduct);
     }
 
-    // Add products with underpriced units to underpriced array
-    if (hasUnderpriced) {
-      underpriced.push(analyzedProduct);
+    // Separate inactive products from active monitoring lists
+    if (product.status === 'inactive') {
+      inactiveAnalyzed.push(analyzedProduct);
+    } else {
+      if (hasOverpriced) {
+        overpriced.push(analyzedProduct);
+      }
+      if (hasUnderpriced) {
+        underpriced.push(analyzedProduct);
+      }
+      if (!daReference) {
+        custom.push(analyzedProduct);
+      }
+      analyzed.push(analyzedProduct);
     }
-
-    if (!daReference) {
-      custom.push(analyzedProduct);
-    }
-
-    analyzed.push(analyzedProduct);
   }
 
   monitoredProducts.value = analyzed;
+  inactiveProducts.value = inactiveAnalyzed;
   overpricedProducts.value = overpriced;
   underpricedProducts.value = underpriced;
   customProducts.value = custom;
@@ -1128,6 +1143,30 @@ const getImageUrl = (imageData) => {
   if (imageData.startsWith('http')) return imageData;
   if (imageData.startsWith('data:image')) return imageData;
   return '/placeholder.svg?height=50&width=50';
+};
+
+// Determine if an inactive product is eligible for activation:
+// - product.status is 'inactive'
+// - either no DA reference (custom) or all units are not overpriced (Normal or Underpriced or No Reference)
+const isEligibleForActivation = (product) => {
+  if (!product || product.status !== 'inactive') return false;
+  if (!product.units || !Array.isArray(product.units) || product.units.length === 0) return false;
+  // If any unit is flagged overpriced, do not allow activation yet
+  return !product.units.some(u => u && (u.isOverpriced || u.priceStatus === 'overpriced'));
+};
+
+// Activate a product by setting its status to 'active' in Firestore
+const activateProduct = async (product) => {
+  if (!product || !product.id) return;
+  try {
+    const productRef = doc(db, 'products', product.id);
+    await updateDoc(productRef, { status: 'active', updatedAt: serverTimestamp() });
+    showStatus('success', `Activated ${product.productName}`);
+    await fetchData();
+  } catch (err) {
+    console.error('Failed to activate product:', err);
+    showStatus('error', 'Failed to activate product');
+  }
 };
 
 const formatPrice = (price) => {
@@ -1728,7 +1767,11 @@ const generateFilteredPDFContent = () => {
 
 // Computed properties
 const filteredProducts = computed(() => {
-  let result = [...monitoredProducts.value];
+  // Choose base list depending on Product Type selection
+  const baseList = selectedProductType.value === 'inactive' 
+    ? inactiveProducts.value 
+    : monitoredProducts.value;
+  let result = [...baseList];
   
   // Apply filters
   if (selectedCategory.value) {
@@ -1740,10 +1783,12 @@ const filteredProducts = computed(() => {
       result = result.filter(product => !product.isCustomProduct);
     } else if (selectedProductType.value === 'custom') {
       result = result.filter(product => product.isCustomProduct);
+    } else if (selectedProductType.value === 'inactive') {
+      // Already switched dataset to inactive; skip price-status filtering below
     }
   }
   
-  if (selectedPriceStatus.value) {
+  if (selectedPriceStatus.value && selectedProductType.value !== 'inactive') {
     result = result.filter(product => {
       if (selectedPriceStatus.value === 'above-range') {
         return product.hasOverpricedUnits;
@@ -2580,6 +2625,17 @@ tr:hover {
   color: #047857;
 }
 
+/* Activate Button */
+.icon-btn.activate-btn {
+  color: #16a34a;
+}
+
+.icon-btn.activate-btn:hover {
+  background: #ecfdf5;
+  border-color: #16a34a;
+  color: #15803d;
+}
+
 /* Ensure icons are visible */
 .icon-btn svg {
   width: 16px !important;
@@ -2643,7 +2699,8 @@ tr:hover {
 .status-message {
   position: fixed;
   top: 20px;
-  left: 20px;
+  right: 20px;
+  left: auto;
   padding: 12px 16px;
   border-radius: 6px;
   display: flex;

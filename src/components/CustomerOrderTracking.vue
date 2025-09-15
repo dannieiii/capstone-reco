@@ -80,7 +80,7 @@
             </div>
             <div class="info-row">
               <span class="info-label">Quantity:</span>
-              <span class="info-value">{{ weight }} kg</span>
+              <span class="info-value">{{ weight }} {{ unitDisplay }}</span>
             </div>
             <div class="info-row">
               <span class="info-label">Total:</span>
@@ -180,6 +180,31 @@
   const orderCode = ref('');
   const productName = ref('');
   const weight = ref('');
+  const unit = ref('');
+  const unitDisplay = computed(() => {
+    const map = {
+      'kg': 'kg',
+      'kilogram': 'kg',
+      'kilo': 'kg',
+      'perkilo': 'kg',
+      'perKilo': 'kg',
+      'sack': 'sack',
+      'perSack': 'sack',
+      'tali': 'tali',
+      'perTali': 'tali',
+      'kaing': 'kaing',
+      'perKaing': 'kaing',
+      'bundle': 'bundle',
+      'perBundle': 'bundle',
+      'tray': 'tray',
+      'perTray': 'tray',
+      'piece': 'piece',
+      'perPiece': 'piece'
+    };
+    const u = (unit.value || '').toString();
+    if (!u) return 'kg';
+    return map[u] || map[u.toLowerCase()] || u;
+  });
   const totalPrice = ref(0);
   const deliveryAddress = ref('');
   const currentStatus = ref('Pending');
@@ -245,9 +270,13 @@
         const data = orderSnap.data();
         
         // Set basic order info
-        orderCode.value = data.orderCode || data.id;
-        productName.value = data.productName || 'Product';
-        weight.value = data.weight || '1';
+  orderCode.value = data.orderCode || data.id;
+  productName.value = data.productName || 'Product';
+  // Prefer explicit weight/quantity then fallback to quantity
+  const qty = data.weight ?? data.quantity ?? 1;
+  weight.value = Number(qty) || 1;
+  // Determine unit from multiple possible fields
+  unit.value = data.unit || data.packagingType || data.selectedUnit || 'kg';
         totalPrice.value = data.totalPrice || 0;
         currentStatus.value = data.status || 'Pending';
         isConfirmed.value = data.customerConfirmed || false;

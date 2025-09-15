@@ -51,9 +51,11 @@ class EmailService {
     }
   }
   formatOrderItems(items) {
-    return items.map(item => 
-      `• ${item.productName} - ${item.quantity} ${item.unit} - ₱${item.totalPrice}`
-    ).join('\n');
+    return items
+      .map(
+        (item) => `• ${item.productName} - ${item.quantity} ${item.unit} - ₱${item.totalPrice}`
+      )
+      .join('\n');
   }
 
   calculateEstimatedDelivery(deliveryOption) {
@@ -91,9 +93,15 @@ class EmailService {
       reply_to: "admin@farmxpress.com",
       
       // Seller specific template variables - using multiple naming conventions to ensure compatibility
-      seller_name: sellerData.firstName ? `${sellerData.firstName} ${sellerData.lastName || ''}`.trim() : sellerData.farmName,
-      sellerName: sellerData.firstName ? `${sellerData.firstName} ${sellerData.lastName || ''}`.trim() : sellerData.farmName,
-      name: sellerData.firstName ? `${sellerData.firstName} ${sellerData.lastName || ''}`.trim() : sellerData.farmName,
+      seller_name: sellerData.firstName
+        ? `${sellerData.firstName} ${(sellerData.lastName || '').trim()}`
+        : sellerData.farmName,
+      sellerName: sellerData.firstName
+        ? `${sellerData.firstName} ${(sellerData.lastName || '').trim()}`
+        : sellerData.farmName,
+      name: sellerData.firstName
+        ? `${sellerData.firstName} ${(sellerData.lastName || '').trim()}`
+        : sellerData.farmName,
       
       farm_name: sellerData.farmName || 'Your Farm',
       farmName: sellerData.farmName || 'Your Farm',
@@ -145,8 +153,12 @@ class EmailService {
       email: sellerData.email,
       
       // Most common EmailJS template patterns based on standard practices
-      user_name: sellerData.firstName ? `${sellerData.firstName} ${sellerData.lastName || ''}`.trim() : sellerData.farmName,
-      full_name: sellerData.firstName ? `${sellerData.firstName} ${sellerData.lastName || ''}`.trim() : sellerData.farmName,
+      user_name: sellerData.firstName
+        ? `${sellerData.firstName} ${(sellerData.lastName || '').trim()}`
+        : sellerData.farmName,
+      full_name: sellerData.firstName
+        ? `${sellerData.firstName} ${(sellerData.lastName || '').trim()}`
+        : sellerData.farmName,
       first_name: sellerData.firstName || '',
       last_name: sellerData.lastName || ''
     };
@@ -197,7 +209,9 @@ class EmailService {
       from_name: "FarmXpress Admin",
       reply_to: "admin@farmXpress.com",
       
-      seller_name: sellerData.firstName ? `${sellerData.firstName} ${sellerData.lastName || ''}`.trim() : sellerData.farmName,
+      seller_name: sellerData.firstName
+        ? `${sellerData.firstName} ${(sellerData.lastName || '').trim()}`
+        : sellerData.farmName,
       farm_name: sellerData.farmName || 'Your Farm',
       rejection_date: new Date().toLocaleDateString('en-US', {
         weekday: 'long',
@@ -427,6 +441,53 @@ Support: support@farmXpress.com`
         templateParams: debugTemplateParams
       });
       return { success: false, error, templateParams: debugTemplateParams };
+    }
+  }
+
+  // Send a welcome email to a newly added admin
+  async sendAdminWelcomeEmail(adminData) {
+    const templateParams = {
+      to_email: adminData.email,
+      to_name: adminData.firstName || 'New Admin',
+      from_name: 'FarmXpress Admin',
+      reply_to: 'admin@farmxpress.com',
+
+      // Variables for template
+      first_name: adminData.firstName || '',
+      last_name: adminData.lastName || '',
+  full_name: `${(adminData.firstName || '').trim()} ${(adminData.lastName || '').trim()}`.trim(),
+      position: adminData.position || 'Administrator',
+      username: adminData.username || adminData.email,
+      email: adminData.email,
+      role: 'Admin',
+      subject: 'Welcome to FarmXpress Admin Team',
+      login_url: window.location.origin + '/login',
+      dashboard_url: window.location.origin + '/admin',
+      support_email: 'support@farmxpress.com',
+      company_name: 'FarmXpress'
+    };
+
+    try {
+      // Try a specific admin welcome template first, fall back to the generic one
+      let response;
+      try {
+        response = await emailjs.send(
+          'service_7rkwdan',
+          'template_admin_welcome',
+          templateParams
+        );
+      } catch (err) {
+        // Fallback to a generic template
+        response = await emailjs.send(
+          'service_7rkwdan',
+          'template_5j6rlw8',
+          templateParams
+        );
+      }
+      return { success: true, response };
+    } catch (error) {
+      console.error('Failed to send admin welcome email:', error);
+      return { success: false, error };
     }
   }
 }

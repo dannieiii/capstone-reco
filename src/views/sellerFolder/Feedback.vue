@@ -21,9 +21,7 @@
               <RotateCcw size="16" />
               {{ loading ? 'Loading...' : 'Refresh' }}
             </button>
-            <button class="refresh-btn" @click="toggleDebugInfo" :class="{ 'active': showDebugInfo }">
-              🐛 Debug
-            </button>
+            
           </div>
         </div>
 

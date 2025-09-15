@@ -382,7 +382,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import Sidebar from '@/components/Sidebar.vue';
 import { db } from '@/firebase/firebaseConfig';
-import { collection, getDocs, doc, updateDoc, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, query, where, onSnapshot, runTransaction, increment, serverTimestamp, addDoc } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import OrderStatusUpdate from '@/components/sellerside/OrderStatusUpdate.vue';
 import OrderNotif from '@/components/sellerside/OrderNotif.vue';
@@ -911,6 +911,91 @@ const finishEditingStatus = async (index, order) => {
     await updateDoc(orderRef, {
       status: order.status
     });
+
+    // If status moved to Delivered or Order Received, increment product.sold once
+    if (order.status === 'Delivered' || order.status === 'Order Received') {
+      try {
+        await runTransaction(db, async (transaction) => {
+          const freshOrderSnap = await transaction.get(orderRef);
+          if (!freshOrderSnap.exists()) return;
+          const odata = freshOrderSnap.data() || {};
+          if (odata.soldCountApplied === true) return; // already applied
+          const productId = odata.productId;
+          if (!productId) return;
+          const productRef = doc(db, 'products', productId);
+          const qty = Number(odata.quantity);
+          const incBy = !isNaN(qty) && qty > 0 ? qty : 1;
+          transaction.update(productRef, {
+            sold: increment(incBy),
+            lastSoldAt: serverTimestamp()
+          });
+          transaction.update(orderRef, { soldCountApplied: true });
+        });
+      } catch (e) {
+        console.error('Failed to apply sold counter (inline status):', e);
+      }
+    }
+
+    // If status moved to Cancelled and previously applied, rollback sold count
+    if (order.status === 'Cancelled') {
+      try {
+        await runTransaction(db, async (transaction) => {
+          const freshOrderSnap = await transaction.get(orderRef);
+          if (!freshOrderSnap.exists()) return;
+          const odata = freshOrderSnap.data() || {};
+          if (odata.soldCountApplied !== true) return; // nothing to rollback
+          const productId = odata.productId;
+          if (!productId) return;
+          const productRef = doc(db, 'products', productId);
+          const qty = Number(odata.quantity);
+          const decBy = !isNaN(qty) && qty > 0 ? qty : 1;
+          transaction.update(productRef, {
+            sold: increment(-decBy)
+          });
+          transaction.update(orderRef, { soldCountApplied: false });
+        });
+      } catch (e) {
+        console.error('Failed to rollback sold counter (inline status):', e);
+      }
+    }
+
+    // Create a persistent customer notification about the status change
+    try {
+      const customerId = order.userId;
+      if (customerId) {
+        const code = order.orderCode || (order.id ? order.id.substring(0, 6) : '');
+        const phrases = {
+          'Pending': `We've received your order #${code}. It's now pending confirmation.`,
+          'Processing': `Order #${code} is already On Processing.`,
+          'On Processing': `Order #${code} is already On Processing.`,
+          'Shipped': `Order #${code} is on the way. You'll be notified upon arrival.`,
+          'Delivered': `Order #${code} has been delivered. Please verify your items.`,
+          'Order Received': `Thanks! We've marked order #${code} as received.`,
+          'Refund Processing': `Your refund request for order #${code} is being processed.`,
+          'Cancelled': `Order #${code} has been cancelled.`
+        };
+        await addDoc(collection(db, 'notifications'), {
+          type: 'order_update',
+          recipientType: 'customer',
+          customerId,
+          userId: customerId,
+          sellerId: order.sellerId || null,
+          title: `Order update: ${order.status}`,
+          message: phrases[order.status] || `Order #${code} status updated to ${order.status}.`,
+          orderDetails: {
+            orderId: order.id,
+            orderCode: order.orderCode || code,
+            amount: Number(order.totalPrice || 0)
+          },
+          status: order.status,
+          read: false,
+          createdAt: serverTimestamp(),
+          timestamp: serverTimestamp()
+        });
+      }
+    } catch (e) {
+      console.error('Failed to create customer notification:', e);
+    }
   } catch (error) {
     console.error('Error updating order status:', error);
   }

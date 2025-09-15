@@ -338,8 +338,8 @@
             </div>
           </div>
 
-          <!-- Business Permit -->
-          <div class="form-group">
+          <!-- Business Permit (hidden via flag) -->
+          <div v-if="showBusinessPermit" class="form-group">
             <label for="businessPermit">Business Permit</label>
             <div class="document-upload-container">
               <div class="upload-options">
@@ -429,8 +429,8 @@
             </div>
           </div>
 
-          <!-- Farm Certification -->
-          <div class="form-group">
+          <!-- Farm Certification (hidden via flag) -->
+          <div v-if="showFarmCert" class="form-group">
             <label for="farmCert">Farm Certification</label>
             <div class="document-upload-container">
               <div class="upload-options">
@@ -555,7 +555,17 @@
                 <ChevronDown :class="{'rotate-180': isMunicipalityDropdownOpen}" />
               </div>
               <div class="dropdown-content" v-if="isMunicipalityDropdownOpen">
-                <div class="checkbox-group" v-for="municipality in municipalities" :key="municipality">
+                <div class="dropdown-search">
+                  <input
+                    type="text"
+                    v-model="municipalitySearch"
+                    placeholder="Type to filter municipalities..."
+                    @keydown.stop
+                    @click.stop
+                  />
+                </div>
+                <div v-if="filteredMunicipalities.length === 0" class="no-results">No matches</div>
+                <div class="checkbox-group" v-for="municipality in filteredMunicipalities" :key="municipality">
                   <input 
                     type="checkbox" 
                     :id="municipality" 
@@ -751,8 +761,13 @@ export default {
         "Additional Details",
         "Terms"
       ],
-      isDeliveryDropdownOpen: false,
-      isMunicipalityDropdownOpen: false,
+  isDeliveryDropdownOpen: false,
+  isMunicipalityDropdownOpen: false,
+  municipalitySearch: '',
+  // Visibility flags for optional verification documents
+  // Set to false to hide sections without removing code
+  showBusinessPermit: true,
+  showFarmCert: false,
       municipalities: [
         "Baco",
         "Bansud",
@@ -881,6 +896,11 @@ export default {
     },
     selectedDeliveryMethods() {
       return this.formData.deliveryInfo.deliveryMethods || [];
+    },
+    filteredMunicipalities() {
+      const q = (this.municipalitySearch || '').toLowerCase().trim();
+      if (!q) return this.municipalities;
+      return this.municipalities.filter(m => m.toLowerCase().includes(q));
     }
   },
   async created() {
@@ -2173,6 +2193,26 @@ body {
   border-radius: 0 0 8px 8px;
   z-index: 10;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.dropdown-search {
+  position: sticky;
+  top: 0;
+  background: #fff;
+  border-bottom: 1px solid #eee;
+  padding: 8px 10px;
+}
+.dropdown-search input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+}
+.no-results {
+  padding: 10px 15px;
+  color: #666;
+  font-size: 13px;
 }
 
 .dropdown-content .checkbox-group {

@@ -16,16 +16,6 @@
     <div class="register-box">
       <h2 class="register-title">Create Account</h2>
       
-      <!-- Google Registration Button -->
-      <button class="google-button" @click="registerWithGoogle">
-        <img src="@/assets/google.png" alt="Google" class="google-icon" />
-        Continue with Google
-      </button>
-      
-      <div class="social-divider">
-        <span>or register with email</span>
-      </div>
-      
       <div class="form-grid">
         <div class="input-container">
           <i class="fas fa-user icon"></i>

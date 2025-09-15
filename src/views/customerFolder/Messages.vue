@@ -147,6 +147,7 @@
           placeholder="Type a message..."
           v-model="newMessage"
           @keyup.enter="sendMessage"
+          @focus="onChatInputFocus"
           :disabled="sendingMessage"
           class="chat-input-input"
         />
@@ -238,6 +239,7 @@ export default {
 
     let conversationsUnsubscribe = null;
     let messagesUnsubscribe = null;
+    let authUnsubscribe = null;
 
     // Notifications
     const showNotification = ref(false);
@@ -284,6 +286,10 @@ export default {
           messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
         }
       });
+    };
+
+    const onChatInputFocus = () => {
+      scrollToBottom();
     };
 
     // --- Firestore helpers ---
@@ -351,10 +357,10 @@ export default {
       if (!currentUserId.value) return; // wait for auth
 
       // Real-time conversations ordered by recent activity
+      // Remove orderBy to avoid composite index requirement; we'll sort client-side
       const qConv = query(
         collection(db, 'conversations'),
-        where('participants', 'array-contains', currentUserId.value),
-        orderBy('lastMessageTime', 'desc')
+        where('participants', 'array-contains', currentUserId.value)
       );
 
       if (conversationsUnsubscribe) conversationsUnsubscribe();
@@ -371,7 +377,18 @@ export default {
           // Build all conversations with batched seller fetch (handled in helper cache)
           const promises = snapshot.docs.map((d) => buildConversationObject(d));
           const convs = await Promise.all(promises);
-          conversations.value = convs;
+          // Sort by lastMessageTime desc on client
+          const toMillis = (t) => {
+            if (!t) return 0;
+            try {
+              if (t && typeof t.toDate === 'function') return t.toDate().getTime();
+              if (t instanceof Date) return t.getTime();
+              if (typeof t === 'number') return t;
+              if (typeof t === 'string') return new Date(t).getTime();
+            } catch (_) {}
+            return 0;
+          };
+          conversations.value = convs.sort((a, b) => toMillis(b.lastMessageTime) - toMillis(a.lastMessageTime));
           loadingConversations.value = false;
         },
         (error) => {
@@ -646,23 +663,37 @@ export default {
     let notificationsUnsubscribe = null;
 
     onMounted(() => {
-      // Initialize auth + bootstrap listeners
-      const init = () => {
-        if (!auth.currentUser) return;
-        currentUserId.value = auth.currentUser.uid;
-        currentUserPhoto.value = auth.currentUser.photoURL || '';
-        fetchConversations();
-        notificationsUnsubscribe = setupNotificationListener();
-      };
-
-      if (auth.currentUser) init();
-      else onAuthStateChanged(auth, () => init());
+      // Prevent body/page from scrolling while in Messages view
+      document.body.classList.add('no-scroll');
+      loadingConversations.value = true;
+      // Robust auth listener that uses the user param directly
+      authUnsubscribe = onAuthStateChanged(auth, (user) => {
+        if (user) {
+          currentUserId.value = user.uid;
+          currentUserPhoto.value = user.photoURL || '';
+          fetchConversations();
+          if (notificationsUnsubscribe) notificationsUnsubscribe();
+          notificationsUnsubscribe = setupNotificationListener();
+        } else {
+          currentUserId.value = null;
+          conversations.value = [];
+          if (conversationsUnsubscribe) conversationsUnsubscribe();
+          conversationsUnsubscribe = null;
+          if (messagesUnsubscribe) messagesUnsubscribe();
+          messagesUnsubscribe = null;
+          if (notificationsUnsubscribe) notificationsUnsubscribe();
+          notificationsUnsubscribe = null;
+          loadingConversations.value = false;
+        }
+      });
     });
 
     onUnmounted(() => {
+      document.body.classList.remove('no-scroll');
       if (conversationsUnsubscribe) conversationsUnsubscribe();
       if (messagesUnsubscribe) messagesUnsubscribe();
       if (notificationsUnsubscribe) notificationsUnsubscribe();
+      if (authUnsubscribe) authUnsubscribe();
     });
 
     return {
@@ -687,6 +718,7 @@ export default {
       openChat,
       closeChat,
       sendMessage,
+      onChatInputFocus,
       formatConversationTime,
       formatMessageTime,
 
@@ -709,12 +741,28 @@ export default {
 </script>
 
 <style scoped>
+/* Lock page scroll when Messages view is active */
+:global(body.no-scroll) {
+  overflow: hidden !important;
+  position: fixed;
+  width: 100%;
+}
 .messages-page {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  padding-bottom: 80px;
+  padding-bottom: 0; /* avoid extra outer height that could scroll */
   position: relative;
+  overflow: hidden; /* lock the outer page from scrolling */
+  overscroll-behavior: none; /* prevent rubber-band/bounce on mobile */
+  -webkit-overflow-scrolling: auto; /* disable momentum on the container */
+}
+
+/* Prefer dynamic viewport on modern mobile browsers */
+@supports (height: 100dvh) {
+  .messages-page {
+    height: 100dvh;
+  }
 }
 
 .header {
@@ -722,6 +770,8 @@ export default {
   align-items: center;
   justify-content: space-between;
   padding: 20px 15px;
+  padding-left: calc(15px + env(safe-area-inset-left));
+  padding-right: calc(15px + env(safe-area-inset-right));
   background-color: #2e5c31;
   color: white;
 }
@@ -771,6 +821,8 @@ export default {
 /* Search Container Styles */
 .search-container {
   padding: 10px 15px;
+  padding-left: calc(15px + env(safe-area-inset-left));
+  padding-right: calc(15px + env(safe-area-inset-right));
   background-color: white;
   border-bottom: 1px solid #eee;
   position: relative;
@@ -886,10 +938,25 @@ export default {
 
 .content {
   flex: 1;
-  padding: 20px 15px;
+  padding: 20px 15px; /* mirror CustomerOrders spacing */
   background-color: #f5f5f5;
-  overflow-y: auto;
+  overflow-y: auto; /* scroll only the conversation list, not the page */
+  -webkit-overflow-scrolling: touch; /* smooth scrolling on iOS */
+  overscroll-behavior: contain; /* don't bubble scroll to body */
   min-height: 0;
+  /* Equal horizontal padding with safe-areas - FIXED: Added right padding */
+  padding-left: calc(15px + env(safe-area-inset-left));
+  padding-right: calc(15px + env(safe-area-inset-right));
+}
+
+@media (max-width: 768px) {
+  .content {
+  /* Preserve equal left/right spacing with safe-areas on mobile */
+  padding-top: 12px;
+  padding-bottom: 12px;
+  padding-left: calc(12px + env(safe-area-inset-left));
+  padding-right: calc(12px + env(safe-area-inset-right));
+  }
 }
 
 .tabs {
@@ -956,6 +1023,8 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  padding-left: calc(0px + env(safe-area-inset-left));
+  padding-right: calc(15px + env(safe-area-inset-right)); /* visibly match right spacing like left */
 }
 
 .message-item {
@@ -963,10 +1032,11 @@ export default {
   align-items: center;
   background-color: white;
   border-radius: 10px;
-  padding: 15px;
+  padding: 15px 20px; /* extra right padding for visible whitespace */
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
   cursor: pointer;
   transition: all 0.2s ease;
+  overflow: hidden; /* avoid any child overflow hiding side margins */
 }
 
 .message-item:hover {
@@ -1006,6 +1076,9 @@ export default {
 
 .message-content {
   flex: 1;
+  /* Ensure text never sits under right-side indicators; provide visible right spacing */
+  padding-right: 56px; /* more room to clearly show right whitespace */
+  text-align: left;
 }
 
 .message-header {
@@ -1018,6 +1091,7 @@ export default {
   font-size: 14px;
   font-weight: 600;
   color: #333;
+  text-align: left;
 }
 
 .message-time {
@@ -1032,12 +1106,14 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 200px;
+  text-align: left;
 }
 
 .farm-name {
   font-size: 12px;
   color: #666;
   margin-top: 2px;
+  text-align: left;
 }
 
 .message-indicators {
@@ -1045,6 +1121,7 @@ export default {
   flex-direction: column;
   align-items: center;
   margin-left: 10px;
+  margin-right: 8px; /* buffer so badges don't hug the card edge */
 }
 
 .unread-badge {
@@ -1076,13 +1153,23 @@ export default {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  overflow: hidden; /* lock overlay; only inner messages scroll */
+}
+
+@supports (height: 100dvh) {
+  .chat-window {
+    height: 100dvh;
+  }
 }
 
 .chat-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start; /* keep back button, avatar, name all on the left */
+  gap: 10px; /* spacing between back button and user block */
   padding: 15px;
+  padding-left: calc(15px + env(safe-area-inset-left));
+  padding-right: calc(15px + env(safe-area-inset-right));
   background-color: #2e5c31;
   color: white;
 }
@@ -1111,34 +1198,43 @@ export default {
   font-size: 16px;
   font-weight: 600;
   margin: 0;
+  text-align: left;
 }
 
 .chat-user p {
   font-size: 12px;
   margin: 0;
   opacity: 0.8;
+  text-align: left;
 }
 
 .chat-messages {
   flex: 1;
   padding: 15px;
   background-color: #f5f5f5;
-  overflow-y: auto;
+  overflow-y: auto; /* scroll messages here */
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-height: 0;
+  /* Add proper padding for both sides with safe area support */
+  padding-left: calc(15px + env(safe-area-inset-left));
+  padding-right: calc(15px + env(safe-area-inset-right));
+  padding-bottom: calc(96px + env(safe-area-inset-bottom));
 }
 
 .chat-message {
   display: flex;
   flex-direction: column;
-  max-width: 70%;
+  max-width: 80%; /* Reduced from 70% to allow more space for padding */
   align-self: flex-start;
+  margin-left: 0;
+  margin-right: 0;
 }
 
 .chat-message.outgoing {
   align-self: flex-end;
+  margin-right: 0;
 }
 
 .message-bubble {
@@ -1180,6 +1276,15 @@ export default {
   padding: 10px 15px;
   background-color: white;
   border-top: 1px solid #eee;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 101;
+  /* Respect iOS safe area */
+  padding-bottom: calc(10px + env(safe-area-inset-bottom));
+  padding-left: calc(15px + env(safe-area-inset-left));
+  padding-right: calc(15px + env(safe-area-inset-right));
 }
 
 .chat-input-input {
@@ -1198,19 +1303,7 @@ export default {
   background-color: white;
 }
 
-@media (min-width: 768px) {
-  .chat-input {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 101;
-  }
-  
-  .chat-messages {
-    padding-bottom: 80px; /* Add space for fixed input */
-  }
-}
+/* No media query needed: input is fixed on all screens */
 
 .send-button {
   width: 40px;

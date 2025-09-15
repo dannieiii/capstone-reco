@@ -13,11 +13,7 @@
         </div>
       </div>
   
-      <!-- Profile Banner -->
-      <div class="banner-container">
-        <img :src="bannerImage" alt="Farm banner" class="banner-img" />
-        <div class="banner-overlay"></div>
-      </div>
+      
   
       <!-- Main Content Container -->
       <div class="main-container">
@@ -25,7 +21,7 @@
         <div class="profile-card">
           <div class="profile-header">
             <div class="profile-avatar">
-              <img :src="profileImage" alt="Profile picture" />
+              <img :src="profileImage" alt="Profile picture" @error="handleImageError" />
               <div v-if="isVerified" class="verified-badge">
                 <CheckCircle size="16" />
               </div>
@@ -212,7 +208,6 @@
   
   // Default images
   const defaultImages = {
-    banner: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8ZmFybXxlbnwwfHwwfHx8MA%3D%3D&w=1200&q=80',
     profile: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8M3x8cGVyc29ufGVufDB8fDB8fHww&w=400&q=80',
     product: 'https://images.unsplash.com/photo-1606787366850-de6330128bfc?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8OHx8Zm9vZCUyMHByb2R1Y3R8ZW58MHx8MHx8fDA%3D&w=400&q=80'
   };
@@ -228,7 +223,7 @@
   const socialMedia = ref('');
   const isVerified = ref(false);
   const profileImage = ref(defaultImages.profile);
-  const bannerImage = ref(defaultImages.banner);
+  
   
   // Stats
   const averageRating = ref(4.0);
@@ -404,12 +399,8 @@
       // Verification status
       isVerified.value = data.verificationStatus === 'Verified' || data.isVerified === true;
       
-      // Profile image
-      if (data.personalInfo && data.personalInfo.photoUrl && data.personalInfo.photoUrl.trim() !== '') {
-        profileImage.value = data.personalInfo.photoUrl;
-      } else if (data.photoUrl && data.photoUrl.trim() !== '') {
-        profileImage.value = data.photoUrl;
-      }
+  // Profile image (robust resolution similar to SellerChat)
+  profileImage.value = getSellerAvatar(data);
       
       // Stats (you can implement this based on reviews collection)
       averageRating.value = data.averageRating || 4.0;
@@ -419,6 +410,55 @@
       console.error("Error fetching seller profile:", error);
       farmName.value = 'Error loading seller info';
     }
+  };
+
+  // Helper to resolve seller avatar consistently (mirrors SellerChat behavior)
+  const getSellerAvatar = (sellerData) => {
+    try {
+      // Check nested personalInfo.photoUrl first
+      const nested = sellerData?.personalInfo?.photoUrl;
+      if (nested && typeof nested === 'string' && nested.trim() !== '') {
+        return nested.trim();
+      }
+
+      // Common top-level fields to try
+      const avatarFields = [
+        'profileImageUrl',
+        'photoURL',
+        'photoUrl',
+        'avatar',
+        'profilePicture',
+        'imageUrl'
+      ];
+      for (const field of avatarFields) {
+        const val = sellerData?.[field];
+        if (val && typeof val === 'string' && val.trim() !== '') {
+          return val.trim();
+        }
+      }
+    } catch (e) {
+      // noop – fall back below
+    }
+    // Default generic silhouette (inline SVG like in SellerChat)
+    return "data:image/svg+xml;base64," + btoa(`
+      <svg width="150" height="150" viewBox="0 0 150 150" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="75" cy="75" r="75" fill="#e5e7eb"/>
+        <circle cx="75" cy="60" r="25" fill="#9ca3af"/>
+        <ellipse cx="75" cy="130" rx="40" ry="30" fill="#9ca3af"/>
+      </svg>
+    `);
+  };
+
+  // Image error handler to swap to fallback silhouette
+  const handleImageError = (event) => {
+    event.target.src = "data:image/svg+xml;base64," + btoa(`
+      <svg width="150" height="150" viewBox="0 0 150 150" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="75" cy="75" r="75" fill="#e5e7eb"/>
+        <circle cx="75" cy="60" r="25" fill="#9ca3af"/>
+        <ellipse cx="75" cy="130" rx="40" ry="30" fill="#9ca3af"/>
+      </svg>
+    `);
+    event.target.onerror = null; // prevent loops
   };
   
   // Fetch seller products
@@ -644,44 +684,11 @@
     background: rgba(255, 255, 255, 0.1);
   }
   
-  /* Banner */
-  .banner-container {
-    position: relative;
-    height: 180px;
-    overflow: hidden;
-    width: 100%;
-  }
-  
-  @media (min-width: 768px) {
-    .banner-container {
-      height: 240px;
-    }
-  }
-  
-  @media (min-width: 1024px) {
-    .banner-container {
-      height: 300px;
-    }
-  }
-  
-  .banner-img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-  
-  .banner-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: linear-gradient(to bottom, rgba(0,0,0,0.1), rgba(0,0,0,0.4));
-  }
+  /* Banner removed */
   
   /* Profile Card */
   .profile-card {
-    margin: -30px auto 24px;
+    margin: 16px auto 24px;
     padding: 20px;
     background: white;
     border-radius: 16px;
@@ -693,7 +700,7 @@
   
   @media (min-width: 768px) {
     .profile-card {
-      margin-top: -40px;
+      margin-top: 24px;
       padding: 24px;
     }
   }

@@ -177,9 +177,11 @@
     Loader 
   } from 'lucide-vue-next';
   import AdminSidebar from '@/components/AdminSidebar.vue';
-  import { createUserWithEmailAndPassword } from 'firebase/auth';
+  import { createUserWithEmailAndPassword, getAuth, signOut } from 'firebase/auth';
+  import { initializeApp, getApps } from 'firebase/app';
   import { doc, setDoc } from 'firebase/firestore';
   import { auth, db } from '@/firebase/firebaseConfig';
+  import EmailService from '@/services/emailService';
   
   const router = useRouter();
   const loading = ref(false);
@@ -227,9 +229,12 @@
       
       loading.value = true;
       
-      // Create user in Firebase Authentication
+      // Create user in Firebase Authentication using a secondary app/auth
+      // so we don't switch the current logged-in admin session.
+      const secondaryApp = getApps().find(a => a.name === 'Secondary') || initializeApp(auth.app.options, 'Secondary');
+      const secondaryAuth = getAuth(secondaryApp);
       const userCredential = await createUserWithEmailAndPassword(
-        auth,
+        secondaryAuth,
         formData.email,
         formData.password
       );
@@ -250,9 +255,21 @@
         userId: userId
       });
       
+      // Send welcome email to the newly added admin (non-blocking)
+      EmailService.sendAdminWelcomeEmail({
+        email: formData.email,
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        position: formData.position,
+        username: formData.username
+      }).catch((e) => console.warn('Email send failed (non-blocking):', e));
+      
+      // Sign out from the secondary auth to clean up
+      try { await signOut(secondaryAuth); } catch (_) {}
+      
       // Show success message
       alertType.value = 'success';
-      alertMessage.value = 'Admin account created successfully';
+      alertMessage.value = 'You added another admin.';
       showAlert.value = true;
       
       // Reset form

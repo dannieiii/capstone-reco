@@ -177,7 +177,7 @@
 
 <script setup>
 import { ref, watch, computed, reactive, onUnmounted } from 'vue';
-import { getFirestore, doc, updateDoc, serverTimestamp, getDoc } from 'firebase/firestore';
+import { getFirestore, doc, updateDoc, serverTimestamp, getDoc, runTransaction, increment, addDoc, collection } from 'firebase/firestore';
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Camera, X, AlertCircle, Loader } from 'lucide-vue-next';
 import OrderNotif from '@/components/sellerside/OrderNotif.vue';
@@ -585,6 +585,72 @@ const updateOrderStatus = async () => {
     }
     
     await updateDoc(orderRef, updateData);
+
+    // If order marked as Delivered or Order Received, increment product.sold once (idempotent)
+    if (selectedStatus.value === 'Delivered' || selectedStatus.value === 'Order Received') {
+      try {
+        await runTransaction(db, async (transaction) => {
+          const freshOrderSnap = await transaction.get(orderRef);
+          if (!freshOrderSnap.exists()) return;
+          const odata = freshOrderSnap.data() || {};
+          // Skip if already applied
+          if (odata.soldCountApplied === true) return;
+          const productId = odata.productId;
+          if (!productId) return;
+          const productRef = doc(db, 'products', productId);
+          const qty = Number(odata.quantity);
+          const incrementBy = !isNaN(qty) && qty > 0 ? qty : 1;
+          transaction.update(productRef, {
+            sold: increment(incrementBy),
+            lastSoldAt: serverTimestamp()
+          });
+          transaction.update(orderRef, { soldCountApplied: true });
+        });
+      } catch (e) {
+        // Non-blocking: log but don't fail the UI update
+        console.error('Failed to apply sold counter:', e);
+      }
+    }
+
+    // Create a customer notification about the status change
+    try {
+      const o = props.orderData || {};
+      const customerId = o.userId;
+      if (customerId) {
+        const code = o.orderCode || (props.orderId ? props.orderId.substring(0, 6) : '');
+        const phrases = {
+          'Pending': `We've received your order #${code}. It's now pending confirmation.`,
+          'Processing': `Order #${code} is already On Processing.`,
+          'On Processing': `Order #${code} is already On Processing.`,
+          'Shipped': `Order #${code} is on the way. You'll be notified upon arrival.`,
+          'Delivered': `Order #${code} has been delivered. Please verify your items.`,
+          'Order Received': `Thanks! We've marked order #${code} as received.`,
+          'Refund Processing': `Your refund request for order #${code} is being processed.`,
+          'Cancelled': `Order #${code} has been cancelled.`
+        };
+        await addDoc(collection(db, 'notifications'), {
+          type: 'order_update',
+          recipientType: 'customer',
+          customerId,
+          userId: customerId,
+          sellerId: o.sellerId || null,
+          title: `Order update: ${selectedStatus.value}`,
+          message: phrases[selectedStatus.value] || `Order #${code} status updated to ${selectedStatus.value}.`,
+          orderDetails: {
+            orderId: props.orderId,
+            orderCode: o.orderCode || code,
+            amount: Number(o.totalPrice || 0)
+          },
+          status: selectedStatus.value,
+          read: false,
+          createdAt: serverTimestamp(),
+          timestamp: serverTimestamp()
+        });
+      }
+    } catch (e) {
+      console.error('Failed to create customer notification:', e);
+      // non-blocking
+    }
       emit('statusUpdated', {
       status: selectedStatus.value,
       additionalData: selectedStatus.value === 'Shipped' ? {

@@ -45,25 +45,6 @@
         <span v-else>Locked - {{ formatTime(remainingTime) }}</span>
       </button>
       
-      <!-- Social Login Divider -->
-      <div class="social-divider">
-        <span>or</span>
-      </div>
-      
-      <!-- Google Login Button -->
-      <button 
-        class="google-button" 
-        @click="loginWithGoogle"
-        :disabled="isLocked || isLoading"
-        :class="{ 'locked': isLocked, 'loading': isLoading }"
-      >
-        <span v-if="isLoading" class="spinner" aria-hidden="true"></span>
-        <img v-if="!isLoading" src="@/assets/google.png" alt="Google" class="google-icon" />
-        <span v-if="isLoading">Connecting…</span>
-        <span v-else-if="!isLocked">Continue with Google</span>
-        <span v-else>Account Temporarily Locked</span>
-      </button>
-
       <p class="signup-text">Don't have an account? <a href="/registration" class="signup-link">Create an account</a></p>
     </div>
   </div>

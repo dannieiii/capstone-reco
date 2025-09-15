@@ -64,7 +64,7 @@
               </div>
               <div class="item-details">
                 <h4>{{ order.productName }}</h4>
-                <p class="item-quantity">{{ order.quantity }} {{ order.unit }} x ₱{{ order.unitPrice }}</p>
+                <p class="item-quantity">{{ displayQuantity(order) }} x ₱{{ formatUnitPrice(order.unitPrice) }}</p>
               </div>
               <p class="item-total">₱{{ order.totalPrice.toFixed(2) }}</p>
             </div>
@@ -123,6 +123,15 @@
               >
                 <CheckCircle size="14" />
                 Order Received
+              </button>
+              
+              <!-- View/Print Receipt (available for any status) -->
+              <button 
+                class="reorder-btn"
+                @click="printReceipt(order)"
+              >
+                <FileText size="14" />
+                Receipt
               </button>
               
               <button v-if="order.status === 'Order Received'" class="reorder-btn">
@@ -401,8 +410,359 @@ export default {
     const userId = ref('');
     const username = ref('');
     const userReviews = ref([]);
+
+    // Unit helpers for display
+    const unitDisplayMap = {
+      kg: 'kg',
+      kilogram: 'kg',
+      kilo: 'kg',
+      perKilo: 'kg',
+      perkilo: 'kg',
+      sack: 'sack',
+      perSack: 'sack',
+      tali: 'tali',
+      perTali: 'tali',
+      kaing: 'kaing',
+      perKaing: 'kaing',
+      bundle: 'bundle',
+      perBundle: 'bundle',
+      tray: 'tray',
+      perTray: 'tray',
+      piece: 'piece',
+      perPiece: 'piece'
+    };
+
+    const resolveUnit = (order) => {
+      const raw = (order?.unit || order?.packagingType || order?.selectedUnit || 'kg');
+      if (!raw) return 'kg';
+      const key = typeof raw === 'string' ? raw : String(raw);
+      return unitDisplayMap[key] || unitDisplayMap[key.toLowerCase?.()] || key;
+    };
+
+    const displayQuantity = (order) => {
+      const qty = Number(order?.weight ?? order?.quantity ?? 1) || 1;
+      return `${qty} ${resolveUnit(order)}`;
+    };
+
+    const formatUnitPrice = (price) => {
+      const p = Number(price) || 0;
+      return p.toFixed(2);
+    };
     
-    // Real-time listener
+    // Helpers for receipt generation
+    const getUnitPrice = (order) => {
+      const p1 = Number(order?.unitPrice);
+      if (p1 && p1 > 0) return p1;
+      const p2 = Number(order?.pricePerKg);
+      if (p2 && p2 > 0) return p2;
+      const qty = Number(order?.quantity);
+      const total = Number(order?.totalPrice);
+      if (total && qty) return total / qty;
+      return 0;
+    };
+
+    const getAddressDisplay = (location) => {
+      if (!location) return 'N/A';
+      if (typeof location === 'string') return location;
+      if (typeof location.address === 'string' && location.address) return location.address;
+      const parts = [];
+      if (location.street) parts.push(location.street);
+      if (location.barangay) parts.push(location.barangay);
+      if (location.city) parts.push(location.city);
+      if (location.municipality) parts.push(location.municipality);
+      if (location.province) parts.push(location.province);
+      if (location.region) parts.push(location.region);
+      if (location.zip || location.postalCode) parts.push(location.zip || location.postalCode);
+      return parts.length ? parts.join(', ') : 'N/A';
+    };
+
+    const formatDateTimeLong = (ts) => {
+      if (!ts) return '';
+      let d;
+      if (typeof ts?.toDate === 'function') d = ts.toDate();
+      else if (ts instanceof Date) d = ts;
+      else d = new Date(ts);
+      if (Number.isNaN(d.getTime())) return '';
+      return d.toLocaleString('en-US', {
+        year: 'numeric', month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: true
+      });
+    };
+
+    // Lightweight caches to avoid repeated Firestore reads
+    const sellerIdCache = new Map();
+    const sellerDetailsCache = new Map();
+    const productCache = new Map();
+    const userCache = new Map();
+
+    // Helper to resolve seller name and address from sellerId/users/products (cached and quiet)
+    const fetchSellerDetails = async ({ sellerId, productId }) => {
+      const pickName = (obj) => {
+        if (!obj) return null;
+        const keys = ['businessName','farmName','sellerName','storeName','shopName','name','ownerName','fullName','username','displayName'];
+        for (const k of keys) { if (obj[k]) return obj[k]; }
+        if (obj.firstName || obj.lastName) return `${obj.firstName || ''} ${obj.lastName || ''}`.trim();
+        if (obj.profile && (obj.profile.businessName || obj.profile.name)) return obj.profile.businessName || obj.profile.name;
+        return null;
+      };
+      const composeAddr = (obj) => {
+        if (!obj) return null;
+        const raw = obj.businessAddress || obj.address || obj.location;
+        if (typeof raw === 'string') return raw;
+        return getAddressDisplay(raw || obj);
+      };
+
+      // Try cache by sellerId first
+      if (sellerId && sellerDetailsCache.has(sellerId)) return sellerDetailsCache.get(sellerId);
+
+      let name = null;
+      let address = null;
+      try {
+        if (sellerId) {
+          // Try sellers/{id}
+          let sDoc = await getDoc(doc(db, 'sellers', sellerId));
+          if (!sDoc.exists()) {
+            // Try sellers where userId or sellerId equals sellerId
+            let sSnap = await getDocs(query(collection(db, 'sellers'), where('userId', '==', sellerId)));
+            if (sSnap.empty) {
+              sSnap = await getDocs(query(collection(db, 'sellers'), where('sellerId', '==', sellerId)));
+            }
+            if (!sSnap.empty) sDoc = sSnap.docs[0];
+          }
+          if (sDoc && (sDoc.exists?.() || sDoc.data)) {
+            const s = sDoc.data ? sDoc.data() : sDoc;
+            name = pickName(s) || name;
+            address = composeAddr(s) || address;
+          }
+          // Fallback to users
+          if (!name || !address) {
+            let uDoc;
+            if (userCache.has(sellerId)) uDoc = { exists: () => true, data: () => userCache.get(sellerId) };
+            else {
+              const docSnap = await getDoc(doc(db, 'users', sellerId));
+              if (docSnap.exists()) userCache.set(sellerId, docSnap.data());
+              uDoc = docSnap;
+            }
+            if (uDoc?.exists?.()) {
+              const u = uDoc.data();
+              name = pickName(u) || name;
+              address = composeAddr(u) || address;
+            }
+          }
+        }
+        // Fallback to product
+        if ((!name || !address) && productId) {
+          let pDoc;
+          if (productCache.has(productId)) pDoc = { exists: () => true, data: () => productCache.get(productId) };
+          else {
+            const docSnap = await getDoc(doc(db, 'products', productId));
+            if (docSnap.exists()) productCache.set(productId, docSnap.data());
+            pDoc = docSnap;
+          }
+          if (pDoc?.exists?.()) {
+            const p = pDoc.data();
+            name = pickName(p) || name;
+            address = composeAddr(p?.sellerAddress || p?.address || p?.location || p) || address;
+          }
+        }
+      } catch (e) {
+        // fail quietly
+      }
+      const result = { name: name || 'N/A', address: address || 'N/A' };
+      if (sellerId) sellerDetailsCache.set(sellerId, result);
+      return result;
+    };
+
+    
+
+    const printReceipt = async (order) => {
+      const receiptWindow = window.open('', '_blank');
+      if (!receiptWindow) {
+        showNotification('Please allow pop-ups to print receipts', 'error');
+        return;
+      }
+      // Minimal loading state to avoid popup blockers closing the window
+      receiptWindow.document.open();
+      receiptWindow.document.write('<!DOCTYPE html><html><head><title>Loading receipt...</title></head><body style="font-family:Arial,sans-serif;padding:20px;color:#333;">Generating receipt…</body></html>');
+      receiptWindow.document.close();
+
+      const orderDate = formatDateTimeLong(order.createdAt || order.timestamp);
+      const unitLabel = resolveUnit(order);
+      const unitPrice = getUnitPrice(order);
+      const qty = Number(order.quantity) || Number(order.weight) || 0;
+      const itemSubtotal = unitPrice * qty;
+      const deliveryFee = Number(order.deliveryFee || 0);
+      const tax = Number(order.tax || 0);
+      const total = Number(order.totalPrice || (itemSubtotal + deliveryFee + tax) || 0);
+      const paymentStatusDisplay = (() => {
+        const raw = (order.paymentStatus || order.payStatus || 'unpaid') + '';
+        const v = raw.toLowerCase();
+        if (v === 'availing') return 'Availing';
+        if (v === 'paying') return 'Paying';
+        if (v === 'paid') return 'Paid';
+        return 'Unpaid';
+      })();
+
+      const formatPaymentMethod = (method) => {
+        if (!method) return 'Cash on Delivery';
+        const m = String(method).toLowerCase();
+        if (m.includes('gcash')) return 'GCash';
+        if (m.includes('cod') || m.includes('cash')) return 'Cash on Delivery';
+        return method;
+      };
+
+      const address = getAddressDisplay(
+        order.Location || order.address || order.deliveryAddress || order.shippingAddress || order.location
+      );
+      const code = order.orderCode || (order.id ? order.id.substring(0, 6) : '');
+      const instructions = order?.Location?.instructions || order?.instructions || order?.deliveryInstructions || '';
+      const deliveryLabel = order?.deliveryOption || order?.delivery || order?.deliveryType || '';
+      const paymentMethodLabel = formatPaymentMethod(order.paymentMethod);
+
+      // Seller name & address (reuse pre-fetched if present)
+      let sellerName = order.sellerName || 'N/A';
+      let sellerAddress = order.sellerAddress || 'N/A';
+      if (sellerName === 'N/A' || sellerAddress === 'N/A') {
+        try {
+          const ensuredSellerId = order.sellerId || await fetchSellerIdForOrder({ productId: order.productId, orderCode: order.orderCode, ...order }, order.id);
+          const details = await fetchSellerDetails({ sellerId: ensuredSellerId, productId: order.productId });
+          sellerName = details.name || sellerName;
+          sellerAddress = details.address || sellerAddress;
+        } catch {}
+      }
+
+      // Shipping address: prefer address on order, otherwise pull from user's profile
+      const shippingAddress = (() => {
+        const addr = getAddressDisplay(
+          order.Location || order.address || order.deliveryAddress || order.shippingAddress || order.location
+        );
+        return addr && addr !== 'N/A' ? addr : null;
+      })();
+      let finalShippingAddress = shippingAddress;
+      if (!finalShippingAddress) {
+        const fetched = await fetchUserAddress(order.userId);
+        finalShippingAddress = fetched || 'N/A';
+      }
+
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Customer Receipt #${code}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 0; padding: 20px; color: #333; }
+            .receipt { max-width: 800px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; }
+            .receipt-header { text-align: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid #4a8f4d; }
+            .receipt-header h1 { color: #2e5c31; margin: 0; font-size: 24px; }
+            .receipt-header p { margin: 5px 0; color: #666; }
+            .receipt-info { display: flex; justify-content: space-between; margin-bottom: 20px; }
+            .info-group { flex: 1; }
+            .info-group h3 { margin-top: 0; color: #2e5c31; font-size: 16px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+            .info-group p { margin: 5px 0; font-size: 14px; }
+            .info-group strong { display: inline-block; min-width: 110px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+            th, td { padding: 10px; text-align: left; border-bottom: 1px solid #eee; }
+            th { background-color: #f9f9f9; font-weight: bold; }
+            .total-row td { font-weight: bold; border-top: 2px solid #ddd; }
+            .text-right { text-align: right; }
+            .receipt-footer { text-align: center; margin-top: 30px; padding-top: 10px; border-top: 1px solid #eee; font-size: 14px; color: #666; }
+            .status-badge { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 12px; background-color: #f3f4f6; color: #4b5563; }
+            .no-print { display: none; }
+            @media print {
+              body { padding: 0; margin: 0; }
+              .receipt { border: none; padding: 0; }
+              .no-print { display: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="receipt">
+            <div class="receipt-header">
+              <h1>FarmXpress</h1>
+              <p>Customer Receipt</p>
+              <p>Order #${code}</p>
+              <p>${orderDate}</p>
+            </div>
+            <div class="receipt-info">
+              <div class="info-group">
+                <h3>Seller</h3>
+                <p><strong>Name:</strong> ${sellerName}</p>
+                <p><strong>Address:</strong> ${sellerAddress}</p>
+              </div>
+              <div class="info-group">
+                <h3>Shipping To</h3>
+                <p><strong>Address:</strong> ${finalShippingAddress}</p>
+                ${instructions ? `<p><strong>Instructions:</strong> ${instructions}</p>` : ''}
+                ${deliveryLabel ? `<p><strong>Delivery:</strong> ${deliveryLabel}</p>` : ''}
+              </div>
+              <div class="info-group">
+                <h3>Order Summary</h3>
+                <p><strong>Status:</strong> <span class="status-badge">${order.status}</span></p>
+                <p><strong>Payment Method:</strong> ${paymentMethodLabel}</p>
+                <p><strong>Payment Status:</strong> ${paymentStatusDisplay}</p>
+                <p><strong>Order Code:</strong> ${code}</p>
+              </div>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th>Unit</th>
+                  <th>Quantity</th>
+                  <th>Unit Price</th>
+                  <th>Subtotal</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>${order.productName || 'N/A'}</td>
+                  <td>${unitLabel.charAt(0).toUpperCase() + unitLabel.slice(1)}</td>
+                  <td>${qty}</td>
+                  <td>₱${(unitPrice || 0).toFixed(2)}</td>
+                  <td>₱${(itemSubtotal || 0).toFixed(2)}</td>
+                </tr>
+              </tbody>
+              <tfoot>
+                ${deliveryFee ? `
+                <tr>
+                  <td colspan="4" class="text-right">Delivery Fee</td>
+                  <td>₱${deliveryFee.toFixed(2)}</td>
+                </tr>` : ''}
+                ${tax ? `
+                <tr>
+                  <td colspan="4" class="text-right">Tax</td>
+                  <td>₱${tax.toFixed(2)}</td>
+                </tr>` : ''}
+                <tr class="total-row">
+                  <td colspan="4" class="text-right">Total</td>
+                  <td>₱${total.toFixed(2)}</td>
+                </tr>
+              </tfoot>
+            </table>
+            <div class="receipt-footer">
+              <p>Thank you for your order!</p>
+              <p>This receipt is for your records. For questions or concerns, please contact customer support.</p>
+              <p class="no-print">
+                <button onclick="window.print();" style="padding: 8px 16px; background-color: #4a8f4d; color: white; border: none; border-radius: 4px; cursor: pointer;">Print Receipt</button>
+              </p>
+            </div>
+          </div>
+          <script>
+            window.onload = function() {
+              setTimeout(function() { window.print(); }, 400);
+            };
+          <\/script>
+        </body>
+        </html>
+      `;
+
+      receiptWindow.document.open();
+      receiptWindow.document.write(html);
+      receiptWindow.document.close();
+    };
+    
+  // Real-time listener
     let unsubscribeOrders = null;
     
     const notification = ref({
@@ -413,7 +773,7 @@ export default {
 
     const formatDate = (timestamp) => {
       if (!timestamp) return '';
-      const date = timestamp.toDate();
+      const date = typeof timestamp?.toDate === 'function' ? timestamp.toDate() : new Date(timestamp);
       return date.toLocaleDateString('en-US', { 
         year: 'numeric', 
         month: 'long', 
@@ -421,153 +781,84 @@ export default {
       });
     };
     
-    // Helper function to fetch sellerId for an order
+    // Helper function to fetch sellerId for an order (quiet + cached)
     const fetchSellerIdForOrder = async (orderData, orderId) => {
-      let sellerId = null;
-      console.log(`\n=== DEBUGGING SELLER ID FOR ORDER ${orderId} ===`);
-      console.log('Order data:', orderData);
-      
-      // Method 1: Check if sellerId is already in the order document (this should be the correct value)
+      if (!orderData) return null;
+      // Cache key: prefer sellerId/productId/orderCode combo
+      const key = orderData.sellerId || `${orderData.productId || ''}|${orderData.orderCode || ''}`;
+      if (key && sellerIdCache.has(key)) return sellerIdCache.get(key);
+
+      // 1) Direct from order
       if (orderData.sellerId) {
-        sellerId = orderData.sellerId;
-        console.log(`✅ Order ${orderId}: Found sellerId in order document:`, sellerId);
-        console.log(`Expected: cmqUvsM5HGWodtJoTgtpN09v7K62, Actual: ${sellerId}, Match: ${sellerId === 'cmqUvsM5HGWodtJoTgtpN09v7K62'}`);
-        return sellerId;
-      } else {
-        console.log(`❌ Order ${orderId}: No sellerId field in order document`);
+        sellerIdCache.set(key, orderData.sellerId);
+        return orderData.sellerId;
       }
-      
-      // Method 2: Fetch sellerId from the product collection
+
+      // 2) From product
       if (orderData.productId) {
-        try {
-          console.log(`🔍 Fetching product data for productId: ${orderData.productId}`);
-          const productDocRef = doc(db, 'products', orderData.productId);
-          const productDoc = await getDoc(productDocRef);
-          if (productDoc.exists()) {
-            const productData = productDoc.data();
-            console.log('Full product data:', productData);
-            console.log('Available fields in product:', Object.keys(productData));
-            
-            // Check for sellerId field first
-            console.log(`Product ${orderData.productId} sellerId field:`, productData.sellerId);
-            console.log(`Product ${orderData.productId} userId field:`, productData.userId);
-            
-            if (productData.sellerId) {
-              sellerId = productData.sellerId;
-              console.log(`✅ Order ${orderId}: Found sellerId from product ${orderData.productId}:`, sellerId);
-              console.log(`Expected: cmqUvsM5HGWodtJoTgtpN09v7K62, Actual: ${sellerId}, Match: ${sellerId === 'cmqUvsM5HGWodtJoTgtpN09v7K62'}`);
-              return sellerId;
-            } else if (productData.userId) {
-              // The userId might be a document ID in the sellers collection, let's try to find the actual sellerId
-              console.log(`🔍 Product has userId but no sellerId. Checking if userId is a seller document ID...`);
-              
-              try {
-                // Try to get the seller document using the userId
-                const sellerDocRef = doc(db, 'sellers', productData.userId);
-                const sellerDoc = await getDoc(sellerDocRef);
-                
-                if (sellerDoc.exists()) {
-                  const sellerData = sellerDoc.data();
-                  console.log('Seller document data:', sellerData);
-                  console.log('Available fields in seller:', Object.keys(sellerData));
-                  
-                  // Check if the seller document has a sellerId field
-                  if (sellerData.sellerId) {
-                    sellerId = sellerData.sellerId;
-                    console.log(`✅ Found sellerId from seller document:`, sellerId);
-                    console.log(`Expected: cmqUvsM5HGWodtJoTgtpN09v7K62, Actual: ${sellerId}, Match: ${sellerId === 'cmqUvsM5HGWodtJoTgtpN09v7K62'}`);
-                    return sellerId;
-                  } else if (sellerData.userId) {
-                    // If the seller document has a userId field, that might be the actual sellerId
-                    sellerId = sellerData.userId;
-                    console.log(`✅ Using userId from seller document as sellerId:`, sellerId);
-                    console.log(`Expected: cmqUvsM5HGWodtJoTgtpN09v7K62, Actual: ${sellerId}, Match: ${sellerId === 'cmqUvsM5HGWodtJoTgtpN09v7K62'}`);
-                    return sellerId;
-                  } else {
-                    console.warn(`❌ Seller document exists but has no sellerId or userId field`);
-                    console.warn('Available fields in seller document:', Object.keys(sellerData));
-                    // Check if there's any field that contains the expected sellerId
-                    for (const [key, value] of Object.entries(sellerData)) {
-                      if (value === 'cmqUvsM5HGWodtJoTgtpN09v7K62') {
-                        console.log(`✅ Found expected sellerId in field '${key}':`, value);
-                        return value;
-                      }
-                    }
-                    console.warn(`❌ Could not find expected sellerId in any field of seller document`);
-                  }
-                } else {
-                  console.warn(`❌ Seller document ${productData.userId} not found`);
-                  // If seller document doesn't exist, use the userId from product as fallback
-                  sellerId = productData.userId;
-                  console.warn(`⚠️ Using product userId as fallback sellerId:`, sellerId);
-                  return sellerId;
-                }
-              } catch (error) {
-                console.warn('❌ Error fetching seller document:', error);
-                // Use product userId as fallback
-                sellerId = productData.userId;
-                console.warn(`⚠️ Using product userId as fallback sellerId:`, sellerId);
-                return sellerId;
-              }
-            } else {
-              console.warn(`❌ No sellerId or userId field found in product ${orderData.productId}`);
-            }
-          } else {
-            console.warn(`❌ Product ${orderData.productId} not found`);
-          }
-        } catch (error) {
-          console.warn('❌ Error fetching product seller info:', error);
+        let pSnap;
+        if (productCache.has(orderData.productId)) pSnap = { exists: () => true, data: () => productCache.get(orderData.productId) };
+        else {
+          const docSnap = await getDoc(doc(db, 'products', orderData.productId));
+          if (docSnap.exists()) productCache.set(orderData.productId, docSnap.data());
+          pSnap = docSnap;
         }
-      } else {
-        console.log(`❌ No productId in order data`);
-      }
-      
-      // Method 3: If we still don't have sellerId, try to get it from the sales collection
-      if (!sellerId && orderData.orderCode) {
-        try {
-          console.log(`🔍 Trying to get sellerId from sales collection for orderCode: ${orderData.orderCode}`);
-          const salesQuery = query(collection(db, 'sales'), where('orderCode', '==', orderData.orderCode));
-          const salesSnapshot = await getDocs(salesQuery);
-          if (!salesSnapshot.empty) {
-            const salesData = salesSnapshot.docs[0].data();
-            console.log('Sales data:', salesData);
-            sellerId = salesData.sellerId || salesData.userId;
-            console.log(`⚠️ Order ${orderId}: Found sellerId from sales:`, sellerId);
-            console.log(`Expected: cmqUvsM5HGWodtJoTgtpN09v7K62, Actual: ${sellerId}, Match: ${sellerId === 'cmqUvsM5HGWodtJoTgtpN09v7K62'}`);
-            return sellerId;
-          } else {
-            console.warn(`❌ No sales record found for orderCode: ${orderData.orderCode}`);
+        if (pSnap?.exists?.()) {
+          const p = pSnap.data();
+          const sid = p.sellerId || p.userId || null;
+          if (sid) {
+            sellerIdCache.set(key, sid);
+            return sid;
           }
-        } catch (error) {
-          console.warn('❌ Error fetching seller info from sales:', error);
         }
       }
-      
-      console.log(`🏁 Final sellerId for order ${orderId}:`, sellerId);
-      console.log(`Expected: cmqUvsM5HGWodtJoTgtpN09v7K62, Actual: ${sellerId}, Match: ${sellerId === 'cmqUvsM5HGWodtJoTgtpN09v7K62'}`);
-      console.log(`=== END DEBUGGING FOR ORDER ${orderId} ===\n`);
-      return sellerId;    };
+
+      // 3) From sales by orderCode
+      if (orderData.orderCode) {
+        const salesSnap = await getDocs(query(collection(db, 'sales'), where('orderCode', '==', orderData.orderCode)));
+        if (!salesSnap.empty) {
+          const data = salesSnap.docs[0].data();
+          const sid = data.sellerId || data.userId || null;
+          if (sid) {
+            sellerIdCache.set(key, sid);
+            return sid;
+          }
+        }
+      }
+      return null;
+    };
+
+    // Fetch best-effort shipping address from user's profile (cached)
+    const fetchUserAddress = async (uid) => {
+      if (!uid) return null;
+      if (userCache.has(uid)) {
+        const u = userCache.get(uid);
+        const addr = u?.shippingAddress || u?.defaultAddress || u?.address || u?.location;
+        return typeof addr === 'string' ? addr : getAddressDisplay(addr);
+      }
+      const uSnap = await getDoc(doc(db, 'users', uid));
+      if (!uSnap.exists()) return null;
+      const u = uSnap.data();
+      userCache.set(uid, u);
+      const addr = u?.shippingAddress || u?.defaultAddress || u?.address || u?.location;
+      return typeof addr === 'string' ? addr : getAddressDisplay(addr);
+    };
 
     const fetchOrders = async () => {
       try {
         loading.value = true;
         const currentUserId = auth.currentUser?.uid;
         if (!currentUserId) return;
-        
+
         const q = query(collection(db, 'orders'), where('userId', '==', currentUserId));
         const querySnapshot = await getDocs(q);
-        
-        const ordersData = [];
-        
-        // Process each order and fetch seller information
-        for (const orderDoc of querySnapshot.docs) {
+
+        // Build in parallel for speed
+        const mapped = await Promise.all(querySnapshot.docs.map(async (orderDoc) => {
           const data = orderDoc.data();
-          
-          console.log('Processing order:', orderDoc.id, 'with data:', data);
-          
           const sellerId = await fetchSellerIdForOrder(data, orderDoc.id);
-          
-          ordersData.push({
+          const sellerDetails = await fetchSellerDetails({ sellerId, productId: data.productId });
+          return {
             id: orderDoc.id,
             orderCode: data.orderCode,
             groupOrderCode: data.groupOrderCode,
@@ -584,14 +875,15 @@ export default {
             paymentProofUrl: data.paymentProofUrl || null,
             createdAt: data.createdAt,
             userId: data.userId,
-            sellerId: sellerId, // Add sellerId to order data
-            type: data.status === 'Order Received' ? 'completed' : 
+            sellerId: sellerId,
+            sellerName: sellerDetails.name,
+            sellerAddress: sellerDetails.address,
+            type: data.status === 'Order Received' ? 'completed' :
                   data.status === 'Cancelled' ? 'cancelled' : 'active'
-          });
-        }
-        
-        orders.value = ordersData;
-        console.log('Final orders data:', ordersData);
+          };
+        }));
+
+        orders.value = mapped;
       } catch (error) {
         console.error('Error fetching orders:', error);
         showNotification('Failed to load orders. Please try again.', 'error');
@@ -609,7 +901,7 @@ export default {
       
       unsubscribeOrders = onSnapshot(q, async (snapshot) => {
         const currentOrders = orders.value.map(order => ({ ...order }));
-        
+
         snapshot.docChanges().forEach((change) => {
           if (change.type === 'modified') {
             const newData = change.doc.data();
@@ -625,17 +917,14 @@ export default {
             }
           }
         });
-        
-        // Update orders array with new data including sellerId
-        const ordersData = [];
-        
-        for (const doc of snapshot.docs) {
-          const data = doc.data();
-          
-          const sellerId = await fetchSellerIdForOrder(data, doc.id);
-          
-          ordersData.push({
-            id: doc.id,
+
+        // Update orders array with new data including sellerId (parallel)
+        const ordersData = await Promise.all(snapshot.docs.map(async (d) => {
+          const data = d.data();
+          const sellerId = await fetchSellerIdForOrder(data, d.id);
+          const sellerDetails = await fetchSellerDetails({ sellerId, productId: data.productId });
+          return {
+            id: d.id,
             orderCode: data.orderCode,
             groupOrderCode: data.groupOrderCode,
             productId: data.productId,
@@ -651,12 +940,14 @@ export default {
             paymentProofUrl: data.paymentProofUrl || null,
             createdAt: data.createdAt,
             userId: data.userId,
-            sellerId: sellerId, // Add sellerId to order data
-            type: data.status === 'Order Received' ? 'completed' : 
+            sellerId,
+            sellerName: sellerDetails.name,
+            sellerAddress: sellerDetails.address,
+            type: data.status === 'Order Received' ? 'completed' :
                   data.status === 'Cancelled' ? 'cancelled' : 'active'
-          });
-        }
-        
+          };
+        }));
+
         orders.value = ordersData;
       });
     };
@@ -722,8 +1013,6 @@ export default {
     };
     
     const openReviewForm = async (order) => {
-      console.log('Opening review form for order:', order);
-      
       selectedOrder.value = order;
       showReviewForm.value = true;
     };
@@ -744,7 +1033,6 @@ export default {
     };
     
     const openRefundForm = (order) => {
-      console.log('Opening refund form for order:', order);
       selectedRefundOrder.value = order;
       showRefundForm.value = true;
     };
@@ -764,7 +1052,6 @@ export default {
     };
     
     const openRefundDetail = async (order) => {
-      console.log('Opening refund detail for order:', order);
       showRefundDetail.value = true;
       selectedRefundDetail.value = null; // Show loading state
       
@@ -1065,7 +1352,11 @@ export default {
       confirmCancelOrder,
       markAsReceived,
       cancelOrder,
-      submitReview
+      submitReview,
+      // quantity/unit helpers
+      displayQuantity,
+      formatUnitPrice,
+      printReceipt
   , payOrder
     };
   }

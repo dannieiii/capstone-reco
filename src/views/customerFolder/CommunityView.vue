@@ -39,7 +39,7 @@
             <span>What's on your mind? Ask about products or share updates...</span>
           </div>
           <div class="composer-actions">
-            <Image :size="32" class="action-icon" />
+            <Image :size="32" class="action-icon" @click.stop="openImagePost" title="Add Photo" />
           </div>
         </div>
       </div>
@@ -283,7 +283,7 @@
           <div class="form-group">
             <textarea 
               v-model="newPost.content" 
-              :placeholder="selectedProduct ? 'Ask your question about this product...' : 'What\'s on your mind? Share updates, ask about products, or start a discussion...'",
+              :placeholder="selectedProduct ? 'Ask your question about this product...' : 'What\'s on your mind? Share updates, ask about products, or start a discussion...'"
               rows="4"
               class="post-textarea"
             ></textarea>
@@ -398,11 +398,12 @@
             </div>
             <div class="comment-content clean">
               <div class="comment-author">{{ comment.userName }}</div>
+              <div v-if="comment.parentUserName" class="comment-reply-hint">↪ In reply to {{ comment.parentUserName }}</div>
               <div class="comment-text">{{ comment.content }}</div>
               <div class="comment-actions">
                 <span class="comment-time">{{ formatTime(comment.createdAt) }}</span>
                 <button class="comment-action">Like</button>
-                <button class="comment-action">Reply</button>
+                <button class="comment-action" @click="startReplyToComment(activeCommentsPostId, comment)">Reply</button>
               </div>
             </div>
           </div>
@@ -419,6 +420,7 @@
               :placeholder="`Comment as ${getCurrentUserName()}...`"
               @keyup.enter="submitComment(activeCommentsPostId)"
               class="comment-input"
+              ref="commentInputEl"
             />
             <button
               v-if="commentTexts[activeCommentsPostId]?.trim()"
@@ -427,6 +429,10 @@
             >
               <Send :size="14" />
             </button>
+          </div>
+          <div v-if="replyTo && replyTo.postId === activeCommentsPostId" class="reply-chip">
+            Replying to <strong>{{ replyTo.userName }}</strong>
+            <button class="clear-reply" @click="clearReply">✕</button>
           </div>
         </div>
         <div class="comment-identity-toggle responsive">
@@ -471,7 +477,7 @@ import {
   EyeOff,
   Package
 } from 'lucide-vue-next';
-import { ref, computed, onMounted, onUnmounted, reactive } from 'vue';
+import { ref, computed, onMounted, onUnmounted, reactive, nextTick } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { auth, db } from '@/firebase/firebaseConfig';
 import { 
@@ -509,6 +515,8 @@ const activeCommentsPostId = ref(null);
 const currentPost = computed(() => posts.value.find(p => p.id === activeCommentsPostId.value));
 const commentTexts = reactive({});
 const commentAsAnonymous = reactive({});
+const replyTo = ref(null); // { postId, userName, createdAt }
+const commentInputEl = ref(null);
 const showProductSelector = ref(false);
 const productSearchQuery = ref('');
 const availableProducts = ref([]);
@@ -573,7 +581,7 @@ const formatTime = (timestamp) => {
     if (typeof timestamp === 'object' && timestamp.toDate) {
       date = timestamp.toDate();
     } else if (timestamp instanceof Date) {
-      date = date;
+  date = timestamp;
     } else if (typeof timestamp === 'number') {
       date = new Date(timestamp);
     } else {
@@ -682,6 +690,15 @@ const viewProduct = (product) => {
 
 const triggerFileInput = () => {
   fileInput.value.click();
+};
+
+const openImagePost = async () => {
+  if (!currentUser.value) { router.push('/login'); return; }
+  showNewPostModal.value = true;
+  await nextTick();
+  if (fileInput.value) {
+    fileInput.value.click();
+  }
 };
 
 const handleImageUpload = (event) => {
@@ -898,6 +915,7 @@ const openComments = (postId) => {
 
 const closeComments = () => {
   activeCommentsPostId.value = null;
+  replyTo.value = null;
 };
 
 const submitComment = async (postId) => {
@@ -912,7 +930,10 @@ const submitComment = async (postId) => {
       userId: asAnon ? null : user.uid,
       userName: asAnon ? 'Anonymous Farmer' : getCurrentUserName(),
       userPhoto: asAnon ? null : getCurrentUserPhoto(),
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      ...(replyTo?.value && replyTo.value.postId === postId
+        ? { parentCreatedAt: replyTo.value.createdAt, parentUserName: replyTo.value.userName }
+        : {})
     };
     
     const postRef = doc(db, 'communityPosts', postId);
@@ -923,6 +944,7 @@ const submitComment = async (postId) => {
     
   commentTexts[postId] = '';
   commentAsAnonymous[postId] = asAnon; // keep last choice per thread
+  replyTo.value = null;
   } catch (error) {
     console.error('Error submitting comment:', error);
     alert('Failed to submit comment. Please try again.');
@@ -1083,6 +1105,22 @@ onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside);
   if (unsubscribePosts) unsubscribePosts();
 });
+
+const startReplyToComment = async (postId, comment) => {
+  replyTo.value = {
+    postId,
+    userName: comment.userName || 'Anonymous Farmer',
+    createdAt: comment.createdAt
+  };
+  await nextTick();
+  if (commentInputEl.value) {
+    commentInputEl.value.focus();
+  }
+};
+
+const clearReply = () => {
+  replyTo.value = null;
+};
 </script>
 
 <style scoped>
@@ -1116,6 +1154,9 @@ onUnmounted(() => {
   border-bottom-left-radius: 20px;
   border-bottom-right-radius: 20px;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  position: sticky;
+  top: 0;
+  z-index: 20;
 }
 
 .search-container {
@@ -1123,6 +1164,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 10px;
   margin-bottom: 15px;
+  min-width: 0; /* allow children to shrink without overflow */
 }
 
 .search-bar {
@@ -1133,6 +1175,7 @@ onUnmounted(() => {
   padding: 0 15px;
   flex: 1;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  min-width: 0; /* prevent overflow on narrow screens */
 }
 
 .search-bar svg {
@@ -2431,6 +2474,10 @@ onUnmounted(() => {
 
 /* Mobile First - Small screens (320px - 480px) */
 @media (max-width: 480px) {
+  .icon-button {
+    width: 36px;
+    height: 36px;
+  }
   .comment-composer {
     gap: 6px;
   }
