@@ -11,7 +11,7 @@
           
           <div class="form-container">
             <div class="form-card">
-              <div v-if="showAlert" class="alert" :class="alertType">
+              <div v-if="showAlert" class="alert floating-alert" :class="alertType">
                 <AlertCircle v-if="alertType === 'error'" size="18" />
                 <CheckCircle v-else size="18" />
                 <span>{{ alertMessage }}</span>
@@ -154,7 +154,7 @@
                   <button type="button" class="cancel-btn" @click="resetForm">Cancel</button>
                   <button type="submit" class="submit-btn" :disabled="loading">
                     <Loader v-if="loading" size="16" class="spinner" />
-                    <span v-else>Create Admin Account</span>
+                    <span v-else>Add Admin Account</span>
                   </button>
                 </div>
               </form>
@@ -177,11 +177,10 @@
     Loader 
   } from 'lucide-vue-next';
   import AdminSidebar from '@/components/AdminSidebar.vue';
-  import { createUserWithEmailAndPassword, getAuth, signOut } from 'firebase/auth';
+  import { createUserWithEmailAndPassword, getAuth, signOut, sendEmailVerification, fetchSignInMethodsForEmail } from 'firebase/auth';
   import { initializeApp, getApps } from 'firebase/app';
   import { doc, setDoc } from 'firebase/firestore';
   import { auth, db } from '@/firebase/firebaseConfig';
-  import EmailService from '@/services/emailService';
   
   const router = useRouter();
   const loading = ref(false);
@@ -228,6 +227,21 @@
       }
       
       loading.value = true;
+
+      // Check if email already has sign-in methods (avoid duplicate creation & clearer error)
+      try {
+        const methods = await fetchSignInMethodsForEmail(auth, formData.email);
+        if (methods && methods.length > 0) {
+          alertType.value = 'error';
+          alertMessage.value = 'Email already in use. Please choose another email.';
+          showAlert.value = true;
+          loading.value = false;
+          return;
+        }
+      } catch (e) {
+        // If fetch fails we still proceed; actual creation will throw if truly invalid
+        console.log('Email method check error (continuing):', e);
+      }
       
       // Create user in Firebase Authentication using a secondary app/auth
       // so we don't switch the current logged-in admin session.
@@ -240,6 +254,13 @@
       );
       
       const userId = userCredential.user.uid;
+
+      // Send email verification to the newly created admin user (in secondary auth context)
+      try {
+        await sendEmailVerification(userCredential.user);
+      } catch (verifyErr) {
+        console.warn('Failed to send verification email immediately:', verifyErr);
+      }
       
       // Create admin document in Firestore
       await setDoc(doc(db, 'admins', userId), {
@@ -251,34 +272,26 @@
         email: formData.email.toLowerCase(),
         username: formData.username,
         role: 'admin',
-        isVerified: true,
-        userId: userId
+        isVerified: false, // Set to false until email verification is completed
+        userId: userId,
+        createdAt: new Date()
       });
       
-      // Send welcome email to the newly added admin (non-blocking)
-      EmailService.sendAdminWelcomeEmail({
-        email: formData.email,
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        position: formData.position,
-        username: formData.username
-      }).catch((e) => console.warn('Email send failed (non-blocking):', e));
+      // Email sending removed per request
       
       // Sign out from the secondary auth to clean up
       try { await signOut(secondaryAuth); } catch (_) {}
       
-      // Show success message
+      // Show success message (stay on page) & clear form fields without hiding alert
       alertType.value = 'success';
-      alertMessage.value = 'You added another admin.';
+      alertMessage.value = 'Admin added successfully. Verification email sent. They must verify before accessing admin panel';
       showAlert.value = true;
-      
-      // Reset form
-      resetForm();
-      
-      // Redirect to admin management after a delay
-      setTimeout(() => {
-        router.push('/admin/');
-      }, 2000);
+
+      // Manually clear form fields (avoid resetForm which hides alert)
+      Object.keys(formData).forEach(k => formData[k] = '');
+
+      // Auto-hide alert after 4 seconds
+      setTimeout(() => { showAlert.value = false; }, 4000);
       
     } catch (error) {
       console.error('Error creating admin account:', error);
@@ -488,6 +501,17 @@
     border-radius: 6px;
     margin-bottom: 20px;
     gap: 8px;
+  }
+
+  .floating-alert {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    margin-bottom: 0; /* override */
+    z-index: 2500;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    min-width: 260px;
+    max-width: 340px;
   }
   
   .alert.success {

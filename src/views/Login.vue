@@ -54,7 +54,7 @@
 // Script remains unchanged
 import { auth, db, googleProvider } from '../firebase/firebaseConfig';
 import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider, sendEmailVerification } from 'firebase/auth';
-import { doc, getDoc, collection, query, where, getDocs, setDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, setDoc, updateDoc } from 'firebase/firestore';
 
 export default {
   data() {
@@ -221,6 +221,7 @@ export default {
     async processUserLogin(user) {
       let userData = null;
       let collectionName = '';
+      let docRefToUpdate = null;
 
       // Check if user is an admin
       const adminQuery = query(collection(db, 'admins'), where('email', '==', user.email), where('role', '==', 'admin'));
@@ -229,6 +230,7 @@ export default {
       if (!adminSnapshot.empty) {
         userData = adminSnapshot.docs[0].data();
         collectionName = 'admins';
+        docRefToUpdate = adminSnapshot.docs[0].ref;
       } else {
         // Check if user is a customer or seller in the 'users' collection
         const userQuery = query(collection(db, 'users'), where('email', '==', user.email));
@@ -237,6 +239,7 @@ export default {
         if (!userSnapshot.empty) {
           userData = userSnapshot.docs[0].data();
           collectionName = 'users';
+          docRefToUpdate = userSnapshot.docs[0].ref;
         }
       }
 
@@ -246,8 +249,18 @@ export default {
         return;
       }
 
+      // If Firestore says not verified but Auth email is verified now, auto-sync Firestore flag
+      if (user.emailVerified && userData && docRefToUpdate && userData.isVerified === false) {
+        try {
+          await updateDoc(docRefToUpdate, { isVerified: true });
+          userData.isVerified = true; // reflect update locally
+        } catch (e) {
+          console.warn('Failed to update isVerified flag in Firestore:', e);
+        }
+      }
+
       if (!userData.isVerified) {
-        this.showAlert('Your account is not verified. Please contact support.', 'warning');
+        this.showAlert('Your account is not verified. Please verify your email or contact support.', 'warning');
         await auth.signOut();
         return;
       }

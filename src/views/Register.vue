@@ -89,7 +89,16 @@
         </div>
       </div>
 
-      <button class="register-button" @click="register">Create Account</button>
+      <button 
+        class="register-button" 
+        @click="register" 
+        :disabled="isLoading"
+        :class="{ loading: isLoading }"
+      >
+        <span v-if="isLoading" class="spinner" aria-hidden="true"></span>
+        <span v-if="isLoading">Creating...</span>
+        <span v-else>Create Account</span>
+      </button>
 
       <p class="login-link">Already have an account? <a href="/login">Login here</a></p>
     </div>
@@ -140,7 +149,8 @@ export default {
       showPassword: false,
       showConfirmPassword: false,
       alertMessage: '',
-      alertType: ''
+      alertType: '',
+      isLoading: false
     };
   },
   methods: {
@@ -172,12 +182,14 @@ export default {
       }
 
       try {
+        this.isLoading = true;
         // First check if email exists in Firebase Authentication
         try {
           // This attempts to fetch sign-in methods for the email
           const methods = await fetchSignInMethodsForEmail(auth, this.email);
           if (methods && methods.length > 0) {
             this.showAlert('This email is already registered. Please login instead.', 'error');
+            this.isLoading = false;
             return;
           }
         } catch (error) {
@@ -191,6 +203,7 @@ export default {
         
         if (!userSnapshot.empty) {
           this.showAlert('This email is already registered in our system. Please login instead.', 'error');
+          this.isLoading = false;
           return;
         }
 
@@ -229,6 +242,7 @@ export default {
         this.showAlert('Registration successful! Please check your email to verify your account before logging in.', 'success');
         
         setTimeout(() => {
+          this.isLoading = false;
           this.$router.push('/login');
         }, 3000);
       } catch (error) {
@@ -242,6 +256,7 @@ export default {
         }
         
         this.showAlert(errorMessage, 'error');
+        this.isLoading = false;
       }
     },
     
@@ -561,6 +576,31 @@ input::placeholder {
 .register-button:active {
   transform: translateY(1px);
   box-shadow: 0 2px 5px rgba(46, 92, 49, 0.4);
+}
+
+.register-button.loading {
+  position: relative;
+  cursor: not-allowed;
+  opacity: 0.85;
+}
+
+.register-button:disabled {
+  opacity: 0.75;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 8px;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 /* Social Login Divider */
