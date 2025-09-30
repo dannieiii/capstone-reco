@@ -1,5 +1,7 @@
 <template>
   <div class="home-page">
+    <!-- Global Offline Status Banner -->
+    <OfflineBanner />
     <!-- Notification toast -->
     <Notification 
       v-if="showNotification"
@@ -824,6 +826,7 @@
 import BottomNavigation from '@/components/BottomNavigation.vue';
 import ProductRating from '@/components/ProductRating.vue';
 import Notification from '@/components/Notification.vue';
+import OfflineBanner from '@/components/OfflineBanner.vue';
 import { 
   Search, 
   ShoppingCart, 
@@ -861,6 +864,7 @@ export default {
     BottomNavigation,
     ProductRating,
   Notification,
+  OfflineBanner,
     Search,
     ShoppingCart,
     MapPin,

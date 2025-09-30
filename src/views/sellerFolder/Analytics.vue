@@ -1,5 +1,6 @@
 <template>
   <div class="dashboard-container">
+    <OfflineBanner />
     <Sidebar initialActiveItem="Analytics" />
     
     <div class="main-content">
@@ -526,6 +527,7 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import Sidebar from '@/components/Sidebar.vue';
 import InventoryModal from '@/components/sellerside/InventoryModal.vue';
 import Chart from 'chart.js/auto';
+import OfflineBanner from '@/components/OfflineBanner.vue';
 
 const router = useRouter();
 
@@ -1509,7 +1511,7 @@ const initCategoryChart = (labels, data) => {
           }
         }
       }
-    }
+    },
   });
 };
 

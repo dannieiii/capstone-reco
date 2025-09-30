@@ -1,14 +1,19 @@
 <template>
-  <router-view/>
+  <div id="app-root">
+    <OfflineBanner />
+    <router-view />
+  </div>
 </template>
 
 
 <script>
+import OfflineBanner from '@/components/OfflineBanner.vue';
 import { getSession } from './helpers/sessionHelper';
 
 import { ref, provide } from "vue";
 
 export default {
+  components: { OfflineBanner },
   data() {
     return {
       userSession: null,
@@ -43,6 +48,8 @@ export default {
 </script>
 
 <style>
+#app-root { min-height: 100vh; }
+
 #app {
   font-family: Avenir, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;

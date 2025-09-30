@@ -384,7 +384,7 @@ export default {
     CheckCircle,
     AlertCircle,
     RotateCcw,
-    FileText
+    FileText,
   },
   setup() {
   const router = useRouter();
@@ -1356,8 +1356,8 @@ export default {
       // quantity/unit helpers
       displayQuantity,
       formatUnitPrice,
-      printReceipt
-  , payOrder
+      printReceipt,
+      payOrder
     };
   }
 }

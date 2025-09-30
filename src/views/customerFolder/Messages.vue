@@ -1,5 +1,6 @@
 <template>
   <div class="messages-page">
+    <!-- OfflineBanner removed (now global) -->
     <div class="header">
       <button class="back-button" @click="goHome">
         <ChevronLeft size="22" />
@@ -211,7 +212,7 @@ export default {
     Paperclip,
     Send,
     Bell,
-    BottomNavigation
+    BottomNavigation,
   },
   setup() {
     const router = useRouter();

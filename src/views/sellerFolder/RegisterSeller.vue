@@ -765,8 +765,9 @@ export default {
   isMunicipalityDropdownOpen: false,
   municipalitySearch: '',
   // Visibility flags for optional verification documents
-  // Set to false to hide sections without removing code
-  showBusinessPermit: true,
+  // Temporarily hide Business Permit section for client validation tests.
+  // Toggle back to true when ready to re-enable in UI.
+  showBusinessPermit: false,
   showFarmCert: false,
       municipalities: [
         "Baco",

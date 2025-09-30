@@ -1,5 +1,6 @@
 <template>
     <div class="product">
+        <OfflineBanner />
         <!-- Header -->
         <div class="header">
             <h1 class="app-title">FarmXpress</h1>
@@ -85,9 +86,11 @@ import { useRouter } from "vue-router";
 import { db } from "../../firebase/firebaseConfig";
 import { collection, getDocs, deleteDoc, doc, query, where } from "firebase/firestore";
 import { getAuth, onAuthStateChanged } from "firebase/auth"; // Import onAuthStateChanged
+import OfflineBanner from '@/components/OfflineBanner.vue';
 
 export default {
     name: "Product",
+    components: { OfflineBanner },
     setup() {
         const router = useRouter();
         const products = ref([]);

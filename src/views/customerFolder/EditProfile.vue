@@ -1,12 +1,12 @@
 <template>
   <div class="edit-profile">
-<div class="header">
-    <button class="back-button" @click="goBack">
-      <ChevronLeft size="22" />
-    </button>
-    <h1>Edit Profile</h1>
-    <div class="header-buttons"></div>
-  </div>
+    <div class="header">
+      <button class="back-button" @click="goBack">
+        <ChevronLeft size="22" />
+      </button>
+      <h1>Edit Profile</h1>
+      <div class="header-buttons"></div>
+    </div>
     
     <div class="profile-content">
       <div v-if="notification.show" class="notification" :class="notification.type">
@@ -196,7 +196,7 @@ export default {
     Camera,
     Eye,
     EyeOff,
-    User
+    User,
   },
   setup() {
     const firstName = ref("");

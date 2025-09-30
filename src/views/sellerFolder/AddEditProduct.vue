@@ -13,7 +13,48 @@
           <h1>{{ isEditing ? 'Edit Product' : 'Add New Product' }}</h1>
           <p>{{ isEditing ? 'Update product details' : 'Create a new farm product with detailed information' }}</p>
         </div>
+        <div class="header-actions">
+          <button type="button" class="guide-icon" @click="openGuide" aria-label="How to add a product">
+            <span class="guide-tooltip">Guide: How to add a product</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+              <path d="M12 17h.01" />
+            </svg>
+          </button>
+        </div>
       </header>
+
+      <!-- Product Add Guide Overlay -->
+      <div v-if="showGuide" class="product-guide-overlay" @keydown.esc="closeGuide" tabindex="0">
+        <div class="guide-backdrop" @click="closeGuide"></div>
+        <div class="guide-panel" role="dialog" aria-modal="true" aria-labelledby="guideTitle">
+          <div class="guide-header">
+            <h2 id="guideTitle">How to {{ isEditing ? 'Edit' : 'Add' }} a Product</h2>
+            <button class="close-guide" @click="closeGuide" aria-label="Close guide">×</button>
+          </div>
+          <div class="guide-progress">
+            <div v-for="(step, idx) in guideSteps" :key="idx" class="progress-step" :class="{ active: idx === currentGuideStep, done: idx < currentGuideStep }">
+              <span class="step-index">{{ idx + 1 }}</span>
+              <span class="step-label">{{ step.short }}</span>
+            </div>
+          </div>
+          <div class="guide-body">
+            <h3 class="guide-step-title">Step {{ currentGuideStep + 1 }}: {{ activeGuideStep.title }}</h3>
+            <p class="guide-step-desc" v-html="activeGuideStep.desc"></p>
+            <div v-if="activeGuideStep.tip" class="guide-tip">
+              <strong>Tip:</strong> <span v-html="activeGuideStep.tip" />
+            </div>
+          </div>
+          <div class="guide-actions">
+            <button class="guide-btn secondary" @click="closeGuide">Close</button>
+            <div class="spacer"></div>
+            <button class="guide-btn" :disabled="currentGuideStep === 0" @click="prevGuide">Prev</button>
+            <button v-if="currentGuideStep < guideSteps.length - 1" class="guide-btn primary" @click="nextGuide">Next</button>
+            <button v-else class="guide-btn primary" @click="finishGuide">Finish</button>
+          </div>
+        </div>
+      </div>
 
       <!-- Status Ribbons -->
       <div v-if="product.status === 'inactive'" class="status-ribbons">
@@ -1258,9 +1299,74 @@ import NotifProduct from '@/components/sellerside/NotifProduct.vue';
 export default {
   components: {
     Sidebar,
-    NotifProduct
+    NotifProduct,
+    // OfflineBanner removed here (now provided globally in App.vue)
   },
   setup() {
+    // Guide overlay state
+    const showGuide = ref(false);
+    const currentGuideStep = ref(0);
+    const guideSteps = ref([
+      {
+        short: 'Basics',
+        title: 'Fill in Basic Information',
+        desc: 'Select a <strong>Category</strong> then choose a <strong>Product Name</strong> from the D.A. list or enable a custom product name. Add a clear <strong>Description</strong> and optional <strong>Variety</strong>. A product code will auto-generate.',
+        tip: 'Choosing a D.A. product unlocks reference prices to make your pricing competitive.'
+      },
+      {
+        short: 'Reference',
+        title: 'Use D.A. Reference Prices (Optional but Helpful)',
+        desc: 'After selecting a product, review the <strong>D.A. Reference Prices</strong>. Click <em>Edit Reference Units</em> to choose which official unit prices apply to your product.',
+        tip: 'Accurate reference units help buyers trust your pricing.'
+      },
+      {
+        short: 'Units',
+        title: 'Select Selling Units',
+        desc: 'Tick the units you will sell in (e.g., Per Kilo, Per Sack). Only units chosen in the reference step are available unless it\'s a custom product.',
+        tip: 'Start with the unit you sell most; you can add more later.'
+      },
+      {
+        short: 'Pricing',
+        title: 'Enter Prices, Costs & Stock',
+        desc: 'For each selected unit enter its <strong>Price</strong>, <strong>Cost</strong>, and <strong>Available Stock</strong>. Profit is auto-calculated. If on sale, discount affects displayed sale price.',
+        tip: 'Keep costs honest to track real profit. Adjust discount sparingly.'
+      },
+      {
+        short: 'Sale & Pre-order',
+        title: 'Configure Sale / Pre-order Options',
+        desc: 'Enable <strong>Sale Settings</strong> to apply a discount. Enable <strong>Pre-order</strong> if the stock will be available later; set limits and lead time.',
+        tip: 'Use pre-order for upcoming harvests instead of setting stock to 0.'
+      },
+      {
+        short: 'Wholesale',
+        title: 'Offer Wholesale (Optional)',
+        desc: 'Enable <strong>Wholesale Options</strong> if you give better pricing for bulk purchase; set minimum quantity and wholesale price.',
+        tip: 'Make wholesale price clearly cheaper to motivate bulk orders.'
+      },
+      {
+        short: 'Images',
+        title: 'Upload a Clear Product Image',
+        desc: 'Upload a high-quality, well-lit image. You can remove and change it before saving. This increases buyer trust.',
+        tip: 'Neutral background and proper crop improve visibility in listings.'
+      },
+      {
+        short: 'Review & Save',
+        title: 'Review & Save Your Product',
+        desc: 'Check for missing pricing, confirm units and status, then click <strong>Save Product</strong>. You will see a confirmation notification.',
+        tip: 'After saving you can still edit pricing, stock, and status.'
+      }
+    ]);
+
+    const openGuide = () => { showGuide.value = true; currentGuideStep.value = 0; setTimeout(()=>focusGuidePanel(),0); };
+    const closeGuide = () => { showGuide.value = false; };
+    const nextGuide = () => { if (currentGuideStep.value < guideSteps.value.length - 1) currentGuideStep.value++; };
+    const prevGuide = () => { if (currentGuideStep.value > 0) currentGuideStep.value--; };
+    const finishGuide = () => { showGuide.value = false; showNotification('Guide completed. You can reopen it anytime.', 'success'); };
+    const activeGuideStep = computed(() => guideSteps.value[currentGuideStep.value]);
+    const focusGuidePanel = () => {
+      const el = document.querySelector('.guide-panel');
+      if (el) el.focus();
+    };
     const route = useRoute();
     const router = useRouter();
     const auth = getAuth();
@@ -2659,6 +2765,7 @@ const selectProductUnit = (productItem, unitSummary) => {
       onlyNumbers,
       validateNumericInput,
       handlePaste
+      ,showGuide, guideSteps, currentGuideStep, activeGuideStep, openGuide, closeGuide, nextGuide, prevGuide, finishGuide
     };
   }
 };
@@ -2690,6 +2797,10 @@ const selectProductUnit = (productItem, unitSummary) => {
     margin-left: 0;
     padding: 15px;
   }
+  /* Ensure header title visible below any fixed top bars */
+  .header { 
+    margin-top: 55px; /* space for global offline banner + any fixed app bar */
+  }
   
   .main-content.expanded {
     margin-left: 0;
@@ -2717,6 +2828,9 @@ const selectProductUnit = (productItem, unitSummary) => {
   .main-content {
     padding: 10px;
   }
+  .header { 
+    margin-top: 60px; /* slightly more on very small screens */
+  }
   
   .form-section {
     padding: 12px;
@@ -2738,6 +2852,9 @@ const selectProductUnit = (productItem, unitSummary) => {
 /* Header */
 .header {
   margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
 }
 
 .page-title h1 {
@@ -2751,6 +2868,101 @@ const selectProductUnit = (productItem, unitSummary) => {
   font-size: 1rem;
   color: #6b7280;
   margin: 0;
+}
+
+/* Header Guide Icon */
+.header-actions { position: relative; }
+.guide-icon {
+  position: relative;
+  background: #ffffff;
+  border: 2px solid #2e5c31;
+  color: #2e5c31;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background .25s, color .25s, box-shadow .25s;
+}
+.guide-icon svg { width: 22px; height: 22px; }
+.guide-icon:hover { background:#2e5c31; color:#fff; box-shadow:0 4px 12px rgba(0,0,0,.15); }
+.guide-icon:focus { outline: 3px solid rgba(46,92,49,.4); }
+.guide-icon .guide-tooltip {
+  position: absolute;
+  bottom: -8px;
+  right: 50%;
+  transform: translate(50%, 100%);
+  background:#1f2937;
+  color:#fff;
+  font-size:11px;
+  padding:6px 8px;
+  border-radius:6px;
+  white-space: nowrap;
+  opacity:0;
+  visibility:hidden;
+  transition: opacity .25s;
+  pointer-events:none;
+}
+.guide-icon:hover .guide-tooltip { opacity:1; visibility:visible; }
+
+/* Guide Overlay */
+.product-guide-overlay {
+  position: fixed;
+  top:0; left:0; right:0; bottom:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index:3400;
+}
+.product-guide-overlay:focus { outline:none; }
+.guide-backdrop { position:absolute; inset:0; background:rgba(17,24,39,0.55); backdrop-filter:blur(4px); }
+.guide-panel {
+  position:relative;
+  background:#fff;
+  width: min(830px, 92%);
+  max-height:85vh;
+  border-radius:18px;
+  padding:24px 26px 22px;
+  box-shadow:0 18px 40px -8px rgba(0,0,0,.35);
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+  outline:none;
+}
+.guide-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+.guide-header h2 { font-size:1.35rem; font-weight:700; color:#111827; margin:0; }
+.close-guide { background:none; border:none; font-size:26px; line-height:1; cursor:pointer; color:#6b7280; padding:4px 10px; border-radius:8px; transition:background .2s, color .2s; }
+.close-guide:hover { background:#f3f4f6; color:#111827; }
+.guide-progress { display:flex; overflow-x:auto; gap:8px; padding:6px 2px 10px; margin-bottom:4px; }
+.progress-step { display:flex; align-items:center; gap:6px; background:#f3f4f6; padding:6px 10px; border-radius:999px; font-size:11px; font-weight:500; color:#374151; position:relative; }
+.progress-step .step-index { background:#d1d5db; color:#111827; width:20px; height:20px; display:flex; align-items:center; justify-content:center; border-radius:50%; font-size:11px; font-weight:600; }
+.progress-step.active { background:#2e5c31; color:#fff; }
+.progress-step.active .step-index { background:#fff; color:#2e5c31; }
+.progress-step.done { background:#dcfce7; color:#14532d; }
+.progress-step.done .step-index { background:#16a34a; color:#fff; }
+.guide-body { flex:1; overflow-y:auto; padding:4px 2px 10px; }
+.guide-step-title { font-size:1.05rem; font-weight:600; margin:6px 0 8px; color:#111827; }
+.guide-step-desc { font-size:0.9rem; line-height:1.5; color:#374151; margin:0 0 10px; }
+.guide-tip { background:#f0fdf4; border:1px solid #bbf7d0; padding:10px 12px; border-radius:8px; font-size:0.8rem; color:#065f46; }
+.guide-actions { display:flex; align-items:center; gap:10px; padding-top:8px; border-top:1px solid #e5e7eb; margin-top:8px; }
+.guide-actions .spacer { flex:1; }
+.guide-btn { background:#f3f4f6; border:1px solid #d1d5db; padding:8px 16px; border-radius:8px; cursor:pointer; font-size:0.85rem; font-weight:500; color:#111827; transition:background .2s, color .2s; }
+.guide-btn:hover:not(:disabled) { background:#e5e7eb; }
+.guide-btn.primary { background:#2e5c31; border-color:#2e5c31; color:#fff; }
+.guide-btn.primary:hover:not(:disabled) { background:#26492a; }
+.guide-btn.secondary { background:#fff; }
+.guide-btn:disabled { opacity:.55; cursor:not-allowed; }
+
+@media (max-width: 640px) {
+  .guide-panel { padding:18px 18px 16px; border-radius:14px; }
+  .guide-header h2 { font-size:1.1rem; }
+  .progress-step { padding:5px 8px; font-size:10px; }
+  .guide-step-title { font-size:0.95rem; }
+  .guide-step-desc { font-size:0.82rem; }
+  .guide-btn { padding:7px 12px; font-size:0.75rem; }
+  .guide-icon { width:38px; height:38px; }
 }
 
 /* Status Ribbons */

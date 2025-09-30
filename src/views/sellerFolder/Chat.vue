@@ -1,5 +1,6 @@
 <template>
     <div class="dashboard-container">
+      <OfflineBanner />
       <Sidebar initialActiveItem="Chat" />
       
       <div class="main-content">
@@ -135,6 +136,7 @@
   </template>
   
   <script setup>
+  import OfflineBanner from '@/components/OfflineBanner.vue';
   import { ref, computed, onMounted, onUnmounted } from 'vue';
   import { 
     Search, 
@@ -821,5 +823,4 @@
     background-color: #3e7b40;
   }
   </style>
-  
-  
+

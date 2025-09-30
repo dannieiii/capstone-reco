@@ -459,24 +459,6 @@
 </template>
 
 <script setup>
-import BottomNavigation from '@/components/BottomNavigation.vue';
-import { 
-  Search, 
-  ShoppingCart, 
-  User, 
-  X, 
-  MessageSquare, 
-  ThumbsUp, 
-  Image,
-  LogOut,
-  FileText,
-  MoreHorizontal,
-  Share2,
-  Send,
-  Globe,
-  EyeOff,
-  Package
-} from 'lucide-vue-next';
 import { ref, computed, onMounted, onUnmounted, reactive, nextTick } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { auth, db } from '@/firebase/firebaseConfig';
@@ -496,6 +478,23 @@ import {
   getDoc
 } from 'firebase/firestore';
 import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
+import { 
+  Search, 
+  ShoppingCart, 
+  User, 
+  X, 
+  MessageSquare, 
+  ThumbsUp, 
+  Image,
+  LogOut,
+  FileText,
+  MoreHorizontal,
+  Share2,
+  Send,
+  Globe,
+  EyeOff,
+  Package
+} from 'lucide-vue-next';
 
 const router = useRouter();
 const route = useRoute();

@@ -1,5 +1,6 @@
 <template>
   <div class="dashboard-container">
+    <OfflineBanner />
     <Sidebar initialActiveItem="Orders" />
     
     <div class="main-content">
@@ -386,6 +387,7 @@ import { collection, getDocs, doc, updateDoc, query, where, onSnapshot, runTrans
 import { getAuth } from 'firebase/auth';
 import OrderStatusUpdate from '@/components/sellerside/OrderStatusUpdate.vue';
 import OrderNotif from '@/components/sellerside/OrderNotif.vue';
+import OfflineBanner from '@/components/OfflineBanner.vue';
 
 // UI State
 const isDarkMode = ref(false);

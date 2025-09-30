@@ -1,5 +1,6 @@
 <template>
   <div class="dashboard-container">
+    <OfflineBanner />
     <Sidebar initialActiveItem="Farm Products" />
     
     <div class="main-content">
@@ -179,6 +180,7 @@ import {
 
 import Sidebar from '@/components/Sidebar.vue';
 import ConfirmModal from '@/components/ConfirmModal.vue';
+import OfflineBanner from '@/components/OfflineBanner.vue';
 
 const router = useRouter();
 const auth = getAuth();
