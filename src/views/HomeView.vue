@@ -219,9 +219,17 @@
             </div>
             
             <div class="profile-actions">
-              <!-- Show different buttons based on seller status -->
+              <!-- Show different buttons based on auth/seller status -->
               <button 
-                v-if="!userIsSeller && !userHasPendingApplication" 
+                v-if="!isLoggedIn" 
+                class="become-supplier-btn" 
+                @click="goToLogin"
+              >
+                <LogIn size="16" />
+                Login / Register
+              </button>
+              <button 
+                v-else-if="!userIsSeller && !userHasPendingApplication" 
                 class="become-supplier-btn" 
                 @click="navigateToPath('/register-seller')"
               >
@@ -249,23 +257,23 @@
             </div>
             
             <div class="profile-menu">
-              <button class="menu-item" @click="navigateToPath('/edit-profile')">
+              <button v-if="isLoggedIn" class="menu-item" @click="navigateToPath('/edit-profile')">
                 <UserCog size="16" />
                 Edit Profile
               </button>
-              <button class="menu-item">
+              <button v-if="isLoggedIn" class="menu-item">
                 <Settings size="16" />
                 Account Settings
               </button>
-              <button class="menu-item">
+              <button v-if="isLoggedIn" class="menu-item">
                 <MapPin size="16" />
                 Shipping Address
               </button>
-              <button class="menu-item">
+              <button v-if="isLoggedIn" class="menu-item">
                 <FileText size="16" />
                 Terms and Conditions
               </button>
-              <button class="menu-item">
+              <button v-if="isLoggedIn" class="menu-item">
                 <Shield size="16" />
                 Privacy Policy
               </button>
@@ -273,7 +281,7 @@
                 <Star size="16" />
                 Rate this App
               </button>
-              <button class="menu-item">
+              <button class="menu-item" @click="shareApp">
                 <Share2 size="16" />
                 Share this App
               </button>
@@ -1545,6 +1553,46 @@ const fetchProducts = async () => {
     async loginWithGoogleInline() { this.$router.push('/login'); },
     goToForgotPassword() { this.$router.push('/resetpassword'); },
     goToSignup() { this.$router.push('/register'); },
+
+    // Share app link via Web Share API or clipboard fallback
+    async shareApp() {
+      const shareUrl = 'https://farmxpress-965bb.web.app/';
+      const shareData = {
+        title: 'FarmXpress',
+        text: 'Check out FarmXpress – fresh farm products delivered! ',
+        url: shareUrl
+      };
+      try {
+        if (navigator.share) {
+          await navigator.share(shareData);
+          this.notificationMessage = 'Thanks for sharing!';
+          this.notificationType = 'success';
+          this.showNotification = true;
+        } else if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(shareUrl);
+          this.notificationMessage = 'Link copied to clipboard!';
+          this.notificationType = 'success';
+          this.showNotification = true;
+        } else {
+          // Fallback for non-secure contexts: create a temporary input
+          const input = document.createElement('input');
+          input.value = shareUrl;
+          document.body.appendChild(input);
+          input.select();
+          document.execCommand('copy');
+          document.body.removeChild(input);
+          this.notificationMessage = 'Link copied to clipboard!';
+          this.notificationType = 'success';
+          this.showNotification = true;
+        }
+      } catch (err) {
+        console.error('Share failed:', err);
+        this.notificationMessage = 'Unable to share right now. Link copied instead.';
+        this.notificationType = 'warning';
+        this.showNotification = true;
+        try { await navigator.clipboard.writeText(shareUrl); } catch {}
+      }
+    },
 
     // Compute the display price for pre-order products (prefer per-unit pre-order, then generic)
     getPreOrderDisplayPrice(product) {
