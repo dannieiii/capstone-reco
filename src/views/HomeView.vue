@@ -1524,6 +1524,7 @@ const fetchProducts = async () => {
   showPassword: false,
   rememberMe: false,
   isLoggingIn: false,
+  notificationTimer: null,
     };
   },
   methods: {
@@ -1547,12 +1548,23 @@ const fetchProducts = async () => {
       this.notificationType = 'error';
       this.showNotification = true;
       this.showLoginModal = true;
+      // Auto-dismiss the notification after ~6 seconds
+      if (this.notificationTimer) {
+        clearTimeout(this.notificationTimer);
+      }
+      this.notificationTimer = setTimeout(() => {
+        this.showNotification = false;
+        this.notificationTimer = null;
+      }, 6000);
     },
     closeLoginModal() { this.showLoginModal = false; },
     async handleInlineEmailLogin() { this.$router.push('/login'); },
     async loginWithGoogleInline() { this.$router.push('/login'); },
     goToForgotPassword() { this.$router.push('/resetpassword'); },
-    goToSignup() { this.$router.push('/register'); },
+    goToSignup() {
+      this.showLoginModal = false;
+      this.$router.push('/registration');
+    },
 
     // Share app link via Web Share API or clipboard fallback
     async shareApp() {
