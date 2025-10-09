@@ -1,7 +1,7 @@
 <template>
   <div class="login-container">
     <div class="logo-container">
-      <img src="@/assets/logo.png" alt="FarmXpress Logo" class="logo" />
+  <img src="@/assets/farmxpres-icon (green).png" alt="FarmXpress Logo" class="logo" />
       <h1 class="app-title">FarmXpress</h1>
       <h3 class="app-subtitle">MOBILE APP</h3>
     </div>
