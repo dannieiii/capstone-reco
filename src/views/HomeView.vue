@@ -68,6 +68,32 @@
         </div>
       </div>
     </div>
+
+    <!-- Rate App Modal -->
+    <div v-if="showRateModal" class="modal-overlay" @click.self="closeRateApp">
+      <div class="login-modal" @click.stop>
+        <div class="login-header">
+          <button class="close-button" @click="closeRateApp">&times;</button>
+        </div>
+        <div class="login-content">
+          <div class="app-branding" style="margin-bottom:16px;">
+            <img src="@/assets/farmxpres-icon (green).png" alt="App Icon" class="logo" />
+            <h1 class="app-title" style="font-size:1.4rem;">Rate FarmXpress</h1>
+          </div>
+          <div style="text-align:center;margin-bottom:12px;color:#2e5c31;">How was your experience?</div>
+          <div class="rating-row">
+            <button v-for="n in 5" :key="n" class="star-btn" :class="{ active: n <= ratingValue }" @click="setRating(n)" :aria-label="`Rate ${n} out of 5`">
+              <Star size="24" />
+            </button>
+          </div>
+          <textarea v-model="ratingComment" class="rating-textarea" rows="3" placeholder="Optional feedback (helps us improve)"></textarea>
+          <button class="login-button" :disabled="ratingValue===0 || submittingRating" @click="submitRating">
+            {{ submittingRating ? 'Submitting...' : 'Submit Rating' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div class="header">
       <div class="search-container">
         
@@ -277,7 +303,7 @@
                 <Shield size="16" />
                 Privacy Policy
               </button>
-              <button class="menu-item">
+              <button class="menu-item" @click="openRateApp">
                 <Star size="16" />
                 Rate this App
               </button>
@@ -299,7 +325,7 @@
       </div>
       
       <div class="location">
-        <p>Current Location</p>
+        <p>Current Locations</p>
         <h3>{{ userLocation }} <MapPin size="14" /></h3>
       </div>
       
@@ -1525,6 +1551,11 @@ const fetchProducts = async () => {
   rememberMe: false,
   isLoggingIn: false,
   notificationTimer: null,
+  // Rate App state
+  showRateModal: false,
+  ratingValue: 0,
+  ratingComment: '',
+  submittingRating: false,
     };
   },
   methods: {
@@ -1564,6 +1595,44 @@ const fetchProducts = async () => {
     goToSignup() {
       this.showLoginModal = false;
       this.$router.push('/registration');
+    },
+
+    // Rate App
+    openRateApp() {
+      this.showProfileMenu = false;
+      this.showRateModal = true;
+      this.ratingValue = 0;
+      this.ratingComment = '';
+    },
+    closeRateApp() {
+      this.showRateModal = false;
+    },
+    setRating(n) { this.ratingValue = n; },
+    async submitRating() {
+      if (this.ratingValue === 0 || this.submittingRating) return;
+      try {
+        this.submittingRating = true;
+        const user = auth.currentUser;
+        const payload = {
+          rating: this.ratingValue,
+          comment: (this.ratingComment || '').trim(),
+          createdAt: new Date(),
+          userId: user ? user.uid : null,
+          userEmail: user ? user.email : null,
+        };
+        await addDoc(collection(db, 'appRatings'), payload);
+        this.showRateModal = false;
+        this.notificationMessage = 'Thanks for your feedback!';
+        this.notificationType = 'success';
+        this.showNotification = true;
+      } catch (e) {
+        console.error('Failed to submit rating:', e);
+        this.notificationMessage = 'Unable to submit rating. Please try again.';
+        this.notificationType = 'error';
+        this.showNotification = true;
+      } finally {
+        this.submittingRating = false;
+      }
     },
 
     // Share app link via Web Share API or clipboard fallback
@@ -4037,6 +4106,14 @@ html {
 
 /* Align overlay for login modal */
 .modal-overlay:has(.login-modal) { align-items: flex-end; }
+
+/* Rating modal styles */
+.rating-row { display: flex; justify-content: center; gap: 8px; margin: 10px 0 12px; }
+.star-btn { background: #eef6ef; border: 1px solid #d7e6d9; color: #2e5c31; border-radius: 10px; padding: 6px; cursor: pointer; transition: transform .15s ease, background .2s ease; }
+.star-btn:hover { transform: translateY(-1px); }
+.star-btn.active { background: #2e5c31; color: #fff; border-color: #2e5c31; }
+.rating-textarea { width: 100%; resize: vertical; border-radius: 12px; border: 1px solid #e0e0e0; padding: 10px 12px; margin-bottom: 12px; font-size: 14px; outline: none; }
+.rating-textarea:focus { border-color: #2e5c31; box-shadow: 0 0 0 3px rgba(46,92,49,0.08); }
 
 @media (max-width: 480px) {
   .login-modal { width: 100%; border-radius: 20px 20px 0 0; }
