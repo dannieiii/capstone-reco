@@ -18,7 +18,7 @@
       <div class="summary-cards">
         <div class="summary-card">
           <div class="card-icon pending-icon">
-            <i class="i-lucide-clock"></i>
+            <Clock :size="18" />
           </div>
           <div class="card-content">
             <h3>Pending</h3>
@@ -28,7 +28,7 @@
         
         <div class="summary-card">
           <div class="card-icon processing-icon">
-            <i class="i-lucide-package"></i>
+            <Package :size="18" />
           </div>
           <div class="card-content">
             <h3>Processing</h3>
@@ -38,7 +38,7 @@
         
         <div class="summary-card">
           <div class="card-icon shipped-icon">
-            <i class="i-lucide-truck"></i>
+            <Truck :size="18" />
           </div>
           <div class="card-content">
             <h3>Shipped</h3>
@@ -48,7 +48,7 @@
         
         <div class="summary-card">
           <div class="card-icon delivered-icon">
-            <i class="i-lucide-check-circle"></i>
+            <CheckCircle :size="18" />
           </div>
           <div class="card-content">
             <h3>Delivered</h3>
@@ -58,7 +58,7 @@
         
         <div class="summary-card">
           <div class="card-icon received-icon">
-            <i class="i-lucide-package-check"></i>
+            <PackageCheck :size="18" />
           </div>
           <div class="card-content">
             <h3>Order Received</h3>
@@ -68,7 +68,7 @@
         
         <div class="summary-card">
           <div class="card-icon refund-icon">
-            <i class="i-lucide-rotate-ccw"></i>
+            <RotateCcw :size="18" />
           </div>
           <div class="card-content">
             <h3>Refund Processing</h3>
@@ -388,6 +388,7 @@ import { getAuth } from 'firebase/auth';
 import OrderStatusUpdate from '@/components/sellerside/OrderStatusUpdate.vue';
 import OrderNotif from '@/components/sellerside/OrderNotif.vue';
 import OfflineBanner from '@/components/OfflineBanner.vue';
+import { Clock, Package, Truck, CheckCircle, PackageCheck, RotateCcw } from 'lucide-vue-next';
 
 // UI State
 const isDarkMode = ref(false);
@@ -2463,10 +2464,33 @@ const exportAsPDF = () => {
   .main-content {
     margin-left: 0;
     padding: 15px;
+    /* Prevent global header from overlapping content on mobile */
+    padding-top: calc(64px + env(safe-area-inset-top));
   }
   
   .summary-cards {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, 1fr); /* 2 columns on mobile as requested */
+    gap: 12px;
+  }
+
+  .summary-card {
+    padding: 14px;
+    min-height: 72px;
+  }
+
+  .card-icon :deep(svg) {
+    width: 18px;
+    height: 18px;
+    stroke-width: 2.25;
+  }
+
+  .card-content h3 {
+    font-size: 0.8rem;
+    margin-bottom: 4px;
+  }
+
+  .card-value {
+    font-size: 1.2rem;
   }
   
   .actions-bar {
@@ -2601,6 +2625,18 @@ const exportAsPDF = () => {
   
   .pagination button {
     width: 100%;
+  }
+}
+
+/* Slightly larger top padding for very small screens */
+@media (max-width: 576px) {
+  .main-content {
+    /* Account for taller header on very small devices and safe area inset */
+    padding-top: calc(70px + env(safe-area-inset-top));
+  }
+  .summary-cards {
+    grid-template-columns: repeat(2, 1fr); /* keep 2 columns on very small screens */
+    gap: 10px;
   }
 }
 </style>

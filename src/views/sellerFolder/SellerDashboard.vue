@@ -991,15 +991,20 @@ margin-bottom: 15px;
 .main-content {
   margin-left: 0;
   padding: 10px;
-  /* Push below the fixed green app bar on mobile */
-  padding-top: calc(10px + var(--topbar-height, 56px) + env(safe-area-inset-top));
+  /* Push below the fixed green app bar on mobile (tighter, matches ~56px app bar) */
+  padding-top: calc(56px + env(safe-area-inset-top));
 }
 
 .header {
-  position: sticky;
-  top: calc(var(--topbar-height, 56px) + env(safe-area-inset-top));
+  /* Avoid overlay on mobile: keep header non-sticky */
+  position: relative;
+  top: auto;
   background: #f9fafb;
-  z-index: 10;
+  z-index: auto;
+  /* Trim vertical space on mobile */
+  margin-top: 0;
+  margin-bottom: 12px;
+  padding: 4px 0;
 }
 
 .welcome-banner {
@@ -1018,6 +1023,9 @@ margin-bottom: 15px;
 }
 
 @media (max-width: 576px) {
+/* Slightly larger offset for very small devices while keeping spacing tight */
+.main-content { padding-top: calc(60px + env(safe-area-inset-top)); }
+
 .dashboard-content {
   gap: 15px;
 }

@@ -197,60 +197,6 @@
                 <p class="file-help">Accepted formats: Images (JPG, PNG), Documents (PDF, DOC, DOCX), Spreadsheets (XLS, XLSX) - max 5MB</p>
               </div>
             </div>
-
-            <!-- Business Permit -->
-            <div class="form-group">
-              <label for="businessPermit">Business Permit</label>
-              <div class="document-upload-container">
-                <div class="upload-options">
-                  <button type="button" class="upload-option-btn" @click="triggerFileInput('businessPermit')">
-                    <Upload :size="16" />
-                    Upload File
-                  </button>
-                </div>
-
-                <div v-if="formData.verificationDocs.businessPermit || filePreviews.businessPermit" class="file-preview">
-                  <img v-if="isCurrentPreviewImage('businessPermit')" :src="currentPreview('businessPermit')" alt="Business Permit preview" class="document-preview-image" />
-                  <div v-else class="document-file-info">
-                    <FileText :size="20" />
-                    <span>Existing document</span>
-                  </div>
-                  <button type="button" class="remove-file-btn" @click="removeDocument('businessPermit')">
-                    <X :size="14" />
-                  </button>
-                </div>
-
-                <input type="file" ref="businessPermitInput" @change="handleFileUpload($event, 'businessPermit')" accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,.doc,.docx,.xls,.xlsx,.txt" class="file-input" />
-                <p class="file-help">Accepted formats: Images (JPG, PNG), Documents (PDF, DOC, DOCX), Spreadsheets (XLS, XLSX) - max 5MB</p>
-              </div>
-            </div>
-
-            <!-- Farm Certification -->
-            <div class="form-group">
-              <label for="farmCert">Farm Certification</label>
-              <div class="document-upload-container">
-                <div class="upload-options">
-                  <button type="button" class="upload-option-btn" @click="triggerFileInput('farmCert')">
-                    <Upload :size="16" />
-                    Upload File
-                  </button>
-                </div>
-
-                <div v-if="formData.verificationDocs.farmCert || filePreviews.farmCert" class="file-preview">
-                  <img v-if="isCurrentPreviewImage('farmCert')" :src="currentPreview('farmCert')" alt="Farm Certification preview" class="document-preview-image" />
-                  <div v-else class="document-file-info">
-                    <FileText :size="20" />
-                    <span>Existing document</span>
-                  </div>
-                  <button type="button" class="remove-file-btn" @click="removeDocument('farmCert')">
-                    <X :size="14" />
-                  </button>
-                </div>
-
-                <input type="file" ref="farmCertInput" @change="handleFileUpload($event, 'farmCert')" accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain,.doc,.docx,.xls,.xlsx,.txt" class="file-input" />
-                <p class="file-help">Accepted formats: Images (JPG, PNG), Documents (PDF, DOC, DOCX), Spreadsheets (XLS, XLSX) - max 5MB</p>
-              </div>
-            </div>
           </div>
 
           <!-- Delivery Information -->
@@ -378,16 +324,14 @@ export default {
         personalInfo: { firstName: '', lastName: '', contact: '', email: '', address: '' },
         farmDetails: { farmName: '', farmAddress: '', farmType: '', products: '', yearInFarming: 0 },
         paymentInfo: { paymentMethod: '', accountName: '', accountNumber: '', qrUrl: null },
-        verificationDocs: { validID: null, businessPermit: null, farmCert: null },
+        verificationDocs: { validID: null },
         deliveryInfo: { deliveryMethods: [], areasCovered: [] },
         additionalDetails: { socialMedia: '', wholesaleAvailability: false }
       },
       uploadStatus: {
-        validID: { progress: 0, error: null, uploading: false, url: null },
-        businessPermit: { progress: 0, error: null, uploading: false, url: null },
-        farmCert: { progress: 0, error: null, uploading: false, url: null }
+        validID: { progress: 0, error: null, uploading: false, url: null }
       },
-      filePreviews: { validID: null, businessPermit: null, farmCert: null, paymentQr: null },
+      filePreviews: { validID: null, paymentQr: null },
       accountNumberError: '',
       isSubmitting: false,
       loading: true,
@@ -485,8 +429,6 @@ export default {
           if (s.additionalDetails) Object.assign(this.formData.additionalDetails, s.additionalDetails);
           if (s.documents) {
             this.filePreviews.validID = s.documents.validID || null;
-            this.filePreviews.businessPermit = s.documents.businessPermit || null;
-            this.filePreviews.farmCert = s.documents.farmCert || null;
           }
         }
       } catch (e) {
@@ -596,8 +538,8 @@ export default {
     },
 
     async uploadAllDocuments() {
-      const results = { validID: { success: false, url: '', type: null }, businessPermit: { success: false, url: '', type: null }, farmCert: { success: false, url: '', type: null } };
-      const order = ['validID','businessPermit','farmCert'];
+      const results = { validID: { success: false, url: '', type: null } };
+      const order = ['validID'];
       for (const key of order) {
         const file = this.formData.verificationDocs[key];
         if (!file) continue;
@@ -624,9 +566,7 @@ export default {
         const uploadResults = await this.uploadAllDocuments();
 
         const docs = {
-          validID: uploadResults.validID?.success ? uploadResults.validID.url : (this.loadedSellerData?.documents?.validID || ''),
-          businessPermit: uploadResults.businessPermit?.success ? uploadResults.businessPermit.url : (this.loadedSellerData?.documents?.businessPermit || ''),
-          farmCert: uploadResults.farmCert?.success ? uploadResults.farmCert.url : (this.loadedSellerData?.documents?.farmCert || '')
+          validID: uploadResults.validID?.success ? uploadResults.validID.url : (this.loadedSellerData?.documents?.validID || '')
         };
 
         const sellerUpdate = {
@@ -637,9 +577,7 @@ export default {
           additionalDetails: { ...this.formData.additionalDetails },
           documents: docs,
           documentMetadata: {
-            validID: { type: uploadResults.validID?.type || this.loadedSellerData?.documentMetadata?.validID?.type || null, isBase64: (uploadResults.validID?.type === 'image') || this.loadedSellerData?.documentMetadata?.validID?.isBase64 || false },
-            businessPermit: { type: uploadResults.businessPermit?.type || this.loadedSellerData?.documentMetadata?.businessPermit?.type || null, isBase64: (uploadResults.businessPermit?.type === 'image') || this.loadedSellerData?.documentMetadata?.businessPermit?.isBase64 || false },
-            farmCert: { type: uploadResults.farmCert?.type || this.loadedSellerData?.documentMetadata?.farmCert?.type || null, isBase64: (uploadResults.farmCert?.type === 'image') || this.loadedSellerData?.documentMetadata?.farmCert?.isBase64 || false }
+            validID: { type: uploadResults.validID?.type || this.loadedSellerData?.documentMetadata?.validID?.type || null, isBase64: (uploadResults.validID?.type === 'image') || this.loadedSellerData?.documentMetadata?.validID?.isBase64 || false }
           },
           updatedAt: new Date()
         };

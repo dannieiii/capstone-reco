@@ -13,10 +13,6 @@
             <CheckCheck size="16" />
             Mark All Read
           </button>
-          <button class="theme-toggle" @click="toggleDarkMode">
-            <Sun v-if="isDarkMode" size="20" />
-            <Moon v-else size="20" />
-          </button>
         </div>
       </header>
 
@@ -118,43 +114,37 @@
               </div>
               
               <!-- Short preview message for price warnings -->
-              <p v-if="notification.type === 'price_warning' || notification.type === 'final_warning'" class="notification-message">
+              <p v-if="notification.type === 'price_warning' || notification.type === 'final_warning'" class="notification-message clamp-2">
                 Your product "{{ notification.productName }}" is priced {{ formatDeviation(notification.deviation) }} above the recommended price.
               </p>
               
-              <!-- Display the admin's message directly for other notifications -->
-              <p v-else class="notification-message">{{ notification.message }}</p>
+              <!-- Display the admin's message directly for other notifications (clamped) -->
+              <p v-else class="notification-message clamp-2">{{ notification.message }}</p>
+
+              <!-- Inline "View" for long messages (non-warning types) -->
+              <button 
+                v-if="notification.message && notification.type !== 'price_warning' && notification.type !== 'final_warning'"
+                class="view-inline-btn"
+                @click.stop="openNotifModal(notification)"
+              >
+                View
+              </button>
               
-              <!-- Price Update Details -->
-              <div v-if="notification.type === 'price_update'" class="price-update-details">
-                <div class="product-info">
-                  <span class="product-name">{{ notification.productName }}</span>
-                  <span class="category-badge">{{ notification.category }}</span>
-                </div>
-                <div class="price-changes">
-                  <div class="price-change-item">
-                    <span class="label">Min Price</span>
-                    <div class="prices">
-                      <span class="num old">₱{{ fmtNotifPrice(notification, 'min', 'old') }}</span>
-                      <span class="arrow">→</span>
-                      <span class="num new">₱{{ fmtNotifPrice(notification, 'min', 'new') }}</span>
-                      <span class="delta" :class="priceChangeClassFromNotif(notification, 'min')">
-                        {{ priceChangePercentFromNotif(notification, 'min') }}
-                      </span>
-                    </div>
-                  </div>
-                  <div class="price-change-item">
-                    <span class="label">Max Price</span>
-                    <div class="prices">
-                      <span class="num old">₱{{ fmtNotifPrice(notification, 'max', 'old') }}</span>
-                      <span class="arrow">→</span>
-                      <span class="num new">₱{{ fmtNotifPrice(notification, 'max', 'new') }}</span>
-                      <span class="delta" :class="priceChangeClassFromNotif(notification, 'max')">
-                        {{ priceChangePercentFromNotif(notification, 'max') }}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+              <!-- Price Update Summary (compact) -->
+              <div v-if="notification.type === 'price_update'" class="price-update-summary">
+                <span class="mini-row">
+                  <strong>Min:</strong> ₱{{ fmtNotifPrice(notification, 'min', 'old') }} → ₱{{ fmtNotifPrice(notification, 'min', 'new') }}
+                  <span class="delta-chip" :class="priceChangeClassFromNotif(notification, 'min')">{{ priceChangePercentFromNotif(notification, 'min') }}</span>
+                </span>
+                <span class="dot">•</span>
+                <span class="mini-row">
+                  <strong>Max:</strong> ₱{{ fmtNotifPrice(notification, 'max', 'old') }} → ₱{{ fmtNotifPrice(notification, 'max', 'new') }}
+                  <span class="delta-chip" :class="priceChangeClassFromNotif(notification, 'max')">{{ priceChangePercentFromNotif(notification, 'max') }}</span>
+                </span>
+                <button class="view-details-btn compact" @click.stop="openNotifModal(notification)">
+                  <Eye size="14" />
+                  View Details
+                </button>
               </div>
               
               <!-- Price Warning Preview -->
@@ -250,6 +240,70 @@
         </div>
       </div>
 
+      <!-- Generic Notification Details Modal -->
+      <div v-if="showNotifModal" class="modal-overlay" @click="closeNotifModal">
+        <div class="modal-content" @click.stop>
+          <div class="modal-header">
+            <h2>{{ selectedNotif?.title || 'Notification Details' }}</h2>
+            <button class="close-btn" @click="closeNotifModal">
+              <X size="20" />
+            </button>
+          </div>
+          <div class="modal-body">
+            <div v-if="selectedNotif">
+              <div class="message-section" v-if="selectedNotif.message">
+                <h3>Message</h3>
+                <div class="full-message">{{ selectedNotif.message }}</div>
+              </div>
+
+              <!-- Render full price update block inside modal -->
+              <div v-if="selectedNotif.type === 'price_update'" class="price-update-details">
+                <div class="product-info">
+                  <span class="product-name">{{ selectedNotif.productName }}</span>
+                  <span class="category-badge">{{ selectedNotif.category }}</span>
+                </div>
+                <div class="price-changes">
+                  <div class="price-change-item">
+                    <span class="label">Min Price</span>
+                    <div class="prices">
+                      <span class="num old">₱{{ fmtNotifPrice(selectedNotif, 'min', 'old') }}</span>
+                      <span class="arrow">→</span>
+                      <span class="num new">₱{{ fmtNotifPrice(selectedNotif, 'min', 'new') }}</span>
+                      <span class="delta" :class="priceChangeClassFromNotif(selectedNotif, 'min')">
+                        {{ priceChangePercentFromNotif(selectedNotif, 'min') }}
+                      </span>
+                    </div>
+                  </div>
+                  <div class="price-change-item">
+                    <span class="label">Max Price</span>
+                    <div class="prices">
+                      <span class="num old">₱{{ fmtNotifPrice(selectedNotif, 'max', 'old') }}</span>
+                      <span class="arrow">→</span>
+                      <span class="num new">₱{{ fmtNotifPrice(selectedNotif, 'max', 'new') }}</span>
+                      <span class="delta" :class="priceChangeClassFromNotif(selectedNotif, 'max')">
+                        {{ priceChangePercentFromNotif(selectedNotif, 'max') }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Order details in modal -->
+              <div v-if="selectedNotif.orderDetails" class="notification-details" style="margin-top:12px;">
+                <span class="order-code">#{{ selectedNotif.orderDetails.orderCode }}</span>
+                <span class="customer-name">{{ selectedNotif.orderDetails.customerName }}</span>
+                <span class="order-amount">₱{{ selectedNotif.orderDetails.amount?.toFixed?.(2) }}</span>
+              </div>
+
+              <!-- Deactivation reason in modal -->
+              <div v-if="selectedNotif.type === 'product_deactivated' && selectedNotif.reason" class="deactivation-details" style="margin-top:12px;">
+                <div class="deactivation-reason"><strong>Reason:</strong> {{ selectedNotif.reason }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Price Warning Modal -->
       <div v-if="showWarningModal" class="modal-overlay" @click="closeWarningModal">
         <div class="modal-content" @click.stop>
@@ -342,8 +396,6 @@ import {
   Bell, 
   ShoppingCart, 
   List, 
-  Sun, 
-  Moon, 
   CheckCheck, 
   Check, 
   X, 
@@ -380,7 +432,6 @@ import {
 import { getAuth } from 'firebase/auth';
 
 // State
-const isDarkMode = ref(false);
 const loading = ref(true);
 const notifications = ref([]);
 const activeFilter = ref('all');
@@ -392,6 +443,9 @@ const retryCount = ref(0);
 const maxRetries = 3;
 const showWarningModal = ref(false);
 const selectedWarning = ref(null);
+// Generic notification details modal (for compact previews)
+const showNotifModal = ref(false);
+const selectedNotif = ref(null);
 // Maintain separate buckets so we can merge notifications from sellerId and userId listeners
 const notifBySeller = ref([]);
 const notifByUser = ref([]);
@@ -471,11 +525,6 @@ const paginatedNotifications = computed(() => {
 });
 
 // Methods
-const toggleDarkMode = () => {
-  isDarkMode.value = !isDarkMode.value;
-  document.body.classList.toggle('dark', isDarkMode.value);
-  localStorage.setItem('theme', isDarkMode.value ? 'dark' : 'light');
-};
 
 const setActiveFilter = (filter) => {
   activeFilter.value = filter;
@@ -490,6 +539,16 @@ const openWarningModal = (notification) => {
 const closeWarningModal = () => {
   showWarningModal.value = false;
   selectedWarning.value = null;
+};
+
+const openNotifModal = (notification) => {
+  selectedNotif.value = notification;
+  showNotifModal.value = true;
+};
+
+const closeNotifModal = () => {
+  showNotifModal.value = false;
+  selectedNotif.value = null;
 };
 
 const getNotificationIcon = (type, subtype) => {
@@ -878,13 +937,6 @@ const setupNotificationListener = async () => {
 };
 
 onMounted(async () => {
-  // Load theme
-  const savedTheme = localStorage.getItem('theme');
-  if (savedTheme === 'dark') {
-    isDarkMode.value = true;
-    document.body.classList.add('dark');
-  }
-
   // Setup listeners with better error handling
   const unsubscribe = await setupNotificationListener();
   
@@ -980,20 +1032,6 @@ onMounted(async () => {
 
 .mark-all-read-btn:hover {
   background-color: #234425;
-}
-
-.theme-toggle {
-  background: none;
-  border: none;
-  color: #111827;
-  font-size: 1.25rem;
-  cursor: pointer;
-  padding: 0.5rem;
-  border-radius: 50%;
-}
-
-.theme-toggle:hover {
-  background: rgba(0,0,0,0.05);
 }
 
 .notification-stats {
@@ -1259,6 +1297,25 @@ onMounted(async () => {
   font-weight: 500;
 }
 
+/* Clamp long preview text to two lines */
+.clamp-2 {
+  display: -webkit-box;
+  line-clamp: 2;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.view-inline-btn {
+  background: none;
+  border: none;
+  color: #2e5c31;
+  font-weight: 600;
+  padding: 0;
+  cursor: pointer;
+}
+.view-inline-btn:hover { text-decoration: underline; }
+
 .price-update-details {
   background: #ecfdf5;
   padding: 12px;
@@ -1267,6 +1324,32 @@ onMounted(async () => {
   border: 1px solid #a7f3d0;
   width: 100%;
   box-sizing: border-box;
+}
+
+/* Compact summary style for price updates within list */
+.price-update-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.88rem;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+.price-update-summary .mini-row { display: inline-flex; align-items: center; gap: 6px; }
+.price-update-summary .dot { color: #6b7280; }
+.delta-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.compact.view-details-btn {
+  margin-left: auto;
 }
 
 .product-info {
@@ -1760,174 +1843,15 @@ onMounted(async () => {
 }
 
 /* Dark mode styles */
-:global(.dark) .main-content {
-  background-color: #111827;
-}
-
-:global(.dark) .page-title h1 {
-  color: #f9fafb;
-}
-
-:global(.dark) .page-title p {
-  color: #9ca3af;
-}
-
-:global(.dark) .theme-toggle {
-  color: #f9fafb;
-}
-
-:global(.dark) .theme-toggle:hover {
-  background-color: rgba(255,255,255,0.1);
-}
-
-:global(.dark) .stat-card {
-  background-color: #1f2937;
-}
-
-:global(.dark) .stat-value {
-  color: #f9fafb;
-}
-
-:global(.dark) .filter-tabs {
-  border-bottom-color: #374151;
-}
-
-:global(.dark) .filter-tab {
-  color: #9ca3af;
-}
-
-:global(.dark) .filter-tab:hover {
-  color: #6abe6e;
-}
-
-:global(.dark) .filter-tab.active {
-  color: #6abe6e;
-  border-bottom-color: #6abe6e;
-}
-
-:global(.dark) .notifications-container {
-  background-color: #1f2937;
-}
-
-:global(.dark) .notification-item {
-  border-bottom-color: #374151;
-}
-
-:global(.dark) .notification-item:hover {
-  background-color: #374151;
-}
-
-:global(.dark) .notification-item.unread {
-  background-color: #422006;
-}
-
-:global(.dark) .notification-title {
-  color: #f9fafb;
-}
-
-:global(.dark) .notification-message {
-  color: #d1d5db;
-}
-
-:global(.dark) .notification-time {
-  color: #9ca3af;
-}
-
-:global(.dark) .notification-icon {
-  background-color: #374151;
-  color: #9ca3af;
-}
-
-:global(.dark) .order-code {
-  background-color: #374151;
-  color: #d1d5db;
-}
-
-:global(.dark) .customer-name {
-  color: #9ca3af;
-}
-
-:global(.dark) .pagination {
-  border-top-color: #374151;
-}
-
-:global(.dark) .pagination-btn {
-  background-color: #374151;
-  border-color: #4b5563;
-  color: #d1d5db;
-}
-
-:global(.dark) .pagination-btn:hover:not(:disabled) {
-  background-color: #4b5563;
-}
-
-:global(.dark) .pagination-info {
-  color: #9ca3af;
-}
-
-:global(.dark) .product-name {
-  color: #f9fafb;
-}
-
-:global(.dark) .category-badge {
-  background-color: #374151;
-  color: #9ca3af;
-}
-
-:global(.dark) .modal-content {
-  background-color: #1f2937;
-}
-
-:global(.dark) .modal-header {
-  border-bottom-color: #374151;
-}
-
-:global(.dark) .modal-header h2 {
-  color: #f9fafb;
-}
-
-:global(.dark) .close-btn {
-  color: #9ca3af;
-}
-
-:global(.dark) .close-btn:hover {
-  background-color: #374151;
-}
-
-:global(.dark) .message-section,
-:global(.dark) .product-section,
-:global(.dark) .price-section,
-:global(.dark) .warning-section,
-:global(.dark) .actions-section {
-  border-bottom-color: #374151;
-}
-
-:global(.dark) .message-section h3,
-:global(.dark) .product-section h3,
-:global(.dark) .price-section h3,
-:global(.dark) .warning-section h3,
-:global(.dark) .actions-section h3 {
-  color: #f9fafb;
-}
-
-:global(.dark) .full-message {
-  background-color: #374151;
-  color: #d1d5db;
-}
-
-:global(.dark) .product-name-full {
-  color: #f9fafb;
-}
-
-:global(.dark) .price-item .label {
-  color: #d1d5db;
-}
+/* Dark mode removed */
 
 /* Responsive styles */
 @media (max-width: 768px) {
   .main-content {
     margin-left: 0;
     padding: 15px;
+    /* Prevent global header from overlapping content on mobile */
+    padding-top: calc(64px + env(safe-area-inset-top));
   }
   
   .header {
@@ -1942,7 +1866,20 @@ onMounted(async () => {
   }
   
   .notification-stats {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .stat-card {
+    padding: 14px;
+  }
+
+  .stat-content h3 {
+    font-size: 0.85rem;
+  }
+
+  .stat-value {
+    font-size: 1.25rem;
   }
   
   .filter-tabs {
@@ -1952,7 +1889,15 @@ onMounted(async () => {
   
   .notification-item {
     padding: 12px 16px;
+    margin-right: 6px; /* add breathing room on the right so inner buttons don’t touch edge */
+    border-radius: 8px;
+    position: relative; /* allow overlaying/hiding side actions on mobile */
   }
+  /* On mobile, hide the right-side action column so the green box can span wider */
+  .notification-actions {
+    display: none;
+  }
+
   
   .notification-header {
     flex-direction: column;
@@ -2008,6 +1953,13 @@ onMounted(async () => {
   .price-update-details {
     padding: 10px;
   }
+  .price-update-summary {
+    padding-right: 12px; /* keep a small inner padding on the right */
+    width: 100%; /* allow the green container to extend across the content width */
+  }
+  .view-details-btn {
+    margin-right: 2px; /* tiny right gap for green button */
+  }
   
   .product-info {
     flex-direction: column;
@@ -2021,7 +1973,18 @@ onMounted(async () => {
   }
 }
 
-:global(.dark) .notification-item {
-  border-bottom-color: #374151;
+/* Slightly larger top padding for very small screens */
+@media (max-width: 576px) {
+  .main-content {
+    /* Account for taller header on very small devices and safe area inset */
+    padding-top: calc(70px + env(safe-area-inset-top));
+  }
+  .notification-stats {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  .notification-item { margin-right: 8px; }
+  .price-update-summary { padding-right: 14px; width: 100%; }
 }
+
 </style>

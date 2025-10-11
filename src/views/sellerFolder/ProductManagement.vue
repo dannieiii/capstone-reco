@@ -981,6 +981,9 @@ onBeforeUnmount(() => {
     margin-left: 0;
     width: 100%;
     padding: 15px;
+    /* Prevent overlap with global top navigation/header on mobile */
+    padding-top: 64px; /* approximate header height; adjust if your header height changes */
+    padding-top: calc(64px + env(safe-area-inset-top));
   }
   
   .sidebar.collapsed + .main-content {
@@ -1016,6 +1019,12 @@ onBeforeUnmount(() => {
   
   .product-card {
     max-width: 100%;
+  }
+
+  /* Extra safety padding for very small screens */
+  .main-content {
+    padding-top: 70px; /* slightly larger on very small screens */
+    padding-top: calc(70px + env(safe-area-inset-top));
   }
 
   /* Optimize mobile layout for 3 columns */

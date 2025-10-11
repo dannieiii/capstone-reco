@@ -2001,12 +2001,12 @@
   }
 
   /* Mobile-first responsive adjustments */
-  @media (max-width: 767.98px) {
+  @media (max-width: 768px) {
     .chat-container {
   margin-left: 0 !important;
   height: 100dvh;
   /* Push content below the fixed green app bar */
-  padding-top: calc(var(--topbar-height, 56px) + env(safe-area-inset-top));
+  padding-top: calc(64px + env(safe-area-inset-top));
     }
     .header {
       display: none; /* Hide secondary header to reclaim space */
@@ -2055,5 +2055,13 @@
     .conversation-item { padding: 12px; }
     .conversation-avatar { width: 44px; height: 44px; }
     .conversation-preview { max-width: none; }
+  }
+
+  /* Slightly larger top padding for very small screens */
+  @media (max-width: 576px) {
+    .chat-container {
+      /* Account for taller header on very small devices and safe area inset */
+      padding-top: calc(70px + env(safe-area-inset-top));
+    }
   }
   </style>

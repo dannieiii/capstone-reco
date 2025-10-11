@@ -2702,6 +2702,9 @@ watch([selectedCategory, forecastPeriod], () => {
   .main-content {
     margin-left: 0;
     padding: 16px;
+    /* Prevent overlap with global top navigation/header on mobile */
+    padding-top: 64px; /* approximate header height; adjust if needed */
+    padding-top: calc(64px + env(safe-area-inset-top));
   }
   
   .forecast-controls {
@@ -2742,6 +2745,14 @@ watch([selectedCategory, forecastPeriod], () => {
   
   .step {
     min-width: 60px;
+  }
+}
+
+@media (max-width: 576px) {
+  /* Extra safety padding for very small screens */
+  .main-content {
+    padding-top: 70px;
+    padding-top: calc(70px + env(safe-area-inset-top));
   }
 }
 </style>
