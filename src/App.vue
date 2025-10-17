@@ -1,6 +1,7 @@
 <template>
   <div id="app-root">
     <OfflineBanner />
+   
     <router-view />
   </div>
 </template>
@@ -8,12 +9,13 @@
 
 <script>
 import OfflineBanner from '@/components/OfflineBanner.vue';
+import GlobalNotification from '@/components/GlobalNotification.vue';
 import { getSession } from './helpers/sessionHelper';
 
 import { ref, provide } from "vue";
 
 export default {
-  components: { OfflineBanner },
+  components: { OfflineBanner, GlobalNotification },
   data() {
     return {
       userSession: null,

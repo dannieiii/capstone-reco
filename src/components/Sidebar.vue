@@ -96,6 +96,8 @@ import {
   FileText,
   Bell
 } from 'lucide-vue-next';
+// Add ShoppingBag icon for marketplace shortcut
+import { ShoppingBag } from 'lucide-vue-next';
 import { db } from '@/firebase/firebaseConfig';
 import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
 import { getAuth, signOut } from 'firebase/auth';
@@ -197,6 +199,7 @@ const checkScreenSize = () => {
 };
 
 const menuItems = computed(() => [
+  
   { name: 'Dashboard', path: '/seller-dashboard', icon: LayoutDashboard },
   { name: 'Farm Products', path: '/products', icon: Sprout },
   { name: 'Forecasting', path: '/seller/forecasting', icon: TrendingUp },
@@ -211,6 +214,7 @@ const menuItems = computed(() => [
     badge: unreadNotifications.value > 0 ? unreadNotifications.value : null,
     badgeClass: 'notification-badge'
   },
+  { name: 'Marketplace', path: '/', icon: ShoppingBag },
   { 
     name: 'Chat', 
     path: '/seller/chat', 

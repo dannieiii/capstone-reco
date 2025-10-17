@@ -245,7 +245,7 @@
             </div>
             
             <div class="profile-actions">
-              <!-- Show different buttons based on auth/seller status -->
+              <!-- Single contiguous chain: login -> admin -> seller -> pending -> become-seller -->
               <button 
                 v-if="!isLoggedIn" 
                 class="become-supplier-btn" 
@@ -255,23 +255,13 @@
                 Login / Register
               </button>
               <button 
-                v-else-if="!userIsSeller && !userHasPendingApplication" 
-                class="become-supplier-btn" 
-                @click="navigateToPath('/register-seller')"
+                v-else-if="userIsAdmin" 
+                class="become-supplier-btn approved" 
+                @click="navigateToPath('/admin')"
               >
                 <Briefcase size="16" />
-                Become a Farmer/Seller
+                Admin Dashboard
               </button>
-              
-              <button 
-                v-else-if="userHasPendingApplication && !userIsSeller" 
-                class="become-supplier-btn pending" 
-                disabled
-              >
-                <Briefcase size="16" />
-                Application Pending
-              </button>
-              
               <button 
                 v-else-if="userIsSeller && userIsVerified" 
                 class="become-supplier-btn approved" 
@@ -279,6 +269,22 @@
               >
                 <Briefcase size="16" />
                 Seller Dashboard
+              </button>
+              <button 
+                v-else-if="userHasPendingApplication" 
+                class="become-supplier-btn pending" 
+                disabled
+              >
+                <Briefcase size="16" />
+                Application Pending
+              </button>
+              <button 
+                v-else
+                class="become-supplier-btn" 
+                @click="navigateToPath('/register-seller')"
+              >
+                <Briefcase size="16" />
+                Become a Farmer/Seller
               </button>
             </div>
             
@@ -1539,6 +1545,9 @@ const fetchProducts = async () => {
       userLocation: 'Oriental Mindoro', // Default location
       userIsSeller: false, // Track if user is already a seller
       userIsVerified: false, // Track if user is verified
+      userIsAdmin: false, // Track if user has admin role
+      userRole: '', // Raw role string from Firestore (debug/visibility)
+      tokenAdminClaim: false, // Admin flag from Firebase ID token claims (debug)
       userHasPendingApplication: false, // Track if user has pending seller application
   isLoggedIn: false,
   showNotification: false,
@@ -1722,6 +1731,7 @@ const fetchProducts = async () => {
           if (userDoc.exists()) {
             const userData = userDoc.data();
             this.username = userData.username || `${userData.firstName} ${userData.lastName}`.trim();
+            this.userRole = userData.role || '';
             
             // Get profile image URL from Firestore
             this.userPhotoURL = userData.profileImageUrl || '';
@@ -1734,14 +1744,33 @@ const fetchProducts = async () => {
             // Check seller status with better logic
             this.userIsSeller = userData.isSeller || false;
             this.userIsVerified = userData.isVerified || false;
+            // Check admin role (robust): role value (case-insensitive), explicit isAdmin flag, or custom claims
+            const roleStr = (userData.role || '').toString().toLowerCase();
+            this.userIsAdmin = roleStr === 'admin' || userData.isAdmin === true;
             
             console.log('🔍 Raw user data from Firestore:', {
               isSeller: userData.isSeller,
               isVerified: userData.isVerified,
-              role: userData.role
+              role: userData.role,
+              isAdmin: this.userIsAdmin
             });
               // Check if user has pending application by looking at sellers collection
             await this.checkPendingSellerApplication(user.uid);
+            // Check admin status via dedicated 'admins' collection (doc by uid or by userId field)
+            await this.checkAdminStatus(user.uid);
+
+            // Optional: also check ID token custom claims for admin
+            try {
+              const idTokenResult = await auth.currentUser.getIdTokenResult();
+              this.tokenAdminClaim = idTokenResult?.claims?.admin === true;
+              if (this.tokenAdminClaim) {
+                this.userIsAdmin = true;
+              }
+            } catch (e) {
+              // Non-fatal if token claims not available
+              this.tokenAdminClaim = false;
+              console.debug('ID token claims check skipped/failed:', e?.message || e);
+            }
             
             console.log('📊 Final seller status:', {
               isSeller: this.userIsSeller,
@@ -1750,10 +1779,67 @@ const fetchProducts = async () => {
             });
           } else {
             console.log('No user document found');
+            // Attempt to populate from admins collection directly if user doc missing
+            await this.checkAdminStatus(user.uid);
+          }
+          // If after initial fetch we still have no display name but are admin, try to read admin profile details
+          if ((!this.username || this.username.trim() === '') && this.userIsAdmin) {
+            try {
+              const adminDocRef = doc(db, 'admins', user.uid);
+              const adminDoc = await getDoc(adminDocRef);
+              if (adminDoc.exists()) {
+                const adminData = adminDoc.data() || {};
+                const fallbackName = adminData.username || `${adminData.firstName || ''} ${adminData.lastName || ''}`.trim();
+                if (fallbackName) {
+                  this.username = fallbackName;
+                }
+                if (adminData.address && this.userLocation === 'Oriental Mindoro') {
+                  this.userLocation = adminData.address;
+                }
+              }
+            } catch (e) {
+              console.debug('Optional admin profile enrichment failed:', e?.message || e);
+            }
           }
         } catch (error) {
           console.error('Error fetching user info:', error);
         }
+      }
+    },
+    // Check if user is an admin using the 'admins' collection
+    async checkAdminStatus(userId) {
+      try {
+        // Try document with UID as id first
+        const adminDocRef = doc(db, 'admins', userId);
+        const adminDoc = await getDoc(adminDocRef);
+        if (adminDoc.exists()) {
+          const adminData = adminDoc.data() || {};
+          const isActive = adminData.active !== false && adminData.disabled !== true;
+          if (isActive) {
+            this.userIsAdmin = true;
+            this.userRole = adminData.role || this.userRole || 'admin';
+          }
+          console.log('Admin status via direct doc:', { exists: true, isActive, role: adminData.role });
+          return;
+        }
+
+        // Fallback: query by userId field
+        const adminsQuery = query(collection(db, 'admins'), where('userId', '==', userId), limit(1));
+        const adminsSnap = await getDocs(adminsQuery);
+        if (!adminsSnap.empty) {
+          const adminData = adminsSnap.docs[0].data() || {};
+          const isActive = adminData.active !== false && adminData.disabled !== true;
+          if (isActive) {
+            this.userIsAdmin = true;
+            this.userRole = adminData.role || this.userRole || 'admin';
+          }
+          console.log('Admin status via query:', { found: true, isActive, role: adminData.role });
+          return;
+        }
+
+        console.log('No admin record found in admins collection for user');
+      } catch (e) {
+        console.error('Error checking admin status:', e);
       }
     },
     async confirmLogout() {
@@ -1989,13 +2075,28 @@ const fetchProducts = async () => {
       this.userLocation = 'Oriental Mindoro'; // Reset to default
       this.userIsSeller = false;
       this.userIsVerified = false;
+      this.userIsAdmin = false;
+      this.userRole = '';
+      this.tokenAdminClaim = false;
       this.userHasPendingApplication = false;
     }
   });
+
+  // Handle case where auth is already available on mount
+  if (auth.currentUser) {
+    this.isLoggedIn = true;
+    this.fetchUserInfo();
+  }
 },
 
 // Watch for route changes to refresh user data if needed
 watch: {
+  // Recompute user info when login status changes
+  isLoggedIn(newVal) {
+    if (newVal) {
+      this.fetchUserInfo();
+    }
+  },
   '$route'(to, from) {
     // If user comes from seller registration page, refresh user data
     if (from.path === '/register-seller' && to.path === '/' && auth.currentUser) {

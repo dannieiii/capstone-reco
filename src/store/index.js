@@ -6,6 +6,13 @@ export default createStore({
   state: {
     user: null, // Firebase auth user
     role: null, // User role (admin, seller, customer)
+    notification: {
+      visible: false,
+      message: '',
+      type: 'info', // info | success | warning | error
+      timeoutId: null,
+      layout: 'toast', // toast | banner
+    },
   },
   getters: {
     user: (state) => state.user,
@@ -13,6 +20,7 @@ export default createStore({
     isAdmin: (state) => state.role === 'admin',
     isSeller: (state) => state.role === 'seller',
     isCustomer: (state) => state.role === 'customer',
+    notification: (state) => state.notification,
   },
   mutations: {
     SET_USER(state, user) {
@@ -20,6 +28,21 @@ export default createStore({
     },
     SET_ROLE(state, role) {
       state.role = role;
+    },
+    SHOW_NOTIFICATION(state, { message, type, layout }) {
+      state.notification.visible = true;
+      state.notification.message = message;
+      state.notification.type = type || 'info';
+      state.notification.layout = layout || 'toast';
+    },
+    HIDE_NOTIFICATION(state) {
+      state.notification.visible = false;
+      state.notification.message = '';
+      state.notification.type = 'info';
+      state.notification.layout = 'toast';
+    },
+    SET_NOTIFICATION_TIMEOUT_ID(state, id) {
+      state.notification.timeoutId = id;
     },
   },
   actions: {
@@ -54,6 +77,22 @@ export default createStore({
       await auth.signOut();
       commit('SET_USER', null);
       commit('SET_ROLE', null);
+    },
+    showNotification({ commit, state }, { message, type = 'info', duration = 4000, layout = 'toast' }) {
+      // Clear any previous timeout
+      if (state.notification.timeoutId) {
+        clearTimeout(state.notification.timeoutId);
+        commit('SET_NOTIFICATION_TIMEOUT_ID', null);
+      }
+      commit('SHOW_NOTIFICATION', { message, type, layout });
+      const id = setTimeout(() => {
+        commit('HIDE_NOTIFICATION');
+        commit('SET_NOTIFICATION_TIMEOUT_ID', null);
+      }, duration);
+      commit('SET_NOTIFICATION_TIMEOUT_ID', id);
+    },
+    hideNotification({ commit }) {
+      commit('HIDE_NOTIFICATION');
     },
   },
 });

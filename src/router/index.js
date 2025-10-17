@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router';
-import store from '../store'; // Import the store
+import store from '../store'; // Import the store (used directly for notifications)
 
 // Import all your components
 import Register from '../views/Register.vue';
@@ -84,53 +84,63 @@ const routes = [
   {
     path: '/chat',
     name: 'Chat',
-    component: Chat
+    component: Chat,
+    meta: { requiresAuth: true, allowedRoles: ['seller'] },
   },
   {
     path: '/orders',
     name: 'Orders',
-    component: Orders
+    component: Orders,
+    meta: { requiresAuth: true, allowedRoles: ['seller'] },
   },
   {
     path: '/edit-product/:id',
     name: 'EditProduct',
-    component: AddEditProduct
+    component: AddEditProduct,
+    meta: { requiresAuth: true, allowedRoles: ['seller'] },
   },
   {
     path: '/addproduct',
     name: 'AddProduct',
-    component: AddEditProduct
+    component: AddEditProduct,
+    meta: { requiresAuth: true, allowedRoles: ['seller'] },
   },
 
   {
     path: '/admin',
     name: 'Dashboard',
-    component: Dashboard
+    component: Dashboard,
+    meta: { requiresAuth: true, allowedRoles: ['admin'] },
   },
   {
     path: '/admin/sellers',
     name: 'Sellers',
-    component: Sellers
+    component: Sellers,
+    meta: { requiresAuth: true, allowedRoles: ['admin'] },
   },
   {
     path: '/admin/customers',
     name: 'Customers',
-    component: Customers
+    component: Customers,
+    meta: { requiresAuth: true, allowedRoles: ['admin'] },
   },
   {
     path: '/admin/categories',
     name: 'ProductCategories',
-    component: ProductCategories
+    component: ProductCategories,
+    meta: { requiresAuth: true, allowedRoles: ['admin'] },
   },
   {
     path: '/admin/products',
     name: 'Products',
-    component: Products
+    component: Products,
+    meta: { requiresAuth: true, allowedRoles: ['admin'] },
   },
   {
     path: '/admin/sellers/:id',
     name: 'SellerDetails',
-    component: SellerDetails
+    component: SellerDetails,
+    meta: { requiresAuth: true, allowedRoles: ['admin'] },
   },
   {
     path: '/product-details',
@@ -306,13 +316,15 @@ const routes = [
   {
     path: '/products',
     name: 'productmanagement',
-    component: ProductManagement
+    component: ProductManagement,
+    meta: { requiresAuth: true, allowedRoles: ['seller'] },
   },
  
   {
     path: '/admin/edit-profile',
     name: 'admineditprofile',
-    component: AdminEditProfile
+    component: AdminEditProfile,
+    meta: { requiresAuth: true, allowedRoles: ['admin'] },
   },
  {
     path: '/seller/forecasting',
@@ -323,12 +335,14 @@ const routes = [
   {
     path: '/admin/price-monitoring',
     name: 'pricemonitoring',
-    component: PriceMonitoring
+    component: PriceMonitoring,
+    meta: { requiresAuth: true, allowedRoles: ['admin'] },
   },
   {
     path: '/seller/chat',
     name: 'sellerchat',
-    component: SellerChat
+    component: SellerChat,
+    meta: { requiresAuth: true, allowedRoles: ['seller'] },
   },
   {
     path: '/messages',
@@ -338,7 +352,8 @@ const routes = [
   {
     path: '/seller/crop-forecast',
     name: 'cropforecasting',
-    component: CropForecasting
+    component: CropForecasting,
+    meta: { requiresAuth: true, allowedRoles: ['seller'] },
   },
   {
     path: '/seller/customer',
@@ -462,7 +477,13 @@ router.beforeEach(async (to, from, next) => {
               return;
             } else if (userData.isSellerPending) {
               console.log('⏳ Seller application pending');
-              alert('Your seller application is still being reviewed. Please wait for approval.');
+              // Show global notification instead of alert
+              console.log('[Guard] Showing pending seller notification');
+              store.dispatch('showNotification', { 
+                message: 'Your seller application is still being reviewed. Please wait for approval.', 
+                type: 'warning',
+                layout: 'banner'
+              });
               next('/');
               return;
             }
@@ -470,7 +491,12 @@ router.beforeEach(async (to, from, next) => {
         }
         
         console.log('❌ Seller access denied');
-        alert('You need to be an approved seller to access this page.');
+        console.log('[Guard] Showing seller denied notification');
+        store.dispatch('showNotification', { 
+          message: 'You need to be an approved seller to access this page.', 
+          type: 'error',
+          layout: 'banner'
+        });
         next('/');
       } catch (error) {
         console.error('Error checking seller status:', error);
@@ -478,6 +504,19 @@ router.beforeEach(async (to, from, next) => {
       }
     } else if (!allowedRoles.includes(role)) {
       // Standard role check for other routes
+      // Determine message based on attempted section
+      let message = 'You are forbidden to access this page.';
+      if (allowedRoles.includes('admin')) {
+        message = 'You are not an admin. Access denied.';
+      } else if (allowedRoles.includes('seller')) {
+        message = 'You are not a seller. Access denied.';
+      } else if (allowedRoles.includes('customer')) {
+        message = 'You need a customer account to access this page.';
+      }
+      try {
+        console.log('[Guard] Role mismatch, dispatching notification:', message);
+  store.dispatch('showNotification', { message, type: 'error', layout: 'banner' });
+      } catch (e) { console.warn('Notification dispatch failed', e); }
       next('/');
     } else {
       next();
