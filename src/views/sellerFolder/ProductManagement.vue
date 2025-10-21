@@ -195,7 +195,8 @@ const showModal = ref(false);
 const productToDelete = ref(null);
 
 // Filter options
-const filterOptions = ['All', 'Active', 'Inactive', 'On Sale', 'Pre-Order', 'Wholesale', 'Limited'];
+// Use 'Unavailable' in the UI; still support legacy 'Not Available' label in code
+const filterOptions = ['All', 'Active', 'Inactive', 'Unavailable', 'On Sale', 'Pre-Order', 'Wholesale', 'Limited'];
 
 // Dynamic categories and products
 const categories = ref([]);
@@ -321,6 +322,10 @@ const filteredProducts = computed(() => {
     else if (activeFilter.value === 'Pre-Order') matchesFilter = product.isPreOrder;
     else if (activeFilter.value === 'Wholesale') matchesFilter = product.wholesaleAvailable;
     else if (activeFilter.value === 'Limited') matchesFilter = product.status === 'limited';
+    // New: Not Available / Unavailable filters
+    else if (activeFilter.value === 'Not Available' || activeFilter.value === 'Unavailable') {
+      matchesFilter = product.status === 'notAvailable';
+    }
     
     return matchesSearch && matchesCategory && matchesFilter;
   });

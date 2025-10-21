@@ -1,7 +1,7 @@
 <template>
   <div id="app-root">
     <OfflineBanner />
-   
+     <GlobalNotification />
     <router-view />
   </div>
 </template>

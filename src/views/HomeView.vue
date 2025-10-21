@@ -1077,7 +1077,7 @@ const filteredProducts = computed(() => {
   let result = [...products.value];
 
   // Exclude products deactivated by Admin
-  result = result.filter(p => p.status !== 'inactive' && p.isActive !== false);
+  result = result.filter(p => p.status !== 'notAvailable' && p.isActive !== false);
   
   // Apply category filter (exact match with category.category)
   if (selectedCategory.value) {
@@ -1331,7 +1331,7 @@ const filteredProducts = computed(() => {
       isActive: data.isActive !== undefined ? data.isActive : true,
             isTrending: true
           };
-    }).filter(p => p.status !== 'inactive' && p.isActive !== false);
+  }).filter(p => p.status !== 'notAvailable' && p.isActive !== false);
       } catch (error) {
         console.error('Error fetching trending products:', error);
       }
@@ -1424,12 +1424,12 @@ const fetchProducts = async () => {
 
     // Add computed property for wholesale products
     const wholesaleProducts = computed(() => {
-      return products.value.filter(product => product.wholesaleAvailable === true && product.status !== 'inactive' && product.isActive !== false);
+  return products.value.filter(product => product.wholesaleAvailable === true && product.status !== 'notAvailable' && product.isActive !== false);
     });
 
     // Add computed property for pre-order products
     const preOrderProducts = computed(() => {
-      return products.value.filter(product => (product.preOrders === true || product.isPreOrder === true) && product.status !== 'inactive' && product.isActive !== false);
+  return products.value.filter(product => (product.preOrders === true || product.isPreOrder === true) && product.status !== 'notAvailable' && product.isActive !== false);
     });
 
     // Add method to filter by wholesale

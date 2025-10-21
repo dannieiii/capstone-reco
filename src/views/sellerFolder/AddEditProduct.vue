@@ -57,12 +57,13 @@
       </div>
 
       <!-- Status Ribbons -->
-      <div v-if="product.status === 'inactive'" class="status-ribbons">
+      <div v-if="product.status === 'notAvailable' || product.status === 'inactive'" class="status-ribbons">
         <div class="status-badge inactive">
           <svg class="badge-icon" fill="currentColor" viewBox="0 0 20 20">
             <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM7 9a1 1 0 012 0v4a1 1 0 11-2 0V9zm3-3a1 1 0 112 0v7a1 1 0 11-2 0V6z" clip-rule="evenodd"></path>
           </svg>
-          Inactive by Admin
+          <span v-if="product.status === 'inactive'">Inactive by Admin</span>
+          <span v-else>Not Available — hidden from marketplace</span>
         </div>
       </div>
       <div v-else-if="product.status === 'limited' || product.isOnSale || product.isPreOrder" class="status-ribbons">
@@ -1209,12 +1210,12 @@
 
             <div class="form-group">
               <label>Status *</label>
-              <select v-model="product.status" :disabled="product.status === 'inactive'" required>
+              <select v-model="product.status" required>
                 <option value="available">Available</option>
                 <option value="limited">Limited Stock</option>
                 <option value="preorder">Pre-order Only</option>
+                <option value="notAvailable">Not Available (hide)</option>
               </select>
-              <small v-if="product.status === 'inactive'" class="inactive-note">This product was deactivated by DA Admin. Contact support to reactivate.</small>
             </div>
           </div>
 
