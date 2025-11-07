@@ -60,10 +60,11 @@
     </div>
   </div>
 </template>
-
 <script setup>
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import Chart from 'chart.js/auto'
+import { db } from '@/firebase/firebaseConfig'
+import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore'
 
 // Props
 const props = defineProps({
@@ -78,320 +79,322 @@ const customerChart = ref(null)
 const chartTimeRange = ref('month')
 let chartInstance = null
 
-// Data from Firebase (simulated based on CustomersTable.vue structure)
-const orders = ref([])
+// Data from Firebase
+const orders = ref([]) // normalized entries per seller: { userId, normalizedDate, totalPrice }
 const customers = ref([])
 const totalCustomers = ref(0)
 const newCustomersThisPeriod = ref(0)
 const averageOrdersPerCustomer = ref(0)
-const customerTrend = ref(12.5)
-const newCustomerTrend = ref(18.3)
-const avgOrderTrend = ref(5.7)
+const customerTrend = ref(0)
+const newCustomerTrend = ref(0)
+const avgOrderTrend = ref(0)
 
 // Computed properties for chart data
 const chartData = computed(() => {
   return processCustomersForChart(orders.value, chartTimeRange.value)
 })
 
-// Methods
-const formatNumber = (num) => {
-  return parseFloat(num).toFixed(0)
+// Helper functions (date + id normalization)
+const toJSDate = (value) => {
+  try {
+    if (!value) return new Date()
+    if (typeof value?.toDate === 'function') return value.toDate()
+    if (typeof value === 'number') return new Date(value)
+    if (typeof value === 'string') return new Date(value)
+    if (typeof value === 'object' && typeof value.seconds === 'number') return new Date(value.seconds * 1000)
+  } catch (_) {}
+  return new Date()
 }
 
-// Process customer data for chart (based on CustomersTable.vue logic)
-const processCustomersForChart = (ordersData, timeRange) => {
-  const now = new Date()
-  let labels = []
-  let newCustomersData = []
-  let returningCustomersData = []
-  
-  // Track first order date for each customer
-  const customerFirstOrder = new Map()
-  const customerOrderCounts = new Map()
-  
-  // Process orders to identify customer patterns
-  ordersData.forEach(order => {
-    const customerId = order.userId
-    const orderDate = getOrderDate(order)
-    
-    if (!customerFirstOrder.has(customerId)) {
-      customerFirstOrder.set(customerId, orderDate)
-      customerOrderCounts.set(customerId, 1)
-    } else {
-      customerOrderCounts.set(customerId, customerOrderCounts.get(customerId) + 1)
-    }
-  })
-  
-  switch (timeRange) {
-    case 'week':
-      // Last 7 days
-      for (let i = 6; i >= 0; i--) {
-        const date = new Date()
-        date.setDate(now.getDate() - i)
-        labels.push(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }))
-        newCustomersData.push(0)
-        returningCustomersData.push(0)
-      }
-      
-      // Count new vs returning customers per day
-      ordersData.forEach(order => {
-        const orderDate = getOrderDate(order)
-        const daysDiff = Math.floor((now - orderDate) / (1000 * 60 * 60 * 24))
-        
-        if (daysDiff >= 0 && daysDiff < 7) {
-          const index = 6 - daysDiff
-          const customerId = order.userId
-          const firstOrderDate = customerFirstOrder.get(customerId)
-          
-          // Check if this is customer's first order on this day
-          if (firstOrderDate && Math.floor((now - firstOrderDate) / (1000 * 60 * 60 * 24)) === daysDiff) {
-            newCustomersData[index]++
-          } else if (customerOrderCounts.get(customerId) > 1) {
-            returningCustomersData[index]++
-          }
-        }
-      })
-      break
-      
-    case 'month':
-      // Last 4 weeks
-      for (let i = 3; i >= 0; i--) {
-        labels.push(`Week ${4 - i}`)
-        newCustomersData.push(0)
-        returningCustomersData.push(0)
-      }
-      
-      ordersData.forEach(order => {
-        const orderDate = getOrderDate(order)
-        const daysDiff = Math.floor((now - orderDate) / (1000 * 60 * 60 * 24))
-        
-        if (daysDiff >= 0 && daysDiff < 28) {
-          const weekIndex = Math.floor(daysDiff / 7)
-          if (weekIndex < 4) {
-            const index = 3 - weekIndex
-            const customerId = order.userId
-            const firstOrderDate = customerFirstOrder.get(customerId)
-            
-            if (firstOrderDate && Math.floor((now - firstOrderDate) / (1000 * 60 * 60 * 24 * 7)) === weekIndex) {
-              newCustomersData[index]++
-            } else if (customerOrderCounts.get(customerId) > 1) {
-              returningCustomersData[index]++
-            }
-          }
-        }
-      })
-      break
-      
-    case 'quarter':
-      // Last 3 months
-      for (let i = 2; i >= 0; i--) {
-        const date = new Date()
-        date.setMonth(now.getMonth() - i)
-        labels.push(date.toLocaleDateString('en-US', { month: 'long' }))
-        newCustomersData.push(0)
-        returningCustomersData.push(0)
-      }
-      
-      ordersData.forEach(order => {
-        const orderDate = getOrderDate(order)
-        const monthDiff = (now.getMonth() - orderDate.getMonth()) + 
-                          (now.getFullYear() - orderDate.getFullYear()) * 12
-        
-        if (monthDiff >= 0 && monthDiff < 3) {
-          const index = 2 - monthDiff
-          const customerId = order.userId
-          const firstOrderDate = customerFirstOrder.get(customerId)
-          
-          const firstOrderMonthDiff = (now.getMonth() - firstOrderDate.getMonth()) + 
-                                     (now.getFullYear() - firstOrderDate.getFullYear()) * 12
-          
-          if (firstOrderMonthDiff === monthDiff) {
-            newCustomersData[index]++
-          } else if (customerOrderCounts.get(customerId) > 1) {
-            returningCustomersData[index]++
-          }
-        }
-      })
-      break
-      
-    case 'year':
-      // All 12 months
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-      labels = [...months]
-      newCustomersData = Array(12).fill(0)
-      returningCustomersData = Array(12).fill(0)
-      
-      const currentYear = now.getFullYear()
-      
-      ordersData.forEach(order => {
-        const orderDate = getOrderDate(order)
-        
-        if (orderDate.getFullYear() === currentYear) {
-          const month = orderDate.getMonth()
-          const customerId = order.userId
-          const firstOrderDate = customerFirstOrder.get(customerId)
-          
-          if (firstOrderDate && firstOrderDate.getFullYear() === currentYear && 
-              firstOrderDate.getMonth() === month) {
-            newCustomersData[month]++
-          } else if (customerOrderCounts.get(customerId) > 1) {
-            returningCustomersData[month]++
-          }
-        }
-      })
-      break
-  }
-  
-  return { labels, newCustomersData, returningCustomersData }
-}
-
-// Helper functions (based on CustomersTable.vue)
 const getOrderDate = (order) => {
+  if (order.normalizedDate instanceof Date) return order.normalizedDate
   if (order.createdAt && typeof order.createdAt.toDate === 'function') {
     return order.createdAt.toDate()
   } else if (order.timestamp && typeof order.timestamp.toDate === 'function') {
     return order.timestamp.toDate()
+  } else if (order.createdAt || order.timestamp) {
+    return toJSDate(order.createdAt || order.timestamp)
   } else {
     return new Date()
   }
 }
 
-// Fetch orders and process customer data (simulated)
-const fetchCustomerData = async () => {
-  try {
-    // Simulate Firebase data fetching
-    // In real implementation, this would use the same logic as CustomersTable.vue:
-    // const ordersQuery = query(collection(db, 'orders'), where('sellerId', '==', props.sellerId))
-    // const ordersSnapshot = await getDocs(ordersQuery)
-    
-    // Sample data structure matching CustomersTable.vue
-    const sampleOrders = [
-      {
-        id: '1',
-        sellerId: props.sellerId,
-        userId: 'user1',
-        username: 'john_doe',
-        productName: 'Fresh Tomatoes',
-        totalPrice: 450,
-        createdAt: { toDate: () => new Date(Date.now() - 1 * 24 * 60 * 60 * 1000) }
-      },
-      {
-        id: '2',
-        sellerId: props.sellerId,
-        userId: 'user2',
-        username: 'jane_smith',
-        productName: 'Organic Lettuce',
-        totalPrice: 280,
-        createdAt: { toDate: () => new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) }
-      },
-      {
-        id: '3',
-        sellerId: props.sellerId,
-        userId: 'user1',
-        username: 'john_doe',
-        productName: 'Sweet Corn',
-        totalPrice: 375,
-        createdAt: { toDate: () => new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) }
-      },
-      {
-        id: '4',
-        sellerId: props.sellerId,
-        userId: 'user3',
-        username: 'mike_wilson',
-        productName: 'Fresh Carrots',
-        totalPrice: 480,
-        createdAt: { toDate: () => new Date(Date.now() - 5 * 24 * 60 * 60 * 1000) }
-      },
-      {
-        id: '5',
-        sellerId: props.sellerId,
-        userId: 'user2',
-        username: 'jane_smith',
-        productName: 'Green Beans',
-        totalPrice: 330,
-        createdAt: { toDate: () => new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
-      },
-      {
-        id: '6',
-        sellerId: props.sellerId,
-        userId: 'user4',
-        username: 'sarah_jones',
-        productName: 'Bell Peppers',
-        totalPrice: 220,
-        createdAt: { toDate: () => new Date(Date.now() - 10 * 24 * 60 * 60 * 1000) }
-      },
-      {
-        id: '7',
-        sellerId: props.sellerId,
-        userId: 'user1',
-        username: 'john_doe',
-        productName: 'Cucumber',
-        totalPrice: 150,
-        createdAt: { toDate: () => new Date(Date.now() - 12 * 24 * 60 * 60 * 1000) }
-      }
-    ]
-    
-    orders.value = sampleOrders
-    
-    // Process customer data (matching CustomersTable.vue logic)
-    const customerMap = new Map()
-    
-    sampleOrders.forEach(order => {
-      if (!customerMap.has(order.userId)) {
-        customerMap.set(order.userId, {
-          userId: order.userId,
-          username: order.username,
-          orderCount: 0,
-          totalSpent: 0,
-          firstOrderDate: getOrderDate(order)
+const getCustomerId = (dataOrItem) => (
+  dataOrItem.userId || dataOrItem.customerId || dataOrItem.buyerId || dataOrItem.uid || dataOrItem.userUID || null
+)
+
+// Normalize docs to seller-specific order entries { userId, normalizedDate, totalPrice }
+const normalizeOrdersForSeller = (docs, sellerId) => {
+  const entries = []
+  docs.forEach(d => {
+    const data = d.data ? d.data() : d
+    const baseDate = data.timestamp || data.createdAt || data.date || null
+    const normalizedDate = toJSDate(baseDate)
+
+    const sellerFields = [data.sellerId, data.sellerID, data.sellerUid, data.sellerUID]
+    const userId = getCustomerId(data)
+    // Whole order belongs to seller
+    if (sellerFields.includes(sellerId)) {
+      entries.push({
+        id: d.id,
+        userId,
+        normalizedDate,
+        totalPrice: Number(data.totalPrice) || Number(data.amount) || Number(data.orderTotal) || 0,
+        createdAt: data.createdAt,
+        timestamp: data.timestamp
+      })
+      return
+    }
+
+    // Otherwise, extract from items belonging to this seller
+    const items = data.items || data.orderItems || data.cartItems || []
+    items.forEach((it, idx) => {
+      const itSeller = it.sellerId || it.sellerID || it.sellerUid || it.sellerUID
+      if (itSeller === sellerId) {
+        const itemUser = getCustomerId(data) || getCustomerId(it)
+        const price = (
+          Number(it.totalPrice) ||
+          (Number(it.price) * Number(it.quantity || 1)) ||
+          (Number(it.unitPrice) * Number(it.quantity || 1)) ||
+          Number(it.amount) || 0
+        )
+        entries.push({
+          id: `${d.id}_${idx}`,
+          userId: itemUser,
+          normalizedDate,
+          totalPrice: price,
+          createdAt: data.createdAt,
+          timestamp: data.timestamp
         })
       }
-      
-      const customer = customerMap.get(order.userId)
-      customer.orderCount++
-      customer.totalSpent += order.totalPrice
-      
-      // Update first order date if this order is earlier
-      const orderDate = getOrderDate(order)
-      if (orderDate < customer.firstOrderDate) {
-        customer.firstOrderDate = orderDate
-      }
     })
-    
+  })
+  // filter out entries without a customer id
+  return entries.filter(e => !!e.userId)
+}
+
+// Compute trends helper (% change of last two points)
+const computeTrend = (series) => {
+  if (!series || series.length < 2) return 0
+  const prev = Number(series[series.length - 2] || 0)
+  const curr = Number(series[series.length - 1] || 0)
+  if (prev === 0) return curr > 0 ? 100 : 0
+  return Math.round(((curr - prev) / prev) * 1000) / 10
+}
+
+// Process customer data for chart using unique customers per bucket
+const processCustomersForChart = (ordersData, timeRange) => {
+  const now = new Date()
+
+  // Build earliest first-order date per customer
+  const firstOrderByCustomer = new Map()
+  ordersData.forEach(o => {
+    const cid = o.userId
+    if (!cid) return
+    const d = getOrderDate(o)
+    const prev = firstOrderByCustomer.get(cid)
+    if (!prev || d < prev) firstOrderByCustomer.set(cid, d)
+  })
+
+  // Helper to build buckets with start/end
+  const buckets = []
+  const labels = []
+  const pushBucket = (label, start, end) => { buckets.push({ start, end }); labels.push(label) }
+
+  const startOfDay = (d) => { const x = new Date(d); x.setHours(0,0,0,0); return x }
+  const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x }
+
+  switch (timeRange) {
+    case 'week': {
+      // Oldest to newest: 7 daily buckets
+      const todayStart = startOfDay(now)
+      for (let i = 6; i >= 0; i--) {
+        const start = addDays(todayStart, -i)
+        const end = addDays(start, 1)
+        pushBucket(start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), start, end)
+      }
+      break
+    }
+    case 'month': {
+      // 4 weekly buckets (oldest to newest)
+      const end0 = startOfDay(addDays(now, 1))
+      for (let i = 3; i >= 0; i--) {
+        const end = addDays(end0, -(i * 7))
+        const start = addDays(end, -7)
+        pushBucket(`Week ${4 - i}`, start, end)
+      }
+      break
+    }
+    case 'quarter': {
+      // 3 monthly buckets
+      for (let i = 2; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+        const start = new Date(d.getFullYear(), d.getMonth(), 1)
+        const end = new Date(d.getFullYear(), d.getMonth() + 1, 1)
+        pushBucket(d.toLocaleDateString('en-US', { month: 'long' }), start, end)
+      }
+      break
+    }
+    case 'year': {
+      // 12 months of current year
+      for (let m = 0; m < 12; m++) {
+        const start = new Date(now.getFullYear(), m, 1)
+        const end = new Date(now.getFullYear(), m + 1, 1)
+        const label = start.toLocaleDateString('en-US', { month: 'short' })
+        pushBucket(label, start, end)
+      }
+      break
+    }
+  }
+
+  // Sets of unique customers per bucket
+  const customersInBucket = buckets.map(() => new Set())
+  ordersData.forEach(o => {
+    const cid = o.userId
+    if (!cid) return
+    const d = getOrderDate(o)
+    for (let i = 0; i < buckets.length; i++) {
+      const b = buckets[i]
+      if (d >= b.start && d < b.end) {
+        customersInBucket[i].add(cid)
+        break
+      }
+    }
+  })
+
+  const newCustomersData = new Array(buckets.length).fill(0)
+  const returningCustomersData = new Array(buckets.length).fill(0)
+
+  for (let i = 0; i < buckets.length; i++) {
+    const b = buckets[i]
+    const set = customersInBucket[i]
+    let newCount = 0
+    let returningCount = 0
+    set.forEach(cid => {
+      const first = firstOrderByCustomer.get(cid)
+      if (!first) return
+      if (first >= b.start && first < b.end) newCount++
+      else if (first < b.start) returningCount++
+    })
+    newCustomersData[i] = newCount
+    returningCustomersData[i] = returningCount
+  }
+
+  return { labels, newCustomersData, returningCustomersData }
+}
+
+// Fetch orders and process customer data
+const fetchCustomerData = async () => {
+  try {
+    if (!props.sellerId) {
+      orders.value = []
+      customers.value = []
+      totalCustomers.value = 0
+      newCustomersThisPeriod.value = 0
+      averageOrdersPerCustomer.value = 0
+      customerTrend.value = 0
+      newCustomerTrend.value = 0
+      avgOrderTrend.value = 0
+      return
+    }
+
+    const ordersRef = collection(db, 'orders')
+    const tryQueryByField = async (field) => {
+      try {
+        try {
+          const snap = await getDocs(query(ordersRef, where(field, '==', props.sellerId), orderBy('timestamp', 'desc'), limit(500)))
+          return snap.docs
+        } catch (e1) {
+          try {
+            const snap = await getDocs(query(ordersRef, where(field, '==', props.sellerId), orderBy('createdAt', 'desc'), limit(500)))
+            return snap.docs
+          } catch (e2) {
+            const snap = await getDocs(query(ordersRef, where(field, '==', props.sellerId), limit(500)))
+            return snap.docs
+          }
+        }
+      } catch (_) { return [] }
+    }
+
+    let docs = await tryQueryByField('sellerId')
+    if (!docs.length) docs = await tryQueryByField('sellerID')
+    if (!docs.length) docs = await tryQueryByField('sellerUid')
+    if (!docs.length) docs = await tryQueryByField('sellerUID')
+
+    if (!docs.length) {
+      let recentSnap
+      try {
+        recentSnap = await getDocs(query(ordersRef, orderBy('timestamp', 'desc'), limit(500)))
+      } catch (e3) {
+        try {
+          recentSnap = await getDocs(query(ordersRef, orderBy('createdAt', 'desc'), limit(500)))
+        } catch (e4) {
+          recentSnap = await getDocs(query(ordersRef, limit(500)))
+        }
+      }
+      orders.value = normalizeOrdersForSeller(recentSnap.docs, props.sellerId)
+    } else {
+      orders.value = normalizeOrdersForSeller(docs, props.sellerId)
+    }
+
+    // Build customer aggregates
+    const customerMap = new Map()
+    orders.value.forEach(o => {
+      const id = o.userId
+      if (!customerMap.has(id)) {
+        customerMap.set(id, {
+          userId: id,
+          orderCount: 0,
+          totalSpent: 0,
+          firstOrderDate: getOrderDate(o)
+        })
+      }
+      const c = customerMap.get(id)
+      c.orderCount += 1
+      c.totalSpent += Number(o.totalPrice) || 0
+      const d = getOrderDate(o)
+      if (d < c.firstOrderDate) c.firstOrderDate = d
+    })
+
     customers.value = Array.from(customerMap.values())
     totalCustomers.value = customers.value.length
-    
+
     // Calculate new customers this period
     const now = new Date()
     const periodStart = new Date()
-    
     switch (chartTimeRange.value) {
-      case 'week':
-        periodStart.setDate(now.getDate() - 7)
-        break
-      case 'month':
-        periodStart.setMonth(now.getMonth() - 1)
-        break
-      case 'quarter':
-        periodStart.setMonth(now.getMonth() - 3)
-        break
-      case 'year':
-        periodStart.setFullYear(now.getFullYear() - 1)
-        break
+      case 'week': periodStart.setDate(now.getDate() - 7); break
+      case 'month': periodStart.setMonth(now.getMonth() - 1); break
+      case 'quarter': periodStart.setMonth(now.getMonth() - 3); break
+      case 'year': periodStart.setFullYear(now.getFullYear() - 1); break
     }
-    
-    newCustomersThisPeriod.value = customers.value.filter(customer => 
-      customer.firstOrderDate >= periodStart
-    ).length
-    
-    // Calculate average orders per customer
-    const totalOrders = customers.value.reduce((sum, customer) => sum + customer.orderCount, 0)
-    averageOrdersPerCustomer.value = customers.value.length > 0 
-      ? Math.round((totalOrders / customers.value.length) * 10) / 10 
+    newCustomersThisPeriod.value = customers.value.filter(c => c.firstOrderDate >= periodStart).length
+
+    // Average orders per customer
+    const totalOrders = customers.value.reduce((sum, c) => sum + c.orderCount, 0)
+    averageOrdersPerCustomer.value = customers.value.length > 0
+      ? Math.round((totalOrders / customers.value.length) * 10) / 10
       : 0
-    
+
+    // Compute trends from chart series
+    const { newCustomersData, returningCustomersData } = processCustomersForChart(orders.value, chartTimeRange.value)
+    customerTrend.value = computeTrend(newCustomersData.map((v, i) => v + returningCustomersData[i]))
+    newCustomerTrend.value = computeTrend(newCustomersData)
+    // Proxy for avg orders trend: use total orders/labels
+    const totalPerBucket = newCustomersData.map((v, i) => v + returningCustomersData[i])
+    const avgSeries = totalPerBucket.map(v => customers.value.length ? v / customers.value.length : 0)
+    avgOrderTrend.value = computeTrend(avgSeries)
+
   } catch (error) {
-    console.error("Error fetching customer data:", error)
+    console.error('Error fetching customer data:', error)
+    orders.value = []
+    customers.value = []
+    totalCustomers.value = 0
+    newCustomersThisPeriod.value = 0
+    averageOrdersPerCustomer.value = 0
+    customerTrend.value = 0
+    newCustomerTrend.value = 0
+    avgOrderTrend.value = 0
   }
 }
 
@@ -517,6 +520,7 @@ watch(chartData, () => {
   initChart()
 }, { deep: true })
 </script>
+
 
 <style scoped>
 .customer-overview-graph {

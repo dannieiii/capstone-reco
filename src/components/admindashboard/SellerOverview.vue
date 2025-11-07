@@ -63,20 +63,43 @@ const topSellers = computed(() => {
 const fetchSellers = async () => {
   try {
     loading.value = true;
-    // Create a query to get the most recent sellers first, limited to a reasonable number
+    // Query most recent sellers first; fetch a few more to allow de-dup while keeping 4 unique
     const sellersQuery = query(
       collection(db, "sellers"),
       orderBy("createdAt", "desc"),
-      limit(10)
+      limit(25)
     );
-    
+
     const querySnapshot = await getDocs(sellersQuery);
-    sellers.value = querySnapshot.docs.map(doc => {
-      return { 
-        id: doc.id,
-        ...doc.data()
-      };
-    });
+
+    // Map raw docs
+    const rawSellers = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    // Helper to normalize Firestore Timestamp/Date/number to millis for comparison
+    const toMillis = (val) => {
+      if (!val) return 0;
+      if (typeof val === 'number') return val;
+      if (typeof val?.toMillis === 'function') return val.toMillis();
+      if (val?.seconds != null) return (val.seconds * 1000) + (val.nanoseconds ? val.nanoseconds / 1e6 : 0);
+      const t = new Date(val).getTime();
+      return Number.isFinite(t) ? t : 0;
+    };
+
+    // De-duplicate by userId (preferred) or email (fallback) then id; keep the most recent (updatedAt/createdAt)
+    const byKey = new Map();
+    for (const s of rawSellers) {
+      const key = s.userId || (s.personalInfo?.email || s.id);
+      const existing = byKey.get(key);
+      const existingTime = existing ? (toMillis(existing.updatedAt) || toMillis(existing.createdAt)) : 0;
+      const currentTime = (toMillis(s.updatedAt) || toMillis(s.createdAt));
+      if (!existing || currentTime > existingTime) {
+        byKey.set(key, s);
+      }
+    }
+
+    // Sort again by createdAt desc after de-dup to preserve intended order and slice top
+    const deduped = Array.from(byKey.values()).sort((a, b) => (toMillis(b.createdAt) - toMillis(a.createdAt)));
+    sellers.value = deduped;
   } catch (error) {
     console.error("Error fetching sellers:", error);
   } finally {

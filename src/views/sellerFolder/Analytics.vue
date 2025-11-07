@@ -523,16 +523,19 @@
 import { ref, onMounted, computed, watch, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { db, auth } from '@/firebase/firebaseConfig';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
 import Sidebar from '@/components/Sidebar.vue';
 import InventoryModal from '@/components/sellerside/InventoryModal.vue';
 import Chart from 'chart.js/auto';
 import OfflineBanner from '@/components/OfflineBanner.vue';
+import { normalizeOrdersForSeller, getPriceFromEntry, STATUS_WHITELIST } from '@/helpers/salesUtils';
 
 const router = useRouter();
 
 // Current seller ID
 const currentSellerId = ref('');
+// Some orders/items may reference the seller document ID instead of the auth UID
+const currentSellerDocId = ref('');
 
 // Dashboard data
 const timeRange = ref('month');
@@ -544,6 +547,8 @@ const totalInventory = ref(0);
 const inventoryTrend = ref(0);
 const totalOrders = ref(0);
 const ordersTrend = ref(0);
+// Count of orders/items with status 'order received'
+const orderReceivedCount = ref(0);
 
 // Chart references
 const salesChart = ref(null);
@@ -1233,59 +1238,109 @@ const getStatusClass = (status) => {
   }
 };
 
-// Fetch sales data from Firebase - filtered by sellerId
+// Fetch sales data from Firebase - filtered by sellerId using shared normalization
 const fetchSalesData = async () => {
   try {
     if (!currentSellerId.value) return;
-    
-    const salesQuery = query(
-      collection(db, "sales"),
-      where("sellerId", "==", currentSellerId.value)
-    );
-    
-    const salesSnapshot = await getDocs(salesQuery);
-    const salesList = [];
-    
+
+    const ordersRef = collection(db, 'orders');
+
+    const tryQueryByField = async (field, value) => {
+      try {
+        try {
+          const snap = await getDocs(query(ordersRef, where(field, '==', value), orderBy('timestamp', 'desc'), limit(500)));
+          return snap.docs;
+        } catch (e1) {
+          try {
+            const snap = await getDocs(query(ordersRef, where(field, '==', value), orderBy('createdAt', 'desc'), limit(500)));
+            return snap.docs;
+          } catch (e2) {
+            const snap = await getDocs(query(ordersRef, where(field, '==', value), limit(500)));
+            return snap.docs;
+          }
+        }
+      } catch (_) {
+        return [];
+      }
+    };
+
+    // Build a list of possible seller identifiers (auth UID + seller doc id)
+    const candidateIds = [currentSellerId.value, currentSellerDocId.value].filter(Boolean);
+    const seenEntryIds = new Set();
+    const aggregated = [];
+
+    for (const sellerKey of candidateIds) {
+      // First try direct queries by seller field
+      let docs = await tryQueryByField('sellerId', sellerKey);
+      if (!docs.length) docs = await tryQueryByField('sellerID', sellerKey);
+      if (!docs.length) docs = await tryQueryByField('sellerUid', sellerKey);
+      if (!docs.length) docs = await tryQueryByField('sellerUID', sellerKey);
+
+      // If still empty, pull recent and normalize from items
+      if (!docs.length) {
+        let recentSnap;
+        try {
+          recentSnap = await getDocs(query(ordersRef, orderBy('timestamp', 'desc'), limit(500)));
+        } catch (e3) {
+          try {
+            recentSnap = await getDocs(query(ordersRef, orderBy('createdAt', 'desc'), limit(500)));
+          } catch (e4) {
+            recentSnap = await getDocs(query(ordersRef, limit(500)));
+          }
+        }
+        docs = recentSnap.docs;
+      }
+
+      // Normalize per shared rule set for this sellerKey
+      const normalized = normalizeOrdersForSeller(docs, sellerKey, { statusWhitelist: STATUS_WHITELIST });
+      for (const e of normalized) {
+        const idKey = String(e.id);
+        if (seenEntryIds.has(idKey)) continue;
+        seenEntryIds.add(idKey);
+        aggregated.push(e);
+      }
+    }
+
+    // Augment for compatibility with existing chart code
+    const salesList = aggregated.map((e) => ({
+      id: e.id,
+      category: e.category || 'Other',
+      // time fields preserved
+      timestamp: e.timestamp,
+      createdAt: e.createdAt,
+      // price fields compatible with existing aggregations
+      totalPrice: e.price ?? e.itemPrice ?? 0,
+      price: e.price ?? e.itemPrice ?? 0,
+      quantity: typeof e.quantity === 'number' ? e.quantity : 1,
+      profit: typeof e.profit === 'number' ? e.profit : undefined,
+      // propagate product fields to support Top Products mapping
+      productId: e.productId || '',
+      productName: e.productName || '',
+      unit: e.unit || 'piece',
+      productImage: e.productImage || '',
+      images: Array.isArray(e.images) ? e.images : []
+    }));
+
+    // Compute totals
     let totalSalesValue = 0;
     let totalProfitValue = 0;
-    let totalOrdersCount = 0;
     const categorySales = {};
-    
-    salesSnapshot.forEach((doc) => {
-      const saleData = doc.data();
-      salesList.push({
-        id: doc.id,
-        ...saleData
-      });
-      
-      // Calculate total sales
-      const salePrice = saleData.totalPrice || (saleData.price * saleData.quantity) || 0;
+    salesList.forEach((s) => {
+      const salePrice = Number(s.totalPrice) || 0;
       totalSalesValue += salePrice;
-      
-      // Calculate profit (assuming 30% profit margin if no cost data)
-      const profit = salePrice * 0.3;
-      totalProfitValue += profit;
-      
-      totalOrdersCount++;
-      
-      // Track sales by category
-      const category = saleData.category || 'Other';
-      if (!categorySales[category]) {
-        categorySales[category] = 0;
-      }
-      categorySales[category] += salePrice;
+      totalProfitValue += typeof s.profit === 'number' ? s.profit : salePrice * 0.3;
+      const category = s.category || 'Other';
+      categorySales[category] = (categorySales[category] || 0) + salePrice;
     });
-    
+
     salesData.value = salesList;
     totalSales.value = totalSalesValue;
-    totalOrders.value = totalOrdersCount;
-    
-    // Calculate profit margin (percentage)
-    if (totalSalesValue > 0) {
-      profitMargin.value = Math.round((totalProfitValue / totalSalesValue) * 100);
-    }
-    
-    // Update charts with real data
+  totalOrders.value = salesList.length;
+  orderReceivedCount.value = aggregated.filter(e => (e.status || '') === 'order received').length;
+
+    profitMargin.value = totalSalesValue > 0 ? Math.round((totalProfitValue / totalSalesValue) * 100) : 0;
+
+    // Update charts with unified data
     updateChartsWithSalesData(salesList, categorySales);
     
   } catch (error) {
@@ -1345,7 +1400,11 @@ const calculateTopProducts = () => {
         productId: saleId || '',
         productName: saleName,
         category: sale.category || 'Other',
-        unitPrice: sale.price || 0,
+        // Capture raw price fields; we'll compute the display unit price later
+        _rawItemPrice: typeof sale.itemPrice === 'number' ? sale.itemPrice : undefined,
+        _rawUnitPrice: typeof sale.unitPrice === 'number' ? sale.unitPrice : undefined,
+        _rawTotalPrice: typeof sale.totalPrice === 'number' ? sale.totalPrice : undefined,
+        unitPrice: 0, // placeholder, replaced after aggregation
         unit: sale.unit || 'piece',
         sold: 0,
         profit: 0,
@@ -1380,10 +1439,40 @@ const calculateTopProducts = () => {
       productSale.images = actualProduct.images || productSale.images;
       productSale.category = actualProduct.category || productSale.category;
       productSale.unit = actualProduct.unit || productSale.unit;
+      // Prefer product's own pricing details if available
+      productSale._rawNewMinPrice = typeof actualProduct.newMinPrice === 'number' ? actualProduct.newMinPrice : undefined;
+      productSale._rawNewMaxPrice = typeof actualProduct.newMaxPrice === 'number' ? actualProduct.newMaxPrice : undefined;
+      productSale._rawLegacyPrice = typeof actualProduct.price === 'number' ? actualProduct.price : undefined;
       
       // Add more product details if available
       productSale.description = actualProduct.description || '';
       productSale.productId = actualProduct.id || productSale.productId || '';
+    }
+  });
+
+  // Finalize unitPrice for display:
+  // Rule: If a product has a min/max range, show the midpoint (or min if max missing). Else use legacy price.
+  // If only sale-level prices exist (no product pricing), derive average per unit = totalRevenueForProduct / soldQuantity (if quantity > 0).
+  Object.values(productSales).forEach(ps => {
+    const hasRange = typeof ps._rawNewMinPrice === 'number' || typeof ps._rawNewMaxPrice === 'number';
+    if (hasRange) {
+      const min = ps._rawNewMinPrice ?? ps._rawNewMaxPrice ?? 0;
+      const max = ps._rawNewMaxPrice ?? ps._rawNewMinPrice ?? min;
+      ps.unitPrice = (min + max) / 2;
+      return;
+    }
+    if (typeof ps._rawLegacyPrice === 'number') {
+      ps.unitPrice = ps._rawLegacyPrice;
+      return;
+    }
+    // Fallback: derive from aggregated sale price if we have sold quantity and total price info
+    // Accumulate total revenue from raw fields
+    const candidatePrices = [ps._rawItemPrice, ps._rawUnitPrice, ps._rawTotalPrice].filter(p => typeof p === 'number' && p > 0);
+    if (candidatePrices.length) {
+      // If quantity not tracked (>0), use first candidate
+      ps.unitPrice = candidatePrices[0];
+    } else {
+      ps.unitPrice = 0;
     }
   });
   
@@ -1759,6 +1848,14 @@ onMounted(() => {
   auth.onAuthStateChanged(async (user) => {
     if (user) {
       currentSellerId.value = user.uid;
+      // Attempt to find the seller document to capture its doc ID in case orders reference it
+      try {
+        const sellersRef = collection(db, 'sellers');
+        const snap = await getDocs(query(sellersRef, where('userId', '==', user.uid)));
+        if (!snap.empty) {
+          currentSellerDocId.value = snap.docs[0].id;
+        }
+      } catch (_) {}
       chartsInitialized.value = true;
       await initSalesChart([], [], []);
       await initCategoryChart([], []);

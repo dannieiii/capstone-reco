@@ -165,7 +165,8 @@ import {
   CheckCircle
 } from 'lucide-vue-next'
 import { db } from '@/firebase/firebaseConfig'
-import { collection, getDocs, query, where } from 'firebase/firestore'
+import { collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore'
+import { normalizeOrdersForSeller, getPriceFromEntry, STATUS_WHITELIST } from '@/helpers/salesUtils'
 
 const loading = ref(true)
 const error = ref(null)
@@ -185,24 +186,42 @@ const fetchSellersData = async () => {
     
     console.log('Fetching sellers data...')
     
-    // Fetch all sellers from the sellers collection (same as Sellers.vue)
+    // Fetch all sellers from the sellers collection
     const sellersSnapshot = await getDocs(collection(db, 'sellers'))
+    const rawSellers = sellersSnapshot.docs.map(d => ({ id: d.id, ...d.data() }))
+
+    // De-duplicate sellers by userId/email, keep most recent (align with Sellers.vue)
+    const toMillis = (val) => {
+      if (!val) return 0
+      if (typeof val === 'number') return val
+      if (typeof val?.toMillis === 'function') return val.toMillis()
+      if (val?.seconds != null) return (val.seconds * 1000) + (val.nanoseconds ? val.nanoseconds / 1e6 : 0)
+      const t = new Date(val).getTime();
+      return Number.isFinite(t) ? t : 0
+    }
+    const byKey = new Map()
+    for (const s of rawSellers) {
+      const key = s.userId || (s.personalInfo?.email || s.id)
+      const existing = byKey.get(key)
+      const existingTime = existing ? (toMillis(existing.updatedAt) || toMillis(existing.createdAt)) : 0
+      const currentTime = (toMillis(s.updatedAt) || toMillis(s.createdAt))
+      if (!existing || currentTime > existingTime) byKey.set(key, s)
+    }
+
     const sellersList = []
-    
-    for (const docSnapshot of sellersSnapshot.docs) {
-      const sellerData = docSnapshot.data()
+    for (const sellerData of byKey.values()) {
       const seller = { 
-        id: docSnapshot.id, 
+        id: sellerData.id, 
         registrationStatus: sellerData.registrationStatus || 'Pending',
         isVerified: sellerData.isVerified || false,
         ...sellerData 
       }
-      
-      // Fetch sales data for this seller: only 'Order Received' or 'Completed'
-      const salesData = await fetchSellerSalesData({ sellerDocId: docSnapshot.id, sellerUserId: seller.userId })
+
+      // Fetch normalized sales data for this seller using shared utils (paid/completed/delivered)
+      const salesData = await fetchSellerSalesDataNormalized({ sellerDocId: seller.id, sellerUserId: seller.userId })
       seller.totalSales = salesData.totalSales
       seller.totalOrders = salesData.totalOrders
-      
+
       // Process seller info for display
       seller.name = `${seller.personalInfo?.firstName || 'Unknown'} ${seller.personalInfo?.lastName || 'Seller'}`.trim()
       seller.firstName = seller.personalInfo?.firstName || 'Unknown'
@@ -213,10 +232,10 @@ const fetchSellersData = async () => {
       seller.contact = seller.personalInfo?.contact || 'No contact'
       seller.address = seller.personalInfo?.address || 'No address'
       seller.status = seller.isVerified ? 'Verified' : (seller.registrationStatus === 'Accept' ? 'Active' : seller.registrationStatus)
-      
+
       sellersList.push(seller)
     }
-    
+
     sellers.value = sellersList
     console.log('Fetched sellers:', sellers.value.length)
     
@@ -228,44 +247,77 @@ const fetchSellersData = async () => {
   }
 }
 
-const fetchSellerSalesData = async ({ sellerDocId, sellerUserId }) => {
+const fetchSellerSalesDataNormalized = async ({ sellerDocId, sellerUserId }) => {
   try {
-    // Query orders using both possible IDs, then filter statuses
-    const ids = [sellerDocId, sellerUserId].filter(Boolean)
-    if (ids.length === 0) return { totalSales: 0, totalOrders: 0 }
+    const candidateIds = [sellerUserId, sellerDocId].filter(Boolean)
+    if (!candidateIds.length) return { totalSales: 0, totalOrders: 0 }
 
-    const snapshots = await Promise.all(
-      ids.map((sid) => getDocs(query(collection(db, 'orders'), where('sellerId', '==', sid))))
-    )
+    const ordersRef = collection(db, 'orders')
 
-    const seen = new Set()
-    let totalSales = 0
-    let totalOrders = 0
-
-    snapshots.forEach((snap) => {
-      snap.forEach((d) => {
-        if (seen.has(d.id)) return
-        seen.add(d.id)
-        const o = d.data()
-        const status = (o.status || '').toLowerCase()
-        // Only finalized revenue: Order Received or Completed
-        if (status !== 'order received' && status !== 'completed') return
-
-        const itemPrice = Number(o.itemPrice) || 0
-        const unitPrice = Number(o.unitPrice) || 0
-        const qty = Number(o.quantity) || 0
-        const totalPrice = Number(o.totalPrice) || 0
-        const amount = itemPrice || (unitPrice && qty ? unitPrice * qty : 0) || totalPrice
-        if (Number.isFinite(amount)) {
-          totalSales += amount
-          totalOrders += 1
+    const tryQueryByField = async (field, value) => {
+      try {
+        try {
+          const snap = await getDocs(query(ordersRef, where(field, '==', value), orderBy('timestamp', 'desc'), limit(500)))
+          return snap.docs
+        } catch (e1) {
+          try {
+            const snap = await getDocs(query(ordersRef, where(field, '==', value), orderBy('createdAt', 'desc'), limit(500)))
+            return snap.docs
+          } catch (e2) {
+            const snap = await getDocs(query(ordersRef, where(field, '==', value), limit(500)))
+            return snap.docs
+          }
         }
-      })
-    })
+      } catch (_) {
+        return []
+      }
+    }
 
-    return { totalSales, totalOrders }
+    const seenEntryIds = new Set()
+    const aggregated = []
+
+    for (const sellerKey of candidateIds) {
+      // Try direct fields with this key
+      let docs = await tryQueryByField('sellerId', sellerKey)
+      if (!docs.length) docs = await tryQueryByField('sellerID', sellerKey)
+      if (!docs.length) docs = await tryQueryByField('sellerUid', sellerKey)
+      if (!docs.length) docs = await tryQueryByField('sellerUID', sellerKey)
+
+      // If not found, query recent orders and normalize items
+      if (!docs.length) {
+        let recentSnap
+        try {
+          recentSnap = await getDocs(query(ordersRef, orderBy('timestamp', 'desc'), limit(500)))
+        } catch (e3) {
+          try {
+            recentSnap = await getDocs(query(ordersRef, orderBy('createdAt', 'desc'), limit(500)))
+          } catch (e4) {
+            recentSnap = await getDocs(query(ordersRef, limit(500)))
+          }
+        }
+        const entries = normalizeOrdersForSeller(recentSnap.docs, sellerKey, { statusWhitelist: STATUS_WHITELIST })
+        for (const e of entries) {
+          const idKey = String(e.id)
+          if (seenEntryIds.has(idKey)) continue
+          seenEntryIds.add(idKey)
+          aggregated.push(e)
+        }
+      } else {
+        const entries = normalizeOrdersForSeller(docs, sellerKey, { statusWhitelist: STATUS_WHITELIST })
+        for (const e of entries) {
+          const idKey = String(e.id)
+          if (seenEntryIds.has(idKey)) continue
+          seenEntryIds.add(idKey)
+          aggregated.push(e)
+        }
+      }
+    }
+
+    const totalSales = aggregated.reduce((sum, e) => sum + getPriceFromEntry(e), 0)
+    const uniqOrders = new Set(aggregated.map(e => String(e.id).split('_')[0]))
+    return { totalSales, totalOrders: uniqOrders.size }
   } catch (error) {
-    console.error("Error fetching seller sales data:", error)
+    console.error('Error fetching seller sales data (normalized):', error)
     return { totalSales: 0, totalOrders: 0 }
   }
 }
@@ -458,6 +510,7 @@ const closeExportNotification = () => {
 }
 
 // Computed properties
+// Total Sellers = all unique (deduplicated) sellers fetched
 const totalSellers = computed(() => sellers.value.length)
 
 const activeSellers = computed(() => 
@@ -473,9 +526,10 @@ const totalRevenue = computed(() =>
 )
 
 const averageOrders = computed(() => {
-  if (sellers.value.length === 0) return 0
-  const totalOrders = sellers.value.reduce((sum, seller) => sum + (seller.totalOrders || 0), 0)
-  return totalOrders / sellers.value.length
+  const withSales = sellers.value.filter(s => (s.totalSales || 0) > 0)
+  if (withSales.length === 0) return 0
+  const totalOrders = withSales.reduce((sum, seller) => sum + (seller.totalOrders || 0), 0)
+  return totalOrders / withSales.length
 })
 
 const topSellers = computed(() => 

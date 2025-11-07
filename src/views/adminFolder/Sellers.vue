@@ -381,7 +381,18 @@ const fetchSellers = async () => {
       sellersList.push(seller);
     }
     
-    allSellers.value = sellersList;
+    // Deduplicate by userId (fallback to email) and keep the most recent record
+    const byKey = new Map();
+    for (const s of sellersList) {
+      const key = s.userId || (s.personalInfo?.email || s.id);
+      const existing = byKey.get(key);
+      const existingTime = existing?.updatedAt || existing?.createdAt || 0;
+      const currentTime = s.updatedAt || s.createdAt || 0;
+      if (!existing || currentTime > existingTime) {
+        byKey.set(key, s);
+      }
+    }
+    allSellers.value = Array.from(byKey.values());
     
   } catch (error) {
     console.error("Error fetching sellers:", error);

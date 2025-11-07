@@ -93,12 +93,12 @@
             </div>
             <div class="metric-content">
               <div class="metric-header">
-                <h3>Total Users</h3>
+                <h3>Total Orders</h3>
                 <div class="info-icon">
                   <Info size="16" />
                 </div>
               </div>
-              <div class="metric-value">{{ totalUsers }}</div>
+              <div class="metric-value">{{ totalOrders }}</div>
               <div class="metric-trend positive">
                 <TrendingUp size="16" />
                 <span>10.2% from last month</span>
@@ -365,10 +365,12 @@ const currentDate = computed(() => {
 const sellers = ref([]);
 const customers = ref([]);
 const products = ref([]);
+const ordersCount = ref(0);
 
 const totalSellers = computed(() => sellers.value.length);
 const totalCustomers = computed(() => customers.value.length);
 const totalUsers = computed(() => totalSellers.value + totalCustomers.value);
+const totalOrders = computed(() => ordersCount.value);
 const totalProducts = computed(() => products.value.length);
 
 const fetchData = async () => {
@@ -383,6 +385,26 @@ const fetchData = async () => {
     
     const productsSnapshot = await getDocs(collection(db, "products"));
     products.value = productsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    // Count all completed orders across all sellers
+    try {
+      const completedStatuses = ['Order Received', 'Delivered', 'Completed', 'complete'];
+      const ordersQuery = query(collection(db, 'orders'), where('status', 'in', completedStatuses));
+      const ordersSnapshot = await getDocs(ordersQuery);
+      ordersCount.value = ordersSnapshot.size;
+    } catch (e) {
+      // Fallback: if Firestore index or 'in' operator is not available, fetch all and filter client-side
+      try {
+        const allOrdersSnapshot = await getDocs(collection(db, 'orders'));
+        ordersCount.value = allOrdersSnapshot.docs.reduce((acc, d) => {
+          const s = (d.data().status || '').toString();
+          return acc + (['Order Received','Delivered','Completed','complete'].includes(s) ? 1 : 0);
+        }, 0);
+      } catch (e2) {
+        console.error('Error fetching orders:', e2);
+        ordersCount.value = 0;
+      }
+    }
   } catch (error) {
     console.error("Error fetching data:", error);
   }

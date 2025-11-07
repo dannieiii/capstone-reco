@@ -43,8 +43,8 @@
         <span class="summary-label">Total Profit</span>
         <span class="summary-value">₱{{ formatNumber(totalProfit) }}</span>
         <span class="summary-trend" :class="profitTrend >= 0 ? 'positive' : 'negative'">
-          <span v-if="profitTrend >= 0">↑</span>
-          <span v-else">↓</span>
+                  <span v-if="profitTrend >= 0">↑</span>
+                  <span v-else>↓</span>
           {{ Math.abs(profitTrend) }}%
         </span>
       </div>
@@ -53,7 +53,7 @@
         <span class="summary-value">{{ profitMargin }}%</span>
         <span class="summary-trend" :class="marginTrend >= 0 ? 'positive' : 'negative'">
           <span v-if="marginTrend >= 0">↑</span>
-          <span v-else">↓</span>
+          <span v-else>↓</span>
           {{ Math.abs(marginTrend) }}%
         </span>
       </div>
@@ -64,6 +64,9 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import Chart from 'chart.js/auto'
+import { db } from '@/firebase/firebaseConfig'
+import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore'
+import { normalizeOrdersForSeller, getPriceFromEntry, STATUS_WHITELIST } from '@/helpers/salesUtils'
 
 // Props
 const props = defineProps({
@@ -87,9 +90,11 @@ const orders = ref([])
 const totalRevenue = ref(0)
 const totalProfit = ref(0)
 const profitMargin = ref(0)
-const revenueTrend = ref(15.2)
-const profitTrend = ref(8.7)
-const marginTrend = ref(3.1)
+const revenueTrend = ref(0)
+const profitTrend = ref(0)
+const marginTrend = ref(0)
+// Some orders may reference the seller document ID instead of the auth UID
+const sellerDocId = ref('')
 
 // Computed properties for chart data
 const chartData = computed(() => {
@@ -206,109 +211,123 @@ const processOrdersForChart = (ordersData, timeRange) => {
   return { labels, revenueData, profitData }
 }
 
-// Helper functions (based on Analytics.vue)
 const getOrderDate = (order) => {
-  if (order.createdAt && typeof order.createdAt.toDate === 'function') {
-    return order.createdAt.toDate()
-  } else if (order.timestamp && typeof order.timestamp.toDate === 'function') {
-    return order.timestamp.toDate()
-  } else {
-    return new Date()
-  }
+  if (order.normalizedDate instanceof Date) return order.normalizedDate
+  if (order.timestamp && typeof order.timestamp.toDate === 'function') return order.timestamp.toDate()
+  if (order.createdAt && typeof order.createdAt.toDate === 'function') return order.createdAt.toDate()
+  if (order.timestamp || order.createdAt) return (order.timestamp ?? order.createdAt)
+  return new Date()
 }
 
 const getOrderPrice = (order) => {
-  return order.itemPrice || (order.unitPrice * order.quantity) || order.totalPrice || 0
+  return getPriceFromEntry(order)
 }
 
-// Fetch orders from Firebase (simulated)
+// Fetch orders from Firebase for the logged-in seller
 const fetchOrders = async () => {
   try {
-    // Simulate Firebase data fetching
-    // In real implementation, this would use:
-    // const ordersQuery = query(collection(db, "orders"), where("sellerId", "==", props.sellerId))
-    // const ordersSnapshot = await getDocs(ordersQuery)
-    
-    // Sample data structure matching Analytics.vue
-    const sampleOrders = [
-      {
-        id: '1',
-        sellerId: props.sellerId,
-        productName: 'Fresh Tomatoes',
-        category: 'Vegetables',
-        unitPrice: 45,
-        quantity: 10,
-        itemPrice: 450,
-        totalPrice: 450,
-        createdAt: { toDate: () => new Date(Date.now() - 1 * 24 * 60 * 60 * 1000) }
-      },
-      {
-        id: '2',
-        sellerId: props.sellerId,
-        productName: 'Organic Lettuce',
-        category: 'Vegetables',
-        unitPrice: 35,
-        quantity: 8,
-        itemPrice: 280,
-        totalPrice: 280,
-        createdAt: { toDate: () => new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) }
-      },
-      {
-        id: '3',
-        sellerId: props.sellerId,
-        productName: 'Sweet Corn',
-        category: 'Vegetables',
-        unitPrice: 25,
-        quantity: 15,
-        itemPrice: 375,
-        totalPrice: 375,
-        createdAt: { toDate: () => new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) }
-      },
-      {
-        id: '4',
-        sellerId: props.sellerId,
-        productName: 'Fresh Carrots',
-        category: 'Vegetables',
-        unitPrice: 40,
-        quantity: 12,
-        itemPrice: 480,
-        totalPrice: 480,
-        createdAt: { toDate: () => new Date(Date.now() - 5 * 24 * 60 * 60 * 1000) }
-      },
-      {
-        id: '5',
-        sellerId: props.sellerId,
-        productName: 'Green Beans',
-        category: 'Vegetables',
-        unitPrice: 55,
-        quantity: 6,
-        itemPrice: 330,
-        totalPrice: 330,
-        createdAt: { toDate: () => new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
+    if (!props.sellerId) {
+      orders.value = []
+      totalRevenue.value = 0
+      totalProfit.value = 0
+      profitMargin.value = 0
+      revenueTrend.value = 0
+      profitTrend.value = 0
+      marginTrend.value = 0
+      return
+    }
+
+    const ordersRef = collection(db, 'orders')
+
+    const tryQueryByField = async (field, value) => {
+      try {
+        // Prefer timestamp desc; fall back to createdAt; then no orderBy
+        try {
+          const snap = await getDocs(query(ordersRef, where(field, '==', value), orderBy('timestamp', 'desc'), limit(500)))
+          return snap.docs
+        } catch (e1) {
+          try {
+            const snap = await getDocs(query(ordersRef, where(field, '==', value), orderBy('createdAt', 'desc'), limit(500)))
+            return snap.docs
+          } catch (e2) {
+            const snap = await getDocs(query(ordersRef, where(field, '==', value), limit(500)))
+            return snap.docs
+          }
+        }
+      } catch (_) {
+        return []
       }
-    ]
-    
-    orders.value = sampleOrders
-    
-    // Calculate totals (matching Analytics.vue logic)
+    }
+
+    // Build candidate seller IDs: auth UID and (if found) seller document ID
+    const candidates = [props.sellerId].concat(sellerDocId.value ? [sellerDocId.value] : [])
+    const seen = new Set()
+    const aggregated = []
+
+    for (const id of candidates) {
+      // Try common field names first
+      let docs = await tryQueryByField('sellerId', id)
+      if (!docs.length) docs = await tryQueryByField('sellerID', id)
+      if (!docs.length) docs = await tryQueryByField('sellerUid', id)
+      if (!docs.length) docs = await tryQueryByField('sellerUID', id)
+
+      // If still empty, fetch recent orders and extract items that belong to this seller
+      if (!docs.length) {
+        let recentSnap
+        try {
+          recentSnap = await getDocs(query(ordersRef, orderBy('timestamp', 'desc'), limit(500)))
+        } catch (e3) {
+          try {
+            recentSnap = await getDocs(query(ordersRef, orderBy('createdAt', 'desc'), limit(500)))
+          } catch (e4) {
+            recentSnap = await getDocs(query(ordersRef, limit(500)))
+          }
+        }
+        const normalized = normalizeOrdersForSeller(recentSnap.docs, id, { statusWhitelist: STATUS_WHITELIST })
+        for (const e of normalized) {
+          const key = String(e.id)
+          if (seen.has(key)) continue
+          seen.add(key)
+          aggregated.push(e)
+        }
+      } else {
+        const normalized = normalizeOrdersForSeller(docs, id, { statusWhitelist: STATUS_WHITELIST })
+        for (const e of normalized) {
+          const key = String(e.id)
+          if (seen.has(key)) continue
+          seen.add(key)
+          aggregated.push(e)
+        }
+      }
+    }
+
+    orders.value = aggregated
+
+    // Totals (30% profit heuristic unless real profit is present)
     let totalSalesValue = 0
     let totalProfitValue = 0
-    
-    sampleOrders.forEach(order => {
-      const itemPrice = getOrderPrice(order)
-      totalSalesValue += itemPrice
-      totalProfitValue += itemPrice * 0.3 // 30% profit margin
+    orders.value.forEach(entry => {
+      const price = getOrderPrice(entry)
+      totalSalesValue += price
+      const explicitProfit = typeof entry.profit === 'number' ? entry.profit : null
+      totalProfitValue += explicitProfit !== null ? explicitProfit : price * 0.3
     })
-    
+
     totalRevenue.value = totalSalesValue
     totalProfit.value = totalProfitValue
-    
-    if (totalSalesValue > 0) {
-      profitMargin.value = Math.round((totalProfitValue / totalSalesValue) * 100)
-    }
-    
+    profitMargin.value = totalSalesValue > 0 ? Math.round((totalProfitValue / totalSalesValue) * 100) : 0
+
+    // Recompute trends from chart series after orders change
+    recomputeSummaryFromChartData()
   } catch (error) {
-    console.error("Error fetching orders:", error)
+    console.error('Error fetching orders:', error)
+    orders.value = []
+    totalRevenue.value = 0
+    totalProfit.value = 0
+    profitMargin.value = 0
+    revenueTrend.value = 0
+    profitTrend.value = 0
+    marginTrend.value = 0
   }
 }
 
@@ -413,12 +432,43 @@ const initChart = () => {
   })
 }
 
+const computeTrend = (series) => {
+  if (!series || series.length < 2) return 0
+  const prev = Number(series[series.length - 2] || 0)
+  const curr = Number(series[series.length - 1] || 0)
+  if (prev === 0) return curr > 0 ? 100 : 0
+  return Math.round(((curr - prev) / prev) * 1000) / 10
+}
+
+const recomputeSummaryFromChartData = () => {
+  const { revenueData, profitData } = chartData.value
+  const totalRev = revenueData.reduce((a, b) => a + b, 0)
+  const totalProf = profitData.reduce((a, b) => a + b, 0)
+  totalRevenue.value = totalRev
+  totalProfit.value = totalProf
+  profitMargin.value = totalRev > 0 ? Math.round((totalProf / totalRev) * 100) : 0
+  revenueTrend.value = computeTrend(revenueData)
+  profitTrend.value = computeTrend(profitData)
+  const prevRev = revenueData.length > 1 ? revenueData[revenueData.length - 2] : 0
+  const prevProf = profitData.length > 1 ? profitData[profitData.length - 2] : 0
+  const prevMargin = prevRev > 0 ? (prevProf / prevRev) * 100 : 0
+  marginTrend.value = Math.round((profitMargin.value - prevMargin) * 10) / 10
+}
+
 const updateChartData = () => {
+  recomputeSummaryFromChartData()
   initChart()
 }
 
 // Lifecycle
 onMounted(async () => {
+  // Attempt to find the seller document ID for this userId to ensure we include orders that reference it
+  try {
+    const sellersRef = collection(db, 'sellers')
+    const snap = await getDocs(query(sellersRef, where('userId', '==', props.sellerId), limit(1)))
+    if (!snap.empty) sellerDocId.value = snap.docs[0].id
+  } catch (_) {}
+
   await fetchOrders()
   initChart()
 })
@@ -431,12 +481,18 @@ onUnmounted(() => {
 
 // Watch for changes
 watch(() => props.sellerId, async () => {
+  try {
+    sellerDocId.value = ''
+    const sellersRef = collection(db, 'sellers')
+    const snap = await getDocs(query(sellersRef, where('userId', '==', props.sellerId), limit(1)))
+    if (!snap.empty) sellerDocId.value = snap.docs[0].id
+  } catch (_) {}
   await fetchOrders()
   initChart()
 })
 
 watch(chartData, () => {
-  initChart()
+  updateChartData()
 }, { deep: true })
 </script>
 

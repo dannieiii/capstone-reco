@@ -507,7 +507,7 @@
             <div class="product-slide-info">
               <h4>{{ product.productName || product.name }}</h4>
               <div class="slide-meta">
-                <div class="slide-price">₱{{ formatPrice(product.price) }}</div>
+                <div class="slide-price">₱{{ formatPrice(getDisplayPrice(product)) }}</div>
                 <div class="slide-stats">
                   <Eye size="10" />
                   <span>{{ product.views }}</span>
@@ -1581,6 +1581,31 @@ const fetchProducts = async () => {
     },
     formatPrice(price) {
       return parseFloat(price).toFixed(2);
+    },
+    // Unified way to compute a product's primary display price for compact cards (e.g., Trending)
+    // Order of preference mirrors unit visibility in the main grid and add-to-cart default selection.
+    getDisplayPrice(product) {
+      if (!product || typeof product !== 'object') return 0;
+      const candidates = [
+        { price: product.pricePerKilo, key: 'kg' },
+        { price: product.pricePerSack, key: 'sack' },
+        { price: product.pricePerTali, key: 'tali' },
+        { price: product.pricePerKaing, key: 'kaing' },
+        { price: product.pricePerBundle, key: 'bundle' },
+        { price: product.pricePerTray, key: 'tray' },
+        { price: product.pricePerPiece, key: 'piece' }
+      ];
+
+      // Pick first positive-priced unit
+      const chosen = candidates.find(c => Number(c.price) > 0);
+      let base = chosen ? Number(chosen.price) : Number(product.price) || 0;
+
+      // Apply sale if applicable
+      if (product.isOnSale && (product.discountPercentage || product.discount)) {
+        const pct = Number(product.discountPercentage ?? product.discount) || 0;
+        if (pct > 0) base = this.calculateSalePrice(base, pct);
+      }
+      return isNaN(base) ? 0 : base;
     },
     handleAuthRequired({ label }) {
       const name = label || 'this section';

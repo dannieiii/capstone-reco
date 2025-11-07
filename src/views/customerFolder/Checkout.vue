@@ -2332,9 +2332,34 @@ export default {
   transition: all 0.2s ease;
 }
 
+/* Payment/option items have a visible border by default */
+.option-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #e0e0e0; /* default gray border */
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background-color: #fff;
+}
+
+.option-item:hover {
+  border-color: #cdd8cf;
+  background-color: #f8fbf8;
+}
+
+/* Small spacing between stacked option buttons */
+.option-item + .option-item {
+  margin-top: 8px;
+}
+
 .option-item.active {
   border-color: #2e5c31;
-  background-color: rgba(46, 92, 49, 0.05);
+  border-width: 2px; /* emphasize when selected */
+  background-color: #e6f4ea; /* clearer light green when selected */
+  box-shadow: 0 0 0 2px rgba(46, 92, 49, 0.08) inset;
 }
 
 .radio-input {
@@ -2355,6 +2380,16 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
+  color: #2e5c31;
+}
+
+/* Stronger visual cue for the selected option */
+.option-item.active .option-icon {
+  background-color: rgba(46, 92, 49, 0.2);
+  color: #2e5c31;
+}
+
+.option-item.active .option-title {
   color: #2e5c31;
 }
 

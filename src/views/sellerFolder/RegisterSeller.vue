@@ -733,7 +733,7 @@
 
 <script>
 import { db, auth, storage } from "@/firebase/firebaseConfig";
-import { collection, addDoc, doc, getDoc, updateDoc } from "firebase/firestore";
+import { collection, addDoc, doc, getDoc, updateDoc, setDoc, getDocs, query, where, limit } from "firebase/firestore";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { ChevronLeft, ChevronRight, Upload, ChevronDown, Camera, X, FileText, Circle } from 'lucide-vue-next';
 
@@ -1650,18 +1650,30 @@ export default {
           try {
             attempts++;
             console.log(`Firestore save attempt ${attempts}...`);
-            
+
+            // Idempotent write: ensure a single seller doc per userId
             const sellersRef = collection(db, "sellers");
-            
-            // Add timeout to Firestore write
-            const firestoreWritePromise = addDoc(sellersRef, sellerData);
-            const firestoreTimeout = new Promise((_, reject) => {
-              setTimeout(() => reject(new Error('Firestore write timeout')), 10000); // 10 second timeout
-            });
-            
-            sellerDocRef = await Promise.race([firestoreWritePromise, firestoreTimeout]);
-            
-            console.log("Seller document created with ID:", sellerDocRef.id);
+            const existingSnap = await getDocs(query(sellersRef, where('userId', '==', user.uid), limit(1)));
+
+            if (!existingSnap.empty) {
+              // Update existing seller document instead of creating a duplicate
+              const existingDoc = existingSnap.docs[0];
+              const existingRef = doc(db, 'sellers', existingDoc.id);
+              const updatePromise = updateDoc(existingRef, sellerData);
+              const updateTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Firestore update timeout')), 10000));
+              await Promise.race([updatePromise, updateTimeout]);
+              sellerDocRef = existingRef;
+              console.log('Seller document updated (existing):', existingRef.id);
+            } else {
+              // Create/overwrite with deterministic ID = user.uid to prevent duplicates on retries
+              const deterministicRef = doc(db, 'sellers', user.uid);
+              const setPromise = setDoc(deterministicRef, sellerData, { merge: true });
+              const setTimeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Firestore set timeout')), 10000));
+              await Promise.race([setPromise, setTimeoutPromise]);
+              sellerDocRef = deterministicRef;
+              console.log('Seller document upserted at fixed ID (user.uid):', deterministicRef.id);
+            }
+
             break;
           } catch (firestoreError) {
             console.error(`Firestore save attempt ${attempts} failed:`, firestoreError);

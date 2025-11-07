@@ -715,6 +715,13 @@ setup() {
     }
   };
 
+  // Helper: normalize pricing picking newest values with legacy fallback
+  const normalizeUnitPricingForExport = (pricing) => {
+    const min = Number(pricing?.newMinPrice ?? pricing?.minPrice ?? 0);
+    const max = Number(pricing?.newMaxPrice ?? pricing?.maxPrice ?? 0);
+    return { min, max };
+  };
+
   // Export methods
   const exportToCSV = () => {
     const headers = ['Product Name', 'Category', 'Unit', 'Min Price', 'Max Price', 'Variety'];
@@ -723,12 +730,13 @@ setup() {
     filteredProducts.value.forEach(product => {
       if (product.unitPricing && Object.keys(product.unitPricing).length > 0) {
         Object.entries(product.unitPricing).forEach(([unit, pricing]) => {
+          const { min, max } = normalizeUnitPricingForExport(pricing);
           const row = [
             `"${product.productName}"`,
             `"${product.category}"`,
             `"${unit}"`,
-            pricing.minPrice || 0,
-            pricing.maxPrice || 0,
+            min,
+            max,
             `"${product.variety || 'Normal'}"`
           ];
           csvContent.push(row.join(','));
@@ -792,16 +800,18 @@ setup() {
           <tbody>
             ${filteredProducts.value.map(product => {
               if (product.unitPricing && Object.keys(product.unitPricing).length > 0) {
-                return Object.entries(product.unitPricing).map(([unit, pricing]) => `
+                return Object.entries(product.unitPricing).map(([unit, pricing]) => {
+                  const np = normalizeUnitPricingForExport(pricing);
+                  return `
                   <tr>
                     <td>${product.productName}</td>
                     <td>${product.category}</td>
                     <td>${unit}</td>
-                    <td>₱${(pricing.minPrice || 0).toFixed(2)}</td>
-                    <td>₱${(pricing.maxPrice || 0).toFixed(2)}</td>
+                    <td>₱${np.min.toFixed(2)}</td>
+                    <td>₱${np.max.toFixed(2)}</td>
                     <td>${product.variety || 'Normal'}</td>
                   </tr>
-                `).join('');
+                `;}).join('');
               } else {
                 return `
                   <tr>

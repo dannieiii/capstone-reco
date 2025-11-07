@@ -1457,6 +1457,126 @@ const renderChart = () => {
   });
 };
 
+// Export helpers
+// Normalize D.A. price reference values (supports newMinPrice/newMaxPrice with legacy fallback)
+const normalizeDAForExport = (daRef) => {
+  const min = Number(daRef?.newMinPrice ?? daRef?.minPrice ?? daRef?.min ?? 0);
+  const max = Number(daRef?.newMaxPrice ?? daRef?.maxPrice ?? daRef?.max ?? 0);
+  return { min, max };
+};
+
+// Build an HTML report table; opened in a print window to allow "Save as PDF"
+const buildReportHTML = (title, subtitle, list) => {
+  const rows = (list || []).map(product => {
+    const seller = getSellerName(product.sellerId);
+    const units = product.units || [];
+    if (units.length === 0) {
+      return `
+        <tr>
+          <td>${product.productName}</td>
+          <td>${product.category}</td>
+          <td>${seller}</td>
+          <td>-</td>
+          <td>₱0.00</td>
+          <td>₱0.00</td>
+          <td>₱0.00</td>
+          <td>—</td>
+          <td>—</td>
+        </tr>`;
+    }
+    return units.map(unit => {
+      const { min, max } = normalizeDAForExport(unit.daReference);
+      const deviation = unit.deviation !== null && unit.deviation !== undefined ? formatDeviation(unit.deviation) : 'N/A';
+      const status = getUnitStatusText(unit);
+      return `
+        <tr>
+          <td>${product.productName}</td>
+          <td>${product.category}</td>
+          <td>${seller}</td>
+          <td>${unit.type}</td>
+          <td>₱${Number(unit.price || 0).toFixed(2)}</td>
+          <td>₱${min.toFixed(2)}</td>
+          <td>₱${max.toFixed(2)}</td>
+          <td>${deviation}</td>
+          <td>${status}</td>
+        </tr>`;
+    }).join('');
+  }).join('');
+
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8" />
+      <title>${title}</title>
+      <style>
+        body { font-family: Arial, sans-serif; margin: 24px; }
+        h1 { color: #2e5c31; margin: 0 0 6px 0; }
+        .sub { color: #555; margin-bottom: 16px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 12px; }
+        th { background-color: #2e5c31; color: white; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+      </style>
+    </head>
+    <body>
+      <h1>${title}</h1>
+      <div class="sub">${subtitle}</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Product Name</th>
+            <th>Category</th>
+            <th>Seller</th>
+            <th>Unit Type</th>
+            <th>Current Price</th>
+            <th>DA Min Price</th>
+            <th>DA Max Price</th>
+            <th>Deviation %</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+    </body>
+    </html>
+  `;
+};
+
+// Build a PDF page with the current chart image
+const buildChartPDFHTML = (title, subtitle, chartSrc) => {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8" />
+      <title>${title}</title>
+      <style>
+        body { font-family: Arial, sans-serif; margin: 24px; }
+        h1 { color: #2e5c31; margin: 0 0 6px 0; }
+        .sub { color: #555; margin-bottom: 16px; }
+        .chart-wrap { width: 100%; border: 1px solid #eee; padding: 8px; border-radius: 6px; }
+        .chart-wrap img { width: 100%; max-height: 720px; object-fit: contain; display: block; image-rendering: optimizeQuality; }
+        /* Force color in print preview/PDF */
+        @media print {
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+          body, img { filter: none !important; }
+        }
+      </style>
+    </head>
+    <body>
+      <h1>${title}</h1>
+      <div class="sub">${subtitle}</div>
+      <div class="chart-wrap">
+        ${chartSrc ? `<img src="${chartSrc}" alt="Analysis Chart" />` : '<div>Chart not available</div>'}
+      </div>
+    </body>
+    </html>
+  `;
+};
+
 // Export functionality
 const toggleExportDropdown = () => {
   showExportDropdown.value = !showExportDropdown.value;
@@ -1491,19 +1611,21 @@ const exportToPDF = async () => {
   showExportDropdown.value = false;
   isExporting.value = true;
   try {
-    const content = generatePDFContent();
-    const blob = new Blob([content], { type: 'application/pdf' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    
-    link.setAttribute('href', url);
-    link.setAttribute('download', `price-monitoring-${new Date().toISOString().split('T')[0]}.pdf`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    showStatus('success', 'PDF export completed successfully!');
+    // Capture the current analysis chart as an image
+    await nextTick();
+    const canvas = priceChart.value;
+    const chartSrc = canvas && canvas.toDataURL ? canvas.toDataURL('image/png', 1.0) : null;
+    const viewMap = { deviation: 'Price Deviation', category: 'By Category', warnings: 'Warning Levels' };
+    const title = `Price Analysis - Oriental Mindoro (${viewMap[currentChartView.value] || 'Analysis'})`;
+    const subtitle = `Generated on: ${new Date().toLocaleDateString()} • Filters → Category: ${chartCategoryFilter.value || 'All'}, Warning: ${chartWarningFilter.value || 'All'}`;
+    const html = buildChartPDFHTML(title, subtitle, chartSrc);
+
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    w.print();
+    showStatus('success', 'PDF ready — includes the current analysis chart');
   } catch (error) {
     console.error('Export error:', error);
     showStatus('error', 'Failed to export PDF');
@@ -1515,19 +1637,65 @@ const exportToPDF = async () => {
 const exportProductToPDF = async (product) => {
   isExporting.value = true;
   try {
-    const content = generateProductPDFContent(product);
-    const blob = new Blob([content], { type: 'text/plain' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    
-    link.setAttribute('href', url);
-    link.setAttribute('download', `${product.productName.replace(/[^a-z0-9]/gi, '_').toLowerCase()}-analysis.txt`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    showStatus('success', `Product analysis exported successfully!`);
+    const units = product.units || [];
+    const rows = units.map(unit => {
+      const { min, max } = normalizeDAForExport(unit.daReference);
+      const deviation = unit.deviation !== null && unit.deviation !== undefined ? formatDeviation(unit.deviation) : 'N/A';
+      const status = getUnitStatusText(unit);
+      return `
+        <tr>
+          <td>${unit.type}</td>
+          <td>₱${Number(unit.price || 0).toFixed(2)}</td>
+          <td>₱${min.toFixed(2)}</td>
+          <td>₱${max.toFixed(2)}</td>
+          <td>${deviation}</td>
+          <td>${status}</td>
+        </tr>`;
+    }).join('');
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>${product.productName} - Analysis</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 24px; }
+          h1 { color: #2e5c31; margin: 0 0 6px 0; }
+          .sub { color: #555; margin-bottom: 16px; }
+          table { width: 100%; border-collapse: collapse; }
+          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 12px; }
+          th { background-color: #2e5c31; color: white; }
+          tr:nth-child(even) { background-color: #f9f9f9; }
+        </style>
+      </head>
+      <body>
+        <h1>${product.productName}</h1>
+        <div class="sub">Category: ${product.category} • Seller: ${getSellerName(product.sellerId)} • Generated on: ${new Date().toLocaleDateString()}</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Unit Type</th>
+              <th>Current Price</th>
+              <th>DA Min Price</th>
+              <th>DA Max Price</th>
+              <th>Deviation %</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+          </tbody>
+        </table>
+      </body>
+      </html>`;
+
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    w.print();
+    showStatus('success', 'Product PDF ready — use the print dialog to save');
   } catch (error) {
     console.error('Export error:', error);
     showStatus('error', 'Failed to export product analysis');
@@ -1556,6 +1724,7 @@ const generateCSVContent = () => {
   filteredProducts.value.forEach(product => {
     const units = product.units || [];
     units.forEach(unit => {
+      const { min, max } = normalizeDAForExport(unit.daReference);
       const row = [
         `"${product.productName}"`,
         `"${product.category}"`,
@@ -1563,8 +1732,8 @@ const generateCSVContent = () => {
         `"${unit.type}"`,
         unit.price,
         `${unit.stock} ${unit.stockUnit}`,
-        unit.daReference ? unit.daReference.minPrice : 'N/A',
-        unit.daReference ? unit.daReference.maxPrice : 'N/A',
+        unit.daReference ? min : 'N/A',
+        unit.daReference ? max : 'N/A',
         unit.deviation !== null ? formatDeviation(unit.deviation) : 'N/A',
         getUnitStatusText(unit),
         product.warningLevel || 'none'
@@ -1673,19 +1842,15 @@ const exportFilteredToPDF = async () => {
   showTableExportDropdown.value = false;
   isExporting.value = true;
   try {
-    const content = generateFilteredPDFContent();
-    const blob = new Blob([content], { type: 'text/plain' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    
-    link.setAttribute('href', url);
-    link.setAttribute('download', `filtered-price-monitoring-${new Date().toISOString().split('T')[0]}.txt`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    showStatus('success', 'Filtered PDF export completed successfully!');
+    const title = 'Product Price Analysis (Filtered)';
+    const subtitle = `Generated on: ${new Date().toLocaleDateString()} • Filters → Category: ${selectedCategory.value || 'All'}, Type: ${selectedProductType.value || 'All'}, Status: ${selectedPriceStatus.value || 'All'}`;
+    const html = buildReportHTML(title, subtitle, filteredProducts.value);
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    w.print();
+    showStatus('success', 'Filtered PDF ready — use the print dialog to save');
   } catch (error) {
     console.error('Export error:', error);
     showStatus('error', 'Failed to export filtered PDF');
@@ -1714,6 +1879,7 @@ const generateFilteredCSVContent = () => {
   filteredProducts.value.forEach(product => {
     const units = product.units || [];
     units.forEach(unit => {
+      const { min, max } = normalizeDAForExport(unit.daReference);
       const row = [
         `"${product.productName}"`,
         `"${product.category}"`,
@@ -1721,8 +1887,8 @@ const generateFilteredCSVContent = () => {
         `"${unit.type}"`,
         unit.price,
         `${unit.stock} ${unit.stockUnit}`,
-        unit.daReference ? unit.daReference.minPrice : 'N/A',
-        unit.daReference ? unit.daReference.maxPrice : 'N/A',
+        unit.daReference ? min : 'N/A',
+        unit.daReference ? max : 'N/A',
         unit.deviation !== null ? formatDeviation(unit.deviation) : 'N/A',
         getUnitStatusText(unit),
         product.warningLevel || 'none'
