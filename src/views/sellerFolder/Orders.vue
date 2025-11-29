@@ -3,7 +3,7 @@
     <OfflineBanner />
     <Sidebar initialActiveItem="Orders" />
     
-    <div class="main-content">
+    <div class="main-content" :style="mainContentStyles">
       <header class="header">
         <div class="page-title">
           <h1>Orders</h1>
@@ -300,8 +300,61 @@
                 </div>
               </div>
               
-              <div class="details-right" v-if="selectedOrder.paymentProofUrl || selectedOrder.paymentProofNote">
-                <div class="info-group">
+              <div class="details-right" v-if="showRefundCard || hasPaymentProof">
+                <div 
+                  class="refund-details-section"
+                  v-if="showRefundCard"
+                >
+                  <h3>Refund Request Details</h3>
+                  <p v-if="isRefundLoading" class="refund-loading">Loading refund information...</p>
+                  <p v-else-if="refundLoadError" class="refund-error">{{ refundLoadError }}</p>
+                  <template v-else-if="refundDetailsInfo">
+                    <div class="refund-field" v-if="refundDetailsInfo.refundTitle">
+                      <strong>Reason:</strong>
+                      <span>{{ refundDetailsInfo.refundTitle }}</span>
+                    </div>
+                    <div class="refund-field">
+                      <strong>Description:</strong>
+                      <p class="refund-description">
+                        {{ refundDetailsInfo.reason || 'Customer did not provide additional details.' }}
+                      </p>
+                    </div>
+                    <div class="refund-field" v-if="refundDetailsInfo.contactEmail">
+                      <strong>Contact Email:</strong>
+                      <span>{{ refundDetailsInfo.contactEmail }}</span>
+                    </div>
+                    <div class="refund-field" v-if="refundDetailsInfo.refundAmount">
+                      <strong>Requested Amount:</strong>
+                      <span>₱{{ Number(refundDetailsInfo.refundAmount).toFixed(2) }}</span>
+                    </div>
+                    <div class="refund-field" v-if="refundDetailsInfo.createdAt">
+                      <strong>Submitted:</strong>
+                      <span>{{ formatDateTime(refundDetailsInfo.createdAt) }}</span>
+                    </div>
+                    <div class="refund-evidence" v-if="refundDetailsInfo.evidence?.length">
+                      <h4>Evidence</h4>
+                      <div class="evidence-grid">
+                        <div
+                          v-for="(file, index) in refundDetailsInfo.evidence"
+                          :key="file.name || index"
+                          class="evidence-item"
+                        >
+                          <img
+                            v-if="file.data && file.data.startsWith('data:image')"
+                            :src="file.data"
+                            :alt="file.name || `Evidence ${index + 1}`"
+                          />
+                          <div v-else class="evidence-placeholder">
+                            <i class="i-lucide-image"></i>
+                            <span>{{ file.name || `Evidence ${index + 1}` }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+
+                <div class="info-group" v-if="hasPaymentProof">
                   <h3>Payment Proof</h3>
                   <div v-if="selectedOrder.paymentProofUrl" class="proof-block">
                     <p v-if="selectedOrder.paymentSenderName" class="proof-sender">
@@ -320,6 +373,7 @@
             
             <div class="order-items-section">
               <h3>Order Items</h3>
+              <div class="order-items-table-wrapper">
               <table class="items-table">
                 <thead>
                   <tr>
@@ -338,7 +392,8 @@
                       </div>
                     </td>
                     <td>{{ getUnitDisplay(selectedOrder.unit) }}</td>
-                    <td>{{ selectedOrder.quantity }}</td>                    <td>₱{{ getUnitPrice(selectedOrder).toFixed(2) }}</td>
+                    <td>{{ selectedOrder.quantity }}</td>
+                    <td>₱{{ getUnitPrice(selectedOrder).toFixed(2) }}</td>
                     <td>₱{{ (selectedOrder.itemPrice || (getUnitPrice(selectedOrder) * selectedOrder.quantity)).toFixed(2) }}</td>
                   </tr>
                 </tbody>
@@ -357,6 +412,7 @@
                   </tr>
                 </tfoot>
               </table>
+              </div>
             </div>
               <OrderStatusUpdate 
               :orderId="selectedOrder.id" 
@@ -383,12 +439,13 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import Sidebar from '@/components/Sidebar.vue';
 import { db } from '@/firebase/firebaseConfig';
-import { collection, getDocs, doc, updateDoc, query, where, onSnapshot, runTransaction, increment, serverTimestamp, addDoc } from 'firebase/firestore';
+import { collection, getDocs, getDoc, doc, updateDoc, query, where, onSnapshot, runTransaction, increment, serverTimestamp, addDoc } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import OrderStatusUpdate from '@/components/sellerside/OrderStatusUpdate.vue';
 import OrderNotif from '@/components/sellerside/OrderNotif.vue';
 import OfflineBanner from '@/components/OfflineBanner.vue';
 import { Clock, Package, Truck, CheckCircle, PackageCheck, RotateCcw } from 'lucide-vue-next';
+import { useSidebarOffset } from '@/composables/useSidebarOffset';
 
 // UI State
 const isDarkMode = ref(false);
@@ -405,12 +462,32 @@ const startDate = ref('');
 const endDate = ref('');
 const currentSellerId = ref('');
 const showExportMenu = ref(false);
+const refundDetailsInfo = ref(null);
+const isRefundLoading = ref(false);
+const refundLoadError = ref('');
+const { sidebarOffset, isMobileViewport, mobileTopOffset } = useSidebarOffset();
+const mainContentStyles = computed(() => ({
+  marginLeft: `${sidebarOffset.value}px`,
+  paddingTop: isMobileViewport.value ? mobileTopOffset : ''
+}));
 
 // Notification state
 const showNotification = ref(false);
 const notificationTitle = ref('');
 const notificationMessage = ref('');
 const notificationType = ref('success');
+const showRefundCard = computed(() => {
+  if (!showOrderModal.value) return false;
+  return (
+    selectedOrder.value?.status === 'Refund Processing' ||
+    !!refundDetailsInfo.value ||
+    isRefundLoading.value
+  );
+});
+const hasPaymentProof = computed(() => {
+  const order = selectedOrder.value || {};
+  return !!order.paymentProofUrl || !!order.paymentProofNote;
+});
 
 // Unit display mapping
 const unitDisplayMap = {
@@ -1041,6 +1118,56 @@ const formatDateTime = (timestamp) => {
   });
 };
 
+const loadRefundDetails = async (order) => {
+  refundDetailsInfo.value = null;
+  refundLoadError.value = '';
+
+  if (!order) {
+    return;
+  }
+
+  // Only fetch when a refund could exist
+  if (!order.refundId && order.status !== 'Refund Processing') {
+    return;
+  }
+
+  isRefundLoading.value = true;
+  try {
+    let refundDocSnap = null;
+
+    if (order.refundId) {
+      refundDocSnap = await getDoc(doc(db, 'refunds', order.refundId));
+    } else {
+      const refundQuery = query(
+        collection(db, 'refunds'),
+        where('orderId', '==', order.id)
+      );
+      const refundSnap = await getDocs(refundQuery);
+      if (!refundSnap.empty) {
+        refundDocSnap = refundSnap.docs[0];
+      }
+    }
+
+    if (refundDocSnap && refundDocSnap.exists()) {
+      const data = refundDocSnap.data() || {};
+      refundDetailsInfo.value = {
+        id: refundDocSnap.id,
+        ...data,
+        createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : data.createdAt,
+        updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate() : data.updatedAt,
+        evidence: Array.isArray(data.evidence) ? data.evidence : []
+      };
+    } else {
+      refundLoadError.value = 'No refund request found for this order.';
+    }
+  } catch (error) {
+    console.error('Error loading refund information:', error);
+    refundLoadError.value = 'Failed to load refund details. Please try again.';
+  } finally {
+    isRefundLoading.value = false;
+  }
+};
+
 // Order detail modal functions
 const viewOrderDetails = (order) => {
   selectedOrder.value = { 
@@ -1050,10 +1177,14 @@ const viewOrderDetails = (order) => {
       : (order.Location || {})
   };
   showOrderModal.value = true;
+  loadRefundDetails(order);
 };
 
 const closeModal = () => {
   showOrderModal.value = false;
+  refundDetailsInfo.value = null;
+  refundLoadError.value = '';
+  isRefundLoading.value = false;
 };
 
 // Notification helper function
@@ -1332,43 +1463,81 @@ const escapeHtml = (text) => {
   return div.innerHTML;
 };
 
-// Export as PDF
-const exportAsPDF = () => {
-  // Create a new window for PDF content
-  const printWindow = window.open('', '_blank');
-    if (!printWindow) {
-    showOrderNotification(
-      'Export Failed',
-      'Please allow pop-ups to export as PDF',
-      'error'
-    );
-    return;
-  }
-  
-  // Create PDF content with escaped closing tags
-  const pdfContent = `
+const buildOrdersPDFHTML = (orders) => {
+  const generatedAt = new Date();
+  const dateFilterLabel = startDate.value
+    ? `${formatDate(startDate.value)}${endDate.value ? ` to ${formatDate(endDate.value)}` : ''}`
+    : 'All Dates';
+  const searchLabel = searchQuery.value ? `"${searchQuery.value}"` : 'None';
+  const statusSummary = statusOptions
+    .map(status => {
+      const count = orders.filter(order => (order.status || '').toLowerCase() === status.toLowerCase()).length;
+      return `<div class="summary-stat"><span>${status}</span><strong>${count}</strong></div>`;
+    })
+    .join('');
+
+  const rows = orders.length
+    ? orders.map(order => {
+        const statusClass = normalizeStatusClass(order.status || 'status');
+        return `
+          <tr>
+            <td>${escapeHtml(order.orderCode ? `#${order.orderCode}` : 'N/A')}</td>
+            <td>${escapeHtml(order.username || 'Unknown')}</td>
+            <td>${escapeHtml(order.productName || 'N/A')}</td>
+            <td>${escapeHtml(orderTypeLabel(order.orderType, order.isPreOrder))}</td>
+            <td>${order.quantity || 0} ${getUnitDisplay(order.unit)}</td>
+            <td>${escapeHtml(getAddressDisplay(order.Location))}</td>
+            <td>${escapeHtml(formatDateTime(order.timestamp || order.createdAt))}</td>
+            <td>₱${order.totalPrice ? order.totalPrice.toFixed(2) : '0.00'}</td>
+            <td><span class="status-badge ${statusClass}">${escapeHtml(order.status || 'N/A')}</span></td>
+          </tr>`;
+      }).join('')
+    : '<tr><td colspan="9" class="empty">No orders available for the selected filters.</td></tr>';
+
+  return `
     <!DOCTYPE html>
     <html>
     <head>
+      <meta charset="utf-8" />
       <title>Orders Export</title>
       <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        h1 { color: #2e5c31; margin-bottom: 20px; }
-        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; font-weight: bold; }
-        tr:nth-child(even) { background-color: #f9f9f9; }
-        .export-info { margin-top: 20px; font-size: 12px; color: #666; }
-        .status-badge { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 12px; }
-        .status-pending { background-color: #fef3c7; color: #d97706; }
-        .status-processing { background-color: #e0f2fe; color: #0284c7; }
-        .status-shipped { background-color: #dbeafe; color: #2563eb; }
-        .status-delivered { background-color: #d1fae5; color: #059669; }
-        .status-cancelled { background-color: #fee2e2; color: #dc2626; }
+        body { font-family: 'Inter', Arial, sans-serif; margin: 24px; color: #111827; background: #f7f9fb; }
+        h1 { margin: 0 0 4px; color: #1f2937; font-size: 24px; }
+        .sub { margin: 0 0 20px; color: #6b7280; }
+        .meta { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; font-size: 12px; color: #4b5563; }
+        .summary { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+        .summary-stat { padding: 10px 14px; border-radius: 10px; background: #fff; border: 1px solid #e5e7eb; min-width: 120px; display: flex; justify-content: space-between; font-size: 13px; }
+        table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
+        th, td { padding: 12px 10px; text-align: left; font-size: 12px; border-bottom: 1px solid #e5e7eb; }
+        th { background-color: #2e5c31; color: #fff; font-size: 13px; letter-spacing: 0.03em; }
+        tr:nth-child(even) td { background-color: #f9fafb; }
+        .status-badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 9999px; font-size: 11px; font-weight: 600; text-transform: capitalize; }
+        .status-badge.pending { background: #fef3c7; color: #92400e; }
+        .status-badge.processing { background: #e0f2fe; color: #0369a1; }
+        .status-badge.shipped { background: #dbeafe; color: #1d4ed8; }
+        .status-badge.delivered { background: #d1fae5; color: #047857; }
+        .status-badge.order-received { background: #ecfccb; color: #3f6212; }
+        .status-badge.refund-processing { background: #fff7ed; color: #c2410c; }
+        .status-badge.cancelled { background: #fee2e2; color: #b91c1c; }
+        .status-badge.order\ received { background: #ecfccb; color: #3f6212; }
+        .empty { text-align: center; color: #6b7280; font-style: italic; }
+        @media print {
+          body { margin: 16px; background: #fff; }
+          table { box-shadow: none; }
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        }
       </style>
     </head>
     <body>
       <h1>Orders Export</h1>
+      <div class="sub">Generated on ${generatedAt.toLocaleString()}</div>
+      <div class="meta">
+        <div>Filter: <strong>${escapeHtml(activeFilter.value)}</strong></div>
+        <div>Date Range: <strong>${escapeHtml(dateFilterLabel)}</strong></div>
+        <div>Search: <strong>${escapeHtml(searchLabel)}</strong></div>
+        <div>Total Orders: <strong>${orders.length}</strong></div>
+      </div>
+      <div class="summary">${statusSummary}</div>
       <table>
         <thead>
           <tr>
@@ -1384,46 +1553,47 @@ const exportAsPDF = () => {
           </tr>
         </thead>
         <tbody>
-          ${filteredOrders.value.map(order => {
-            const statusClass = `status-${order.status.toLowerCase()}`;
-            return `
-              <tr>
-                <td>${escapeHtml(order.orderCode ? `#${order.orderCode}` : 'N/A')}</td>
-                <td>${escapeHtml(order.username || 'Unknown')}</td>
-                <td>${escapeHtml(order.productName || 'N/A')}</td>
-                <td>${escapeHtml(orderTypeLabel(order.orderType, order.isPreOrder))}</td>
-                <td>${order.quantity || 0} ${getUnitDisplay(order.unit)}</td>
-                <td>${escapeHtml(getAddressDisplay(order.Location))}</td>
-                <td>${escapeHtml(formatDateTime(order.timestamp || order.createdAt))}</td>
-                <td>₱${order.totalPrice.toFixed(2)}</td>
-                <td><span class="status-badge ${statusClass}">${order.status}</span></td>
-              </tr>
-            `;
-          }).join('')}
+          ${rows}
         </tbody>
       </table>
-      <div class="export-info">
-        <p>Generated on: ${new Date().toLocaleString()}</p>
-        <p>Total Orders: ${filteredOrders.value.length}</p>
-        <p>Filter: ${activeFilter.value}</p>
-      </div>
-      <script>
-        window.onload = function() { window.print(); };
-      <\\/script>
-    <\\/body>
-    <\\/html>
+    </body>
+    </html>
   `;
-    // Write content to the new window
-  printWindow.document.open();
-  printWindow.document.write(pdfContent);
-  printWindow.document.close();
-  
-  // Show success notification
-  showOrderNotification(
-    'Export Successful',
-    'Orders exported to PDF successfully',
-    'success'
-  );
+};
+
+// Export as PDF
+const exportAsPDF = () => {
+  showExportMenu.value = false;
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) {
+    showOrderNotification(
+      'Export Failed',
+      'Please allow pop-ups to export as PDF',
+      'error'
+    );
+    return;
+  }
+
+  try {
+    const pdfContent = buildOrdersPDFHTML(filteredOrders.value);
+    printWindow.document.open();
+    printWindow.document.write(pdfContent);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+    showOrderNotification(
+      'PDF Ready',
+      'Orders PDF generated — use the print dialog to save.',
+      'success'
+    );
+  } catch (error) {
+    console.error('PDF export error:', error);
+    showOrderNotification(
+      'Export Failed',
+      'Something went wrong while preparing the PDF.',
+      'error'
+    );
+  }
 };
 </script>
 <style scoped>
@@ -2255,6 +2425,106 @@ const exportAsPDF = () => {
   margin: 0 0 15px 0;
 }
 
+.order-items-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.refund-details-section {
+  margin-bottom: 30px;
+  padding: 20px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background-color: #fdfdfd;
+}
+
+.refund-details-section h3 {
+  margin: 0 0 12px 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.refund-field {
+  margin-bottom: 12px;
+}
+
+.refund-field strong {
+  display: block;
+  font-size: 0.9rem;
+  color: #374151;
+  margin-bottom: 4px;
+}
+
+.refund-field span {
+  font-size: 0.9rem;
+  color: #4b5563;
+}
+
+.refund-description {
+  margin: 0;
+  background-color: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 12px;
+  font-size: 0.9rem;
+  color: #374151;
+  white-space: pre-wrap;
+}
+
+.refund-evidence h4 {
+  margin: 10px 0;
+  font-size: 0.95rem;
+  color: #111827;
+}
+
+.evidence-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+}
+
+.evidence-item {
+  width: 90px;
+  height: 90px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  overflow: hidden;
+  background-color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.evidence-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.evidence-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 10px;
+  font-size: 0.8rem;
+  color: #6b7280;
+  gap: 6px;
+}
+
+.refund-loading {
+  color: #4b5563;
+  font-size: 0.9rem;
+}
+
+.refund-error {
+  color: #b91c1c;
+  font-size: 0.9rem;
+}
+
 .items-table {
   width: 100%;
   border-collapse: collapse;
@@ -2286,6 +2556,78 @@ const exportAsPDF = () => {
   font-weight: 700;
   color: #2e5c31;
   font-size: 1.1rem;
+}
+
+.summary-label {
+  font-weight: 600;
+  color: #374151;
+}
+
+@media (max-width: 640px) {
+  .items-table,
+  .items-table tbody,
+  .items-table tr,
+  .items-table td,
+  .items-table tfoot,
+  .items-table tfoot tr {
+    display: block;
+    width: 100%;
+  }
+
+  .items-table thead {
+    display: none;
+  }
+
+  .items-table tbody tr,
+  .items-table tfoot tr {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+    background-color: #fff;
+  }
+
+  .items-table td {
+    border: none;
+    padding: 8px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.9rem;
+    border-bottom: 1px solid #f3f4f6;
+  }
+
+  .items-table td:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+
+  .items-table td:first-child {
+    padding-top: 0;
+  }
+
+  .items-table td[data-label]::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: #4b5563;
+    display: block;
+    margin-right: auto;
+  }
+
+  .items-table td[data-label] {
+    justify-content: space-between;
+  }
+
+  .items-table td:not([data-label]) {
+    justify-content: flex-end;
+    font-weight: 600;
+    color: #374151;
+  }
+
+  .order-items-table-wrapper {
+    overflow: visible;
+  }
 }
 
 :global(.dark) .main-content {

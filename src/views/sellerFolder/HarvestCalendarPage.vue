@@ -9,7 +9,6 @@
             <p>Plan, track, and optimize your farm's harvesting schedule in Oriental Mindoro</p>
           </div>
         </header>
-        
         <div class="tabs">
           <button 
             @click="activeTab = 'calendar'" 
@@ -26,11 +25,9 @@
             Crop Guide
           </button>
         </div>
-        
         <div v-if="activeTab === 'calendar'">
           <HarvestCalendar />
         </div>
-        
         <div v-else-if="activeTab === 'crops'">
           <OrientalMindoroCrops />
         </div>

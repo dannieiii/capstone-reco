@@ -2,7 +2,7 @@
   <div class="dashboard-container">
     <Sidebar initialActiveItem="Customers" />
     
-    <div class="main-content">
+    <div class="main-content" :style="mainContentStyles">
       <header class="header">
         <div class="page-title">
           <h1>Customers</h1>
@@ -255,6 +255,7 @@ import Sidebar from '@/components/Sidebar.vue';
 import { db } from '@/firebase/firebaseConfig';
 import { collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
+import { useSidebarOffset } from '@/composables/useSidebarOffset';
 // Remove this line:
 // import { escapeHtml } from '@/utils/helpers';
 
@@ -271,6 +272,11 @@ const orders = ref([]);
 const usersData = ref({});
 const currentSellerId = ref('');
 const exportDropdown = ref(null);
+const { sidebarOffset, isMobileViewport, mobileTopOffset } = useSidebarOffset();
+const mainContentStyles = computed(() => ({
+  marginLeft: `${sidebarOffset.value}px`,
+  paddingTop: isMobileViewport.value ? mobileTopOffset : ''
+}));
 
 // Initialize with empty customers
 const initializeData = async () => {

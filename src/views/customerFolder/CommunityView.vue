@@ -2,6 +2,9 @@
   <div class="community-page">
     <div class="header">
       <div class="search-container">
+        <button class="back-button" @click="goHome" aria-label="Back">
+          <ChevronLeft :size="22" />
+        </button>
         <div class="search-bar">
           <Search :size="18" />
           <input 
@@ -94,8 +97,10 @@
                 <User v-else :size="24" class="default-avatar" />
               </div>
               <div class="user-details">
-                <h4>{{ post.isAnonymous ? 'Anonymous Farmer' : post.userName }}</h4>
-                <p class="post-time">{{ formatTime(post.createdAt) }}</p>
+                <div class="user-name-time">
+                  <h4>{{ post.isAnonymous ? 'Anonymous Farmer' : post.userName }}</h4>
+                  <p class="post-time">{{ formatTime(post.createdAt) }}</p>
+                </div>
                 <div v-if="post.productId" class="product-tag">
                   <Package :size="12" />
                   <span>Asked about: {{ post.productName }}</span>
@@ -459,6 +464,25 @@
 </template>
 
 <script setup>
+import BottomNavigation from '@/components/BottomNavigation.vue';
+import { 
+  ChevronLeft,
+  Search, 
+  ShoppingCart, 
+  User, 
+  X, 
+  MessageSquare, 
+  ThumbsUp, 
+  Image,
+  LogOut,
+  FileText,
+  MoreHorizontal,
+  Share2,
+  Send,
+  Globe,
+  EyeOff,
+  Package
+} from 'lucide-vue-next';
 import { ref, computed, onMounted, onUnmounted, reactive, nextTick } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { auth, db } from '@/firebase/firebaseConfig';
@@ -478,23 +502,6 @@ import {
   getDoc
 } from 'firebase/firestore';
 import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
-import { 
-  Search, 
-  ShoppingCart, 
-  User, 
-  X, 
-  MessageSquare, 
-  ThumbsUp, 
-  Image,
-  LogOut,
-  FileText,
-  MoreHorizontal,
-  Share2,
-  Send,
-  Globe,
-  EyeOff,
-  Package
-} from 'lucide-vue-next';
 
 const router = useRouter();
 const route = useRoute();
@@ -989,6 +996,9 @@ const navigateToPath = (path) => {
   router.push(path);
 };
 
+// Match Messages back behavior
+const goHome = () => router.push({ name: 'homeview' });
+
 const toggleMyPosts = () => {
   if (!currentUser.value) { router.push('/login'); return; }
   myPostsOnly.value = !myPostsOnly.value;
@@ -1124,29 +1134,27 @@ const clearReply = () => {
 
 <style scoped>
 .community-page {
-  /* Use min-height to avoid mobile 100vh visual viewport issues */
   min-height: 100vh;
   height: auto;
   display: flex;
   flex-direction: column;
   padding-bottom: 80px;
   background-color: #f0f2f5;
-  overflow-x: hidden; /* prevent sideways scroll */
-  touch-action: pan-y; /* disable horizontal panning */
-  overscroll-behavior-x: none; /* stop horizontal bounce */
+  overflow-x: hidden;
+  touch-action: pan-y;
+  overscroll-behavior-x: none;
 }
 .community-page, .community-page * {
-  box-sizing: border-box; /* avoid width overflow from padding */
+  box-sizing: border-box;
 }
 
-/* Prefer dynamic viewport units when available for better mobile behavior */
 @supports (height: 100dvh) {
   .community-page {
     min-height: 100dvh;
   }
 }
 
-/* Header Styles */
+/* Header Styles - Improved for mobile */
 .header {
   background: linear-gradient(135deg, #2e5c31, #1e3e21);
   padding: 15px;
@@ -1163,7 +1171,22 @@ const clearReply = () => {
   align-items: center;
   gap: 10px;
   margin-bottom: 15px;
-  min-width: 0; /* allow children to shrink without overflow */
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+
+.back-button {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  background: none;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 .search-bar {
@@ -1174,7 +1197,24 @@ const clearReply = () => {
   padding: 0 15px;
   flex: 1;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  min-width: 0; /* prevent overflow on narrow screens */
+  min-width: 0;
+  height: 44px; /* Standard touch target height */
+  border: 2px solid transparent;
+  transition: all 0.3s ease;
+}
+
+/* Thicker search bar for web screens */
+@media (min-width: 768px) {
+  .search-bar {
+    height: 48px;
+    border-radius: 24px;
+    border: 2px solid #e0e0e0;
+  }
+  
+  .search-bar:focus-within {
+    border-color: #2e5c31;
+    box-shadow: 0 4px 12px rgba(46, 92, 49, 0.2);
+  }
 }
 
 .search-bar svg {
@@ -1187,13 +1227,14 @@ const clearReply = () => {
   outline: none;
   flex: 1;
   font-size: 14px;
+  background: transparent;
 }
 
 .header-buttons {
   display: flex;
   gap: 8px;
   position: relative;
-  flex-shrink: 0; /* prevent buttons from shrinking and causing overflow */
+  flex-shrink: 0;
 }
 
 .icon-button {
@@ -1237,77 +1278,6 @@ const clearReply = () => {
   font-weight: bold;
 }
 
-.profile-dropdown {
-  position: absolute;
-  top: 45px;
-  right: 0;
-  width: 280px;
-  background-color: white;
-  border-radius: 15px;
-  box-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
-  z-index: 100;
-  overflow: hidden;
-}
-
-.dropdown-header {
-  padding: 15px;
-  border-bottom: 1px solid #eee;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.user-avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background-color: #f0f0f0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-
-.user-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.user-info h4 {
-  margin: 0 0 2px 0;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.user-info p {
-  margin: 0;
-  font-size: 12px;
-  color: #666;
-}
-
-.dropdown-menu {
-  padding: 10px 0;
-}
-
-.dropdown-menu button {
-  width: 100%;
-  padding: 10px 15px;
-  border: none;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 14px;
-  transition: background-color 0.2s ease;
-}
-
-.dropdown-menu button:hover {
-  background-color: #f5f5f5;
-}
-
 .community-header {
   color: white;
   padding: 0 5px 10px;
@@ -1324,7 +1294,7 @@ const clearReply = () => {
   margin: 0;
 }
 
-/* Content Styles - Responsive Container */
+/* Content Styles */
 .content {
   flex: 1;
   padding: 15px;
@@ -1505,7 +1475,7 @@ const clearReply = () => {
   background-color: #26492a;
 }
 
-/* Posts List - Responsive */
+/* Posts List */
 .posts-list {
   display: flex;
   flex-direction: column;
@@ -1521,6 +1491,7 @@ const clearReply = () => {
   width: 100%;
 }
 
+/* Post Header - Fixed layout with name and date beside avatar */
 .post-header {
   display: flex;
   justify-content: space-between;
@@ -1530,7 +1501,7 @@ const clearReply = () => {
 
 .user-info {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   flex: 1;
   min-width: 0;
@@ -1588,6 +1559,7 @@ const clearReply = () => {
   border-radius: 10px;
   width: fit-content;
   margin-top: 4px;
+  flex-shrink: 0;
 }
 
 .post-menu {
@@ -1637,7 +1609,7 @@ const clearReply = () => {
 
 .post-content {
   padding: 15px;
-  text-align: left; /* ensure left alignment */
+  text-align: left;
 }
 
 .post-text {
@@ -1647,10 +1619,10 @@ const clearReply = () => {
   line-height: 1.4;
   white-space: pre-wrap;
   word-wrap: break-word;
-  text-align: left; /* ensure left alignment */
+  text-align: left;
 }
 
-/* Product Reference Card - Responsive */
+/* Product Reference Card */
 .product-reference-card {
   display: flex;
   align-items: center;
@@ -1726,7 +1698,6 @@ const clearReply = () => {
 /* Desktop and larger screens - limit image size */
 @media (min-width: 768px) {
   .post-image img {
-    /* Center the image and make it slightly bigger */
     max-width: 500px;
     width: auto;
     margin: 0 auto;
@@ -1734,7 +1705,6 @@ const clearReply = () => {
   }
   
   .image-preview {
-    /* Center the preview image and make it slightly bigger */
     max-width: 500px;
     width: auto;
     margin: 0 auto;
@@ -1810,7 +1780,7 @@ const clearReply = () => {
   position: relative;
 }
 
-/* Reaction Menu - Responsive */
+/* Reaction Menu */
 .reaction-menu {
   position: absolute;
   bottom: 100%;
@@ -1880,7 +1850,7 @@ const clearReply = () => {
   align-items: center;
   gap: 8px;
   margin-bottom: 12px;
-  flex-wrap: wrap; /* allow wrapping on small screens */
+  flex-wrap: wrap;
 }
 
 .comment-avatar {
@@ -1902,14 +1872,13 @@ const clearReply = () => {
 }
 
 .comment-input-container {
-  flex: 1 1 200px; /* grow and shrink, with a sensible min width */
+  flex: 1 1 200px;
   display: flex;
   align-items: center;
   background-color: #f0f2f5;
   border-radius: 20px;
   padding: 8px 12px;
 }
-
 
 .comment-identity-toggle {
   display: flex;
@@ -2027,7 +1996,7 @@ const clearReply = () => {
   color: #4a90e2;
 }
 
-/* Modal Styles - Responsive */
+/* Modal Styles */
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -2147,7 +2116,7 @@ const clearReply = () => {
   color: #65676b;
 }
 
-/* Anonymous Toggle - Responsive */
+/* Anonymous Toggle */
 .anonymous-toggle {
   margin-bottom: 16px;
   padding: 12px;
@@ -2498,10 +2467,11 @@ const clearReply = () => {
   
   .search-container {
     margin-bottom: 12px;
+    gap: 8px;
   }
   
   .search-bar {
-    height: 36px;
+    height: 40px;
     padding: 0 12px;
   }
   
@@ -2514,11 +2484,10 @@ const clearReply = () => {
   }
   
   .content {
-    padding: 12px; /* unify side margins with header */
+    padding: 12px;
   }
   
   .post-card {
-    /* Avoid negative margins that can cause subtle horizontal scrolling */
     margin: 0;
     border-radius: 8px;
   }
@@ -2585,7 +2554,6 @@ const clearReply = () => {
   }
   
   .reaction-menu {
-    /* Let the menu fit narrower screens and wrap as needed */
     width: auto;
     max-width: calc(100vw - 20px);
     padding: 6px;
@@ -2614,6 +2582,32 @@ const clearReply = () => {
   /* Product selector grid denser on small phones */
   .products-grid {
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  }
+}
+
+/* Fix for very small screens */
+@media (max-width: 360px) {
+  .search-container {
+    gap: 6px;
+  }
+  
+  .header-buttons {
+    gap: 6px;
+  }
+  
+  .icon-button {
+    width: 34px;
+    height: 34px;
+  }
+  
+  .search-bar {
+    height: 38px;
+    padding: 0 10px;
+  }
+  
+  .back-button {
+    width: 36px;
+    height: 36px;
   }
 }
 </style>

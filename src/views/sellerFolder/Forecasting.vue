@@ -2,7 +2,7 @@
   <div class="dashboard-container">
     <Sidebar initialActiveItem="Forecasting" />
     
-    <div class="main-content">
+    <div class="main-content" :style="mainContentStyles">
       <header class="header">
         <div class="page-title">
           <h1>Sales Forecasting</h1>
@@ -411,8 +411,14 @@ import {
 } from 'lucide-vue-next';
 
 import { useRouter } from 'vue-router';
+import { useSidebarOffset } from '@/composables/useSidebarOffset';
 
 const router = useRouter();
+const { sidebarOffset, isMobileViewport, mobileTopOffset } = useSidebarOffset();
+const mainContentStyles = computed(() => ({
+  marginLeft: `${sidebarOffset.value}px`,
+  paddingTop: isMobileViewport.value ? mobileTopOffset : ''
+}));
 
 // Enhanced data properties with performance tracking
 const forecastPeriod = ref('14');

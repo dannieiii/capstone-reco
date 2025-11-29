@@ -62,7 +62,7 @@
           
           <!-- Description Section -->
           <div class="form-section">
-            <div class="form-row">
+            <div class="form-row form-row--description">
               <label>Description</label>
               <div class="char-count">{{ refundDetails.reason.length }}/2000</div>
             </div>
@@ -127,7 +127,7 @@
             <div class="refund-info">
               <div class="refund-row">
                 <span class="label">Refund To</span>
-                <span class="value">SPayLater</span>
+                <span class="value">{{ sellerInfo.name }}</span>
               </div>
               
               <div class="refund-row">
@@ -194,8 +194,8 @@ import {
   X,
   Loader2
 } from 'lucide-vue-next';
-import { ref, computed, onMounted } from 'vue';
-import { addDoc, collection, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
+import { ref, computed, onMounted, watch } from 'vue';
+import { addDoc, collection, serverTimestamp, doc, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '@/firebase/firebaseConfig';
 
 export default {
@@ -229,11 +229,16 @@ export default {
     const fileInput = ref(null);
     const uploadedImages = ref([]);
     const isSubmitting = ref(false);
-    const defaultEmail = ref('liyahhdejuan@gmail.com');
+    const fallbackEmail = ref(props.order.sellerEmail || 'seller@example.com');
+    const sellerInfo = ref({
+      name: props.order.sellerName || 'Seller',
+      email: fallbackEmail.value
+    });
+    const defaultEmail = ref(fallbackEmail.value);
     
     const refundDetails = ref({
       reason: '',
-      contactEmail: '',
+      contactEmail: defaultEmail.value,
     });
     
     const refundOptions = [
@@ -270,7 +275,8 @@ export default {
     const canSubmit = computed(() => {
       return selectedOption.value && 
              refundDetails.value.reason.trim().length > 10 &&
-             refundDetails.value.contactEmail.trim().length > 0;
+             refundDetails.value.contactEmail.trim().length > 0 &&
+             uploadedImages.value.length > 0; // Require at least one image as evidence
     });
     
     const getReasonText = () => {
@@ -327,6 +333,56 @@ export default {
     
     const removeImage = (index) => {
       uploadedImages.value.splice(index, 1);
+    };
+    
+    const fetchSellerInfo = async () => {
+      const sellerId = props.order?.sellerId;
+      const orderFallbackEmail = props.order?.sellerEmail || 'seller@example.com';
+      fallbackEmail.value = orderFallbackEmail;
+      if (!sellerId) {
+        sellerInfo.value = {
+          name: props.order?.sellerName || 'Seller',
+          email: fallbackEmail.value
+        };
+        defaultEmail.value = fallbackEmail.value;
+        refundDetails.value.contactEmail = defaultEmail.value;
+        return;
+      }
+      try {
+        const sellerRef = doc(db, 'sellers', sellerId);
+        const sellerSnap = await getDoc(sellerRef);
+        if (sellerSnap.exists()) {
+          const sellerData = sellerSnap.data() || {};
+          const personalInfo = sellerData.personalInfo || {};
+          const fullName = [personalInfo.firstName, personalInfo.lastName]
+            .filter(Boolean)
+            .join(' ')
+            .trim();
+          const derivedName = fullName || personalInfo.storeName || props.order.sellerName || 'Seller';
+          const derivedEmail = personalInfo.email || fallbackEmail.value;
+          sellerInfo.value = {
+            name: derivedName,
+            email: derivedEmail
+          };
+          defaultEmail.value = derivedEmail || 'seller@example.com';
+          refundDetails.value.contactEmail = defaultEmail.value;
+        } else {
+          sellerInfo.value = {
+            name: props.order.sellerName || 'Seller',
+            email: fallbackEmail.value
+          };
+          defaultEmail.value = fallbackEmail.value;
+          refundDetails.value.contactEmail = defaultEmail.value;
+        }
+      } catch (error) {
+        console.error('Error fetching seller info:', error);
+        sellerInfo.value = {
+          name: props.order.sellerName || 'Seller',
+          email: fallbackEmail.value
+        };
+        defaultEmail.value = fallbackEmail.value;
+        refundDetails.value.contactEmail = defaultEmail.value;
+      }
     };
     
     const submitRefund = async () => {
@@ -390,10 +446,15 @@ export default {
       }
     };
     
-    // Initialize email when component is mounted
-    onMounted(() => {
-      refundDetails.value.contactEmail = defaultEmail.value;
-    });
+    onMounted(fetchSellerInfo);
+    
+    watch(
+      () => [props.order?.sellerId, props.order?.sellerEmail, props.order?.sellerName],
+      () => {
+        fetchSellerInfo();
+      },
+      { deep: false }
+    );
     
     return {
       selectedOption,
@@ -403,6 +464,7 @@ export default {
       uploadedImages,
       isSubmitting,
       defaultEmail,
+      sellerInfo,
       canSubmit,
       getReasonText,
       selectOption,
@@ -433,7 +495,7 @@ export default {
 
 .refund-modal {
   background: white;
-  border-radius: 0;
+  border-radius: 8px;
   width: 100%;
   max-width: 400px;
   max-height: 90vh;
@@ -441,6 +503,7 @@ export default {
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   display: flex;
   flex-direction: column;
+  margin: auto;
 }
 
 /* Initial Selection Screen Styles */
@@ -550,14 +613,17 @@ export default {
   flex: 1;
   padding: 20px;
   overflow-y: auto;
+  text-align: left;
 }
 
 .product-info {
   display: flex;
   align-items: center;
+  justify-content: center;
   margin-bottom: 20px;
   padding-bottom: 15px;
   border-bottom: 1px solid #eee;
+  text-align: center;
 }
 
 .product-image {
@@ -589,6 +655,7 @@ export default {
 
 .form-section {
   margin-bottom: 20px;
+  text-align: center;
 }
 
 .form-row {
@@ -596,6 +663,11 @@ export default {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 8px;
+}
+
+.form-row--description {
+  max-width: 320px;
+  margin: 0 auto 8px;
 }
 
 .form-row label {
@@ -634,6 +706,9 @@ export default {
   font-family: inherit;
   resize: vertical;
   min-height: 80px;
+  max-width: 320px;
+  margin: 0 auto;
+  display: block;
 }
 
 .description-textarea:focus {
@@ -649,6 +724,7 @@ export default {
   display: flex;
   gap: 15px;
   margin-bottom: 10px;
+  justify-content: center;
 }
 
 .upload-box {
@@ -721,6 +797,7 @@ export default {
   flex-wrap: wrap;
   gap: 10px;
   margin-top: 15px;
+  justify-content: center;
 }
 
 .image-preview {

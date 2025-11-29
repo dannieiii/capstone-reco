@@ -2,7 +2,7 @@
   <div class="dashboard-container">
     <Sidebar initialActiveItem="Notifications" />
     
-    <div class="main-content">
+    <div class="main-content" :style="mainContentStyles">
       <header class="header">
         <div class="page-title">
           <h1>Notifications</h1>
@@ -430,6 +430,7 @@ import {
   getDocs
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
+import { useSidebarOffset } from '@/composables/useSidebarOffset';
 
 // State
 const loading = ref(true);
@@ -438,6 +439,11 @@ const activeFilter = ref('all');
 const currentPage = ref(1);
 const itemsPerPage = 10;
 const currentSellerId = ref('');
+const { sidebarOffset, isMobileViewport, mobileTopOffset } = useSidebarOffset();
+const mainContentStyles = computed(() => ({
+  marginLeft: `${sidebarOffset.value}px`,
+  paddingTop: isMobileViewport.value ? mobileTopOffset : ''
+}));
 const connectionError = ref(false);
 const retryCount = ref(0);
 const maxRetries = 3;

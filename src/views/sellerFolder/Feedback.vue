@@ -1,7 +1,7 @@
 <template>
   <div class="app-layout">
-    <Sidebar />
-    <div class="main-content">
+    <Sidebar initialActiveItem="Feedback" />
+    <div class="main-content" :style="mainContentStyles">
       <div class="feedbacks-container">
         <!-- Header -->
         <div class="page-header">
@@ -293,6 +293,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import Sidebar from '@/components/Sidebar.vue'
+import { useSidebarOffset } from '@/composables/useSidebarOffset'
 import { 
   Star, 
   MessageSquare, 
@@ -311,6 +312,11 @@ import { auth, db } from '@/firebase/firebaseConfig'
 import { onAuthStateChanged } from 'firebase/auth'
 
 // Reactive data
+const { sidebarOffset, isMobileViewport, mobileTopOffset } = useSidebarOffset()
+const mainContentStyles = computed(() => ({
+  marginLeft: `${sidebarOffset.value}px`,
+  paddingTop: isMobileViewport.value ? mobileTopOffset : ''
+}))
 const loading = ref(true)
 const products = ref([])
 const reviews = ref([])

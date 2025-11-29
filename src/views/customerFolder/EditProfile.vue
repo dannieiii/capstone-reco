@@ -45,7 +45,7 @@
         <h2>{{ firstName }} {{ lastName }}</h2>
         <p>{{ email }}</p>
       </div>
-   
+
       <form @submit.prevent="updateProfile" class="profile-form">
         <div class="form-section">
           <h3>Personal Information</h3>
@@ -93,7 +93,7 @@
             />
           </div>
           
-          <div class="form-group">
+          <div class="form-group full-width">
             <label for="contactNumber">Contact Number</label>
             <input 
               type="tel" 
@@ -103,7 +103,7 @@
             />
           </div>
           
-          <div class="form-group">
+          <div class="form-group full-width">
             <label for="address">Address</label>
             <textarea 
               id="address" 
@@ -117,7 +117,7 @@
         <div class="form-section">
           <h3>Change Password</h3>
           
-          <div class="form-group">
+          <div class="form-group full-width">
             <label for="currentPassword">Current Password</label>
             <div class="password-input">
               <input 
@@ -133,7 +133,7 @@
             </div>
           </div>
           
-          <div class="form-group">
+          <div class="form-group full-width">
             <label for="newPassword">New Password</label>
             <div class="password-input">
               <input 
@@ -149,7 +149,7 @@
             </div>
           </div>
           
-          <div class="form-group">
+          <div class="form-group full-width">
             <label for="confirmNewPassword">Confirm New Password</label>
             <div class="password-input">
               <input 
@@ -410,6 +410,9 @@ export default {
   align-items: center;
   justify-content: center;
   color: white;
+  background: transparent;
+  border: none;
+  box-shadow: none;
 }
 
 .header h1 {
@@ -438,16 +441,22 @@ export default {
   padding: 0 0 20px 0;
   background-color: #f5f5f5;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .profile-picture-section {
   background-color: white;
-  padding: 30px 0;
+  padding: 30px 16px 40px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-bottom: 20px;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+  margin: 0 auto 24px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+  border-radius: 16px;
+  max-width: 560px;
+  width: calc(100% - 24px);
 }
 
 .profile-picture {
@@ -498,64 +507,113 @@ export default {
 }
 
 .profile-form {
-  padding: 0 15px;
+  width: calc(100% - 24px);
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 0 12px 40px;
+  margin: 0 auto;
+  box-sizing: border-box;
 }
 
 .form-section {
-  background-color: white;
-  border-radius: 10px;
-  padding: 20px;
-  margin-bottom: 20px;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+  background-color: #fff;
+  border-radius: 16px;
+  padding: 26px 22px;
+  border: 1px solid #e6e6e6;
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .form-section h3 {
-  font-size: 16px;
-  font-weight: 600;
-  margin: 0 0 20px 0;
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 24px 0;
   color: #2e5c31;
+  text-align: center;
 }
 
 .form-row {
   display: flex;
-  gap: 15px;
-  margin-bottom: 15px;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-bottom: 10px;
+  width: 100%;
+  justify-content: center;
 }
 
 .form-row .form-group {
-  flex: 1;
+  flex: 1 1 220px;
+  max-width: 260px;
 }
 
 .form-group {
-  margin-bottom: 15px;
+  margin-bottom: 18px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .form-group label {
-  display: block;
+  width: 90%;
+  max-width: 440px;
   font-size: 14px;
-  font-weight: 500;
-  margin-bottom: 5px;
-  color: #555;
+  font-weight: 600;
+  margin-bottom: 8px;
+  color: #2e5c31;
+  letter-spacing: 0.3px;
+  align-self: center;
+  text-align: left;
+}
+
+.form-group.full-width label {
+  width: 90%;
+  max-width: 440px;
+}
+
+.form-group.full-width {
+  align-items: center;
 }
 
 .form-group input,
 .form-group textarea {
-  width: 100%;
-  padding: 12px 15px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
+  width: 90%;
+  max-width: 440px;
+  padding: 14px 18px;
+  border: 1px solid #e2e2e2;
+  border-radius: 14px;
   font-size: 14px;
-  transition: border-color 0.2s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  background-color: #fff;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.form-group.full-width input,
+.form-group.full-width textarea {
+  width: 90%;
+  max-width: 440px;
 }
 
 .form-group input:focus,
 .form-group textarea:focus {
   border-color: #2e5c31;
   outline: none;
+  box-shadow: 0 0 0 3px rgba(46, 92, 49, 0.12);
 }
 
 .password-input {
   position: relative;
+  width: 90%;
+  max-width: 440px;
+}
+
+.form-group.full-width .password-input {
+  width: 90%;
+  max-width: 440px;
 }
 
 .toggle-password {
@@ -710,5 +768,33 @@ export default {
 
 .file-input {
   display: none;
+}
+
+@media (max-width: 600px) {
+  .profile-picture-section,
+  .profile-form {
+    padding: 20px 14px;
+    max-width: 100%;
+    width: 100%;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.08);
+  }
+
+  .form-section {
+    padding: 20px 16px;
+    border-radius: 14px;
+  }
+
+  .form-group label {
+    font-size: 13px;
+  }
+
+  .form-row {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .form-row .form-group {
+    max-width: none;
+  }
 }
 </style>

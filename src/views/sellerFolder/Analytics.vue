@@ -3,7 +3,7 @@
     <OfflineBanner />
     <Sidebar initialActiveItem="Analytics" />
     
-    <div class="main-content">
+    <div class="main-content" :style="mainContentStyles">
       <header class="header">
         <div class="page-title">
           <h1>Sales Analytics & Inventory</h1>
@@ -529,8 +529,14 @@ import InventoryModal from '@/components/sellerside/InventoryModal.vue';
 import Chart from 'chart.js/auto';
 import OfflineBanner from '@/components/OfflineBanner.vue';
 import { normalizeOrdersForSeller, getPriceFromEntry, STATUS_WHITELIST } from '@/helpers/salesUtils';
+import { useSidebarOffset } from '@/composables/useSidebarOffset';
 
 const router = useRouter();
+const { sidebarOffset, isMobileViewport, mobileTopOffset } = useSidebarOffset();
+const mainContentStyles = computed(() => ({
+  marginLeft: `${sidebarOffset.value}px`,
+  paddingTop: isMobileViewport.value ? mobileTopOffset : ''
+}));
 
 // Current seller ID
 const currentSellerId = ref('');
