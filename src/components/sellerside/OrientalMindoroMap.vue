@@ -25,6 +25,7 @@
         :max-bounds="bounds"
         :min-zoom="8"
         :max-zoom="15"
+        :zoom-control="false"
         @ready="onMapReady"
         style="height: 100%; width: 100%;"
       >
@@ -60,33 +61,6 @@
       <div v-if="municipalityMarkers.length === 0" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#888;">
         No delivery areas registered by sellers yet.
       </div>
-      
-      <!-- Legend -->
-      <div class="map-legend">
-        <div class="legend-title">User Count</div>
-        <div class="legend-items">
-          <div class="legend-item">
-            <div class="legend-color" style="background-color: #eff3ff;"></div>
-            <div class="legend-label">1-5</div>
-          </div>
-          <div class="legend-item">
-            <div class="legend-color" style="background-color: #bdd7e7;"></div>
-            <div class="legend-label">6-15</div>
-          </div>
-          <div class="legend-item">
-            <div class="legend-color" style="background-color: #6baed6;"></div>
-            <div class="legend-label">16-30</div>
-          </div>
-          <div class="legend-item">
-            <div class="legend-color" style="background-color: #3182bd;"></div>
-            <div class="legend-label">31-50</div>
-          </div>
-          <div class="legend-item">
-            <div class="legend-color" style="background-color: #08519c;"></div>
-            <div class="legend-label">50+</div>
-          </div>
-        </div>
-      </div>
     </div>
     
     <div class="stats-summary">
@@ -110,7 +84,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { db } from '@/firebase/firebaseConfig';
 import { collection, getDocs, doc, getDoc } from "firebase/firestore";
 import { getAuth, onAuthStateChanged } from 'firebase/auth';
@@ -140,6 +114,31 @@ const bounds = ref([
 ]);
 const auth = getAuth();
 const currentUserId = ref(null);
+const map = ref(null);
+const mapInstance = ref(null);
+let unsubscribeAuth = null;
+
+const refreshMapSize = () => {
+  const instance = mapInstance.value;
+  if (!instance || !instance._mapPane) return;
+  requestAnimationFrame(() => {
+    if (instance._mapPane) {
+      instance.invalidateSize();
+    }
+  });
+};
+
+const handleResize = () => {
+  refreshMapSize();
+};
+
+const onMapReady = (readyMap) => {
+  map.value = readyMap;
+  mapInstance.value = readyMap;
+  refreshMapSize();
+  // run a second pass after layout transitions finish (mobile collapse, etc.)
+  setTimeout(refreshMapSize, 150);
+};
 
 const municipalities = [
   { name: "Puerto Galera", coordinates: [13.5022, 120.9547] },
@@ -219,16 +218,20 @@ const fetchCurrentSellerAreas = async (userId) => {
     });
 
     console.log('Final municipalityMarkers:', municipalityMarkers.value);
+    await nextTick();
+    refreshMapSize();
   } catch (error) {
     console.error("Error fetching seller areas:", error);
   } finally {
     loading.value = false;
+    await nextTick();
+    refreshMapSize();
   }
 };
 
 // Listen for authentication changes
 onMounted(() => {
-  onAuthStateChanged(auth, (user) => {
+  unsubscribeAuth = onAuthStateChanged(auth, (user) => {
     if (user) {
       currentUserId.value = user.uid;
       console.log('User authenticated:', user.uid);
@@ -238,8 +241,18 @@ onMounted(() => {
       currentUserId.value = null;
       municipalityMarkers.value = [];
       loading.value = false;
+      nextTick(() => refreshMapSize());
     }
   });
+
+  window.addEventListener('resize', handleResize);
+});
+
+onBeforeUnmount(() => {
+  if (unsubscribeAuth) {
+    unsubscribeAuth();
+  }
+  window.removeEventListener('resize', handleResize);
 });
 
 // For popup info - show current seller info
@@ -333,12 +346,19 @@ const topMunicipality = computed(() => {
 .map-container {
   position: relative;
   height: 320px; /* Match the chart container height */
+  min-height: 260px;
   width: 100%;
   border-radius: 8px;
   overflow: hidden;
   margin-bottom: 15px;
   border: 1px solid #d1e5f0;
   flex: 1;
+}
+
+@media (max-width: 768px) {
+  .map-container {
+    height: 260px;
+  }
 }
 
 .popup-content {
@@ -365,45 +385,6 @@ const topMunicipality = computed(() => {
 .info-value {
   font-weight: 600;
   color: #333;
-}
-
-.map-legend {
-  position: absolute;
-  bottom: 10px;
-  left: 10px;
-  background-color: white;
-  padding: 8px;
-  border-radius: 4px;
-  box-shadow: 0 1px 5px rgba(0,0,0,0.2);
-  z-index: 1000;
-}
-
-.legend-title {
-  font-weight: 600;
-  font-size: 0.8rem;
-  margin-bottom: 5px;
-}
-
-.legend-items {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.legend-item {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.legend-color {
-  width: 15px;
-  height: 15px;
-  border: 1px solid #ccc;
-}
-
-.legend-label {
-  font-size: 0.7rem;
 }
 
 .stats-summary {

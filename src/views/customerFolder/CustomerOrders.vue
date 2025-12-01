@@ -134,10 +134,7 @@
                 Receipt
               </button>
               
-              <button v-if="order.status === 'Order Received'" class="reorder-btn">
-                <RefreshCw size="14" />
-                Reorder
-              </button>
+             
               
               <button 
                 v-if="order.status === 'Order Received' && !hasReviewed(order.id) && order.sellerId" 
@@ -497,19 +494,57 @@ export default {
 
     // Helper to resolve seller name and address from sellerId/users/products (cached and quiet)
     const fetchSellerDetails = async ({ sellerId, productId }) => {
-      const pickName = (obj) => {
-        if (!obj) return null;
-        const keys = ['businessName','farmName','sellerName','storeName','shopName','name','ownerName','fullName','username','displayName'];
-        for (const k of keys) { if (obj[k]) return obj[k]; }
-        if (obj.firstName || obj.lastName) return `${obj.firstName || ''} ${obj.lastName || ''}`.trim();
-        if (obj.profile && (obj.profile.businessName || obj.profile.name)) return obj.profile.businessName || obj.profile.name;
+      const buildNameFromParts = (source) => {
+        if (!source) return null;
+        const parts = ['firstName', 'middleName', 'lastName']
+          .map((key) => (source[key] ? String(source[key]).trim() : ''))
+          .filter(Boolean);
+        if (parts.length) return parts.join(' ').trim();
+        const altKeys = ['fullName', 'name', 'storeName', 'shopName', 'businessName'];
+        for (const key of altKeys) {
+          if (source[key]) return source[key];
+        }
         return null;
       };
+
+      const pickName = (obj) => {
+        if (!obj) return null;
+        const fromPersonal = buildNameFromParts(obj.personalInfo) || obj.personalInfo?.storeName;
+        if (fromPersonal) return fromPersonal;
+        const fromFarm = obj.farmDetails?.farmName || buildNameFromParts(obj.farmDetails);
+        if (fromFarm) return fromFarm;
+        const fromSelf = buildNameFromParts(obj);
+        if (fromSelf) return fromSelf;
+        const keys = ['businessName','farmName','sellerName','storeName','shopName','name','ownerName','fullName','username','displayName'];
+        for (const k of keys) {
+          if (obj[k]) return obj[k];
+          if (obj.personalInfo?.[k]) return obj.personalInfo[k];
+          if (obj.farmDetails?.[k]) return obj.farmDetails[k];
+        }
+        return null;
+      };
+
+      const deriveAddressFromObject = (source) => {
+        if (!source) return null;
+        if (typeof source === 'string') return source;
+        const direct = source.address || source.fullAddress || source.addressLine1 || source.businessAddress;
+        if (typeof direct === 'string' && direct.trim()) return direct;
+        if (direct && typeof direct === 'object') return getAddressDisplay(direct);
+        const locationCandidate = source.location || source.addressLine2;
+        if (typeof locationCandidate === 'string' && locationCandidate.trim()) return locationCandidate;
+        if (locationCandidate && typeof locationCandidate === 'object') return getAddressDisplay(locationCandidate);
+        const hasAddressHints = ['street','barangay','city','municipality','province','region','zip','postalCode'].some((key) => source[key]);
+        if (hasAddressHints) return getAddressDisplay(source);
+        return null;
+      };
+
       const composeAddr = (obj) => {
         if (!obj) return null;
-        const raw = obj.businessAddress || obj.address || obj.location;
-        if (typeof raw === 'string') return raw;
-        return getAddressDisplay(raw || obj);
+        const personalAddr = deriveAddressFromObject(obj.personalInfo?.address) || deriveAddressFromObject(obj.personalInfo?.location) || deriveAddressFromObject(obj.personalInfo);
+        if (personalAddr) return personalAddr;
+        const farmAddr = deriveAddressFromObject(obj.farmDetails?.farmAddress) || deriveAddressFromObject(obj.farmDetails?.address) || deriveAddressFromObject(obj.farmDetails?.location) || deriveAddressFromObject(obj.farmDetails);
+        if (farmAddr) return farmAddr;
+        return deriveAddressFromObject(obj.businessAddress) || deriveAddressFromObject(obj.address) || deriveAddressFromObject(obj.location);
       };
 
       // Try cache by sellerId first

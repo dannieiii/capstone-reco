@@ -126,7 +126,7 @@ const otherMenuItems = [
   { name: 'Customers', path: '/admin/customers', icon: Users },
   { name: 'Product Categories', path: '/admin/categories', icon: Layers },
   { name: 'Product Prices', path: '/admin/product-prices', icon: Tag },
-  { name: 'Forecasting', path: '/admin-forecasting', icon: TrendingUp },
+ // { name: 'Forecasting', path: '/admin-forecasting', icon: TrendingUp },
   { name: 'Price Monitoring', path: '/admin/price-monitoring', icon: LineChart },
   { name: 'Marketplace', path: '/', icon: ShoppingBag },
   { name: 'Help', path: '/admin/help', icon: HelpCircle },

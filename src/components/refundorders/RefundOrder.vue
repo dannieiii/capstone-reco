@@ -41,11 +41,11 @@
         <div class="refund-form-content">
           <!-- Product Information -->
           <div class="product-info">
-            <img :src="order.productImage" :alt="order.productName" class="product-image" />
+            <img :src="currentOrder.productImage" :alt="currentOrder.productName" class="product-image" />
             <div class="product-details">
-              <h3>{{ order.productName }}</h3>
-              <p class="product-meta">{{ order.quantity }} {{ order.unit }} x ₱{{ order.unitPrice }}</p>
-              <p class="product-total">x{{ order.quantity }}</p>
+              <h3>{{ currentOrder.productName }}</h3>
+              <p class="product-meta">{{ currentOrder.quantity }} {{ currentOrder.unit }} x ₱{{ currentOrder.unitPrice }}</p>
+              <p class="product-total">x{{ currentOrder.quantity }}</p>
             </div>
           </div>
           
@@ -133,7 +133,7 @@
               <div class="refund-row">
                 <span class="label">Refund Amount</span>
                 <div class="amount-section">
-                  <span class="amount">₱ {{ order.totalPrice }}</span>
+                  <span class="amount">₱ {{ currentOrder.totalPrice }}</span>
                   <button class="view-detail">View Detail <ChevronDown size="16" /></button>
                 </div>
               </div>
@@ -225,13 +225,31 @@ export default {
   },
   emits: ['back', 'cancel', 'success', 'error'],
   setup(props, { emit }) {
+    const defaultOrderData = {
+      id: null,
+      orderCode: '',
+      productId: '',
+      productName: '',
+      productImage: '',
+      quantity: 0,
+      unit: '',
+      unitPrice: 0,
+      totalPrice: 0,
+      userId: null,
+      sellerId: null,
+      sellerName: 'Seller',
+      sellerEmail: 'seller@example.com'
+    };
+
+    const currentOrder = computed(() => props.order ?? defaultOrderData);
+
     const selectedOption = ref(null);
     const fileInput = ref(null);
     const uploadedImages = ref([]);
     const isSubmitting = ref(false);
-    const fallbackEmail = ref(props.order.sellerEmail || 'seller@example.com');
+    const fallbackEmail = ref(currentOrder.value.sellerEmail || 'seller@example.com');
     const sellerInfo = ref({
-      name: props.order.sellerName || 'Seller',
+      name: currentOrder.value.sellerName || 'Seller',
       email: fallbackEmail.value
     });
     const defaultEmail = ref(fallbackEmail.value);
@@ -336,12 +354,13 @@ export default {
     };
     
     const fetchSellerInfo = async () => {
-      const sellerId = props.order?.sellerId;
-      const orderFallbackEmail = props.order?.sellerEmail || 'seller@example.com';
+      const orderSnapshot = currentOrder.value;
+      const sellerId = orderSnapshot?.sellerId;
+      const orderFallbackEmail = orderSnapshot?.sellerEmail || 'seller@example.com';
       fallbackEmail.value = orderFallbackEmail;
       if (!sellerId) {
         sellerInfo.value = {
-          name: props.order?.sellerName || 'Seller',
+          name: orderSnapshot?.sellerName || 'Seller',
           email: fallbackEmail.value
         };
         defaultEmail.value = fallbackEmail.value;
@@ -358,7 +377,7 @@ export default {
             .filter(Boolean)
             .join(' ')
             .trim();
-          const derivedName = fullName || personalInfo.storeName || props.order.sellerName || 'Seller';
+          const derivedName = fullName || personalInfo.storeName || orderSnapshot?.sellerName || 'Seller';
           const derivedEmail = personalInfo.email || fallbackEmail.value;
           sellerInfo.value = {
             name: derivedName,
@@ -368,7 +387,7 @@ export default {
           refundDetails.value.contactEmail = defaultEmail.value;
         } else {
           sellerInfo.value = {
-            name: props.order.sellerName || 'Seller',
+            name: orderSnapshot?.sellerName || 'Seller',
             email: fallbackEmail.value
           };
           defaultEmail.value = fallbackEmail.value;
@@ -377,7 +396,7 @@ export default {
       } catch (error) {
         console.error('Error fetching seller info:', error);
         sellerInfo.value = {
-          name: props.order.sellerName || 'Seller',
+          name: orderSnapshot?.sellerName || 'Seller',
           email: fallbackEmail.value
         };
         defaultEmail.value = fallbackEmail.value;
@@ -397,20 +416,26 @@ export default {
           name: img.name
         }));
         
+        const orderPayload = currentOrder.value;
+        if (!orderPayload?.id) {
+          emit('error', 'Order details are missing. Please try again.');
+          return;
+        }
+
         const refundData = {
-          orderId: props.order.id,
-          orderCode: props.order.orderCode,
-          productId: props.order.productId,
-          productName: props.order.productName,
-          productImage: props.order.productImage,
-          userId: props.order.userId,
-          sellerId: props.order.sellerId,
+          orderId: orderPayload.id,
+          orderCode: orderPayload.orderCode,
+          productId: orderPayload.productId,
+          productName: orderPayload.productName,
+          productImage: orderPayload.productImage,
+          userId: orderPayload.userId,
+          sellerId: orderPayload.sellerId,
           refundType: selectedOption.value.id,
           refundTitle: selectedOption.value.title,
           reason: refundDetails.value.reason.trim(),
           contactEmail: refundDetails.value.contactEmail.trim() || defaultEmail.value,
-          refundAmount: props.order.totalPrice,
-          orderTotal: props.order.totalPrice,
+          refundAmount: orderPayload.totalPrice,
+          orderTotal: orderPayload.totalPrice,
           evidence: evidenceImages,
           status: 'Pending',
           createdAt: serverTimestamp(),
@@ -423,7 +448,7 @@ export default {
         const docRef = await addDoc(collection(db, 'refunds'), refundData);
         
         // Update the order status to "Refund Processing"
-        const orderRef = doc(db, 'orders', props.order.id);
+        const orderRef = doc(db, 'orders', orderPayload.id);
         await updateDoc(orderRef, {
           status: 'Refund Processing',
           refundRequestedAt: serverTimestamp(),
@@ -465,6 +490,7 @@ export default {
       isSubmitting,
       defaultEmail,
       sellerInfo,
+      currentOrder,
       canSubmit,
       getReasonText,
       selectOption,

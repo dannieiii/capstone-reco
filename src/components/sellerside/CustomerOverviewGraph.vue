@@ -712,39 +712,36 @@ watch(chartData, () => {
   }
 }
 
-/* Dark mode support */
-@media (prefers-color-scheme: dark) {
-  .customer-overview-graph {
-    background-color: #1f2937;
-    border-color: #374151;
-  }
+:global(.dark) .customer-overview-graph {
+  background-color: #1f2937;
+  border-color: #374151;
+}
 
-  .chart-title h3 {
-    color: #f9fafb;
-  }
+:global(.dark) .customer-overview-graph .chart-title h3 {
+  color: #f9fafb;
+}
 
-  .chart-title p,
-  .legend-item,
-  .summary-label {
-    color: #9ca3af;
-  }
+:global(.dark) .customer-overview-graph .chart-title p,
+:global(.dark) .customer-overview-graph .legend-item,
+:global(.dark) .customer-overview-graph .summary-label {
+  color: #9ca3af;
+}
 
-  .summary-value {
-    color: #f9fafb;
-  }
+:global(.dark) .customer-overview-graph .summary-value {
+  color: #f9fafb;
+}
 
-  .time-filter {
-    background-color: #374151;
-    border-color: #4b5563;
-    color: #f9fafb;
-  }
+:global(.dark) .customer-overview-graph .time-filter {
+  background-color: #374151;
+  border-color: #4b5563;
+  color: #f9fafb;
+}
 
-  .chart-summary {
-    border-color: #374151;
-  }
+:global(.dark) .customer-overview-graph .chart-summary {
+  border-color: #374151;
+}
 
-  .summary-item {
-    background-color: #374151;
-  }
+:global(.dark) .customer-overview-graph .summary-item {
+  background-color: #374151;
 }
 </style>

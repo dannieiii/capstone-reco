@@ -128,6 +128,10 @@
               </div>
               <div class="product-ref-info">
                 <h4>{{ post.productData.productName }}</h4>
+                <p class="product-ref-farm" v-if="post.productData.farmName">
+                  <span class="farm-icon">🏪</span>
+                  {{ post.productData.farmName }}
+                </p>
                 <p class="product-ref-price">₱{{ getProductPrice(post.productData) }}</p>
                 <span class="view-product-btn">View Product →</span>
               </div>
@@ -280,7 +284,11 @@
               <img :src="selectedProduct.image || '/placeholder.svg?height=50&width=50'" alt="Product">
               <div class="selected-product-info">
                 <h4>{{ selectedProduct.productName }}</h4>
-                <p>₱{{ getProductPrice(selectedProduct) }}</p>
+                <p v-if="selectedProduct.farmName" class="product-farm-name">
+                  <span class="farm-icon">🏪</span>
+                  {{ selectedProduct.farmName }}
+                </p>
+                <p class="product-price">₱{{ getProductPrice(selectedProduct) }}</p>
               </div>
             </div>
           </div>
@@ -369,7 +377,11 @@
               <img :src="product.image || '/placeholder.svg?height=60&width=60'" alt="Product">
               <div class="product-item-info">
                 <h4>{{ product.productName }}</h4>
-                <p>₱{{ getProductPrice(product) }}</p>
+                <p v-if="product.farmName" class="product-farm-label">
+                  <span class="farm-icon">🏪</span>
+                  {{ product.farmName }}
+                </p>
+                <p class="product-price-label">₱{{ getProductPrice(product) }}</p>
               </div>
             </div>
           </div>
@@ -492,6 +504,7 @@ import {
   addDoc, 
   serverTimestamp, 
   query, 
+  where,
   onSnapshot,
   doc,
   updateDoc,
@@ -657,13 +670,49 @@ const getProductPrice = (product) => {
   return '0.00';
 };
 
+const fetchSellerFarmName = async (sellerId) => {
+  if (!sellerId) return 'Unknown Farm';
+  try {
+    // First, try to query sellers collection where userId matches the sellerId
+    const sellersQuery = query(collection(db, 'sellers'), where('userId', '==', sellerId));
+    const sellersSnapshot = await getDocs(sellersQuery);
+    
+    if (!sellersSnapshot.empty) {
+      const sellerData = sellersSnapshot.docs[0].data();
+      return sellerData.farmDetails?.farmName ||
+             `${sellerData.personalInfo?.firstName || ''} ${sellerData.personalInfo?.lastName || ''}`.trim() ||
+             'Unknown Farm';
+    }
+    
+    // Fallback: try direct document lookup (in case sellerId is the document ID)
+    const sellerDoc = await getDoc(doc(db, 'sellers', sellerId));
+    if (sellerDoc.exists()) {
+      const sellerData = sellerDoc.data();
+      return sellerData.farmDetails?.farmName ||
+             `${sellerData.personalInfo?.firstName || ''} ${sellerData.personalInfo?.lastName || ''}`.trim() ||
+             'Unknown Farm';
+    }
+  } catch (error) {
+    console.error('Error fetching seller farm name:', error);
+  }
+  return 'Unknown Farm';
+};
+
 const fetchAvailableProducts = async () => {
   try {
     const productsSnapshot = await getDocs(collection(db, 'products'));
-    availableProducts.value = productsSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+    const productsWithFarmNames = await Promise.all(
+      productsSnapshot.docs.map(async (doc) => {
+        const productData = doc.data();
+        const farmName = await fetchSellerFarmName(productData.sellerId || productData.userId);
+        return {
+          id: doc.id,
+          ...productData,
+          farmName
+        };
+      })
+    );
+    availableProducts.value = productsWithFarmNames;
   } catch (error) {
     console.error('Error fetching products:', error);
   }
@@ -1035,29 +1084,42 @@ const fetchPosts = async () => {
     isLoading.value = true;
     
     const q = query(collection(db, 'communityPosts'));
-    const unsubscribePosts = onSnapshot(q, (querySnapshot) => {
-      const allPosts = querySnapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          ...data,
-          createdAt: data.createdAt || serverTimestamp(),
-          replies: data.replies || [],
-          likeCount: data.likeCount || 0,
-          loveCount: data.loveCount || 0,
-          laughCount: data.laughCount || 0,
-          wowCount: data.wowCount || 0,
-          sadCount: data.sadCount || 0,
-          angryCount: data.angryCount || 0,
-          replyCount: data.replyCount || 0,
-          viewCount: data.viewCount || 0,
-          reactions: data.reactions || [],
-          isAnonymous: data.isAnonymous || false,
-          productId: data.productId || null,
-          productName: data.productName || null,
-          productData: data.productData || null
-        };
-      });
+    const unsubscribePosts = onSnapshot(q, async (querySnapshot) => {
+      const allPosts = await Promise.all(
+        querySnapshot.docs.map(async (doc) => {
+          const data = doc.data();
+          let productData = data.productData || null;
+          
+          // If there's a product reference, fetch the farm name
+          if (productData && (productData.sellerId || productData.userId)) {
+            const farmName = await fetchSellerFarmName(productData.sellerId || productData.userId);
+            productData = {
+              ...productData,
+              farmName
+            };
+          }
+          
+          return {
+            id: doc.id,
+            ...data,
+            createdAt: data.createdAt || serverTimestamp(),
+            replies: data.replies || [],
+            likeCount: data.likeCount || 0,
+            loveCount: data.loveCount || 0,
+            laughCount: data.laughCount || 0,
+            wowCount: data.wowCount || 0,
+            sadCount: data.sadCount || 0,
+            angryCount: data.angryCount || 0,
+            replyCount: data.replyCount || 0,
+            viewCount: data.viewCount || 0,
+            reactions: data.reactions || [],
+            isAnonymous: data.isAnonymous || false,
+            productId: data.productId || null,
+            productName: data.productName || null,
+            productData
+          };
+        })
+      );
       
       posts.value = allPosts;
       isLoading.value = false;
@@ -1669,6 +1731,19 @@ const clearReply = () => {
   word-wrap: break-word;
 }
 
+.product-ref-farm {
+  font-size: 12px;
+  color: #666;
+  margin: 2px 0 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.product-ref-farm .farm-icon {
+  font-size: 11px;
+}
+
 .product-ref-price {
   font-size: 13px;
   color: #2e5c31;
@@ -2219,6 +2294,26 @@ const clearReply = () => {
   color: #333;
 }
 
+.selected-product-info .product-farm-name {
+  font-size: 11px;
+  color: #666;
+  margin: 0 0 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.selected-product-info .product-farm-name .farm-icon {
+  font-size: 10px;
+}
+
+.selected-product-info .product-price {
+  font-size: 13px;
+  color: #2e5c31;
+  font-weight: 600;
+  margin: 0;
+}
+
 .selected-product-info p {
   font-size: 13px;
   color: #2e5c31;
@@ -2385,6 +2480,30 @@ const clearReply = () => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.product-item-info .product-farm-label {
+  font-size: 11px;
+  color: #666;
+  margin: 0 0 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.product-item-info .product-farm-label .farm-icon {
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.product-item-info .product-price-label {
+  font-size: 13px;
+  color: #2e5c31;
+  font-weight: 600;
+  margin: 0;
 }
 
 .product-item-info p {

@@ -1,6 +1,6 @@
 <template>
   <!-- Mobile Header -->
-  <div class="mobile-header" :class="{ 'dark-mode': isDarkMode }" v-if="isMobile">
+  <div class="mobile-header" v-if="isMobile">
     <button class="mobile-hamburger" @click="toggleMobileSidebar">
       <svg viewBox="0 0 24 24" width="24" height="24">
         <path fill="currentColor" d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>
@@ -15,7 +15,6 @@
        v-if="isMobile && isMobileSidebarOpen"></div>
   
   <div class="sidebar" :class="{ 
-    'dark-mode': isDarkMode, 
     'collapsed': isCollapsed,
     'mobile-sidebar': isMobile,
     'mobile-open': isMobileSidebarOpen
@@ -52,16 +51,6 @@
       </ul>
     </nav>
     
-    <div class="theme-toggle">
-      <button class="theme-btn" :class="{ active: !isDarkMode }" @click="setLightMode">
-        <Sun size="18" />
-        <span>Light</span>
-      </button>
-      <button class="theme-btn" :class="{ active: isDarkMode }" @click="setDarkMode">
-        <Moon size="18" />
-        <span>Dark</span>
-      </button>
-    </div>
   </div>
 
   <!-- Logout Confirmation Modal -->
@@ -89,8 +78,6 @@ import {
   ThumbsUp, 
   HelpCircle, 
   LogOut,
-  Sun,
-  Moon,
   TrendingUp,
   Calendar,
   FileText,
@@ -114,7 +101,6 @@ const router = useRouter();
 const route = useRoute();
 
 const activeItem = ref(props.initialActiveItem);
-const isDarkMode = ref(false);
 const isCollapsed = ref(false);
 const isMobile = ref(false);
 const isMobileSidebarOpen = ref(false);
@@ -258,18 +244,6 @@ const cancelLogout = () => {
   showLogoutModal.value = false;
 };
 
-const setLightMode = () => {
-  isDarkMode.value = false;
-  document.body.classList.remove('dark');
-  localStorage.setItem('theme', 'light');
-};
-
-const setDarkMode = () => {
-  isDarkMode.value = true;
-  document.body.classList.add('dark');
-  localStorage.setItem('theme', 'dark');
-};
-
 const toggleSidebar = () => {
   isCollapsed.value = !isCollapsed.value;
   localStorage.setItem('sidebarCollapsed', isCollapsed.value);
@@ -284,11 +258,6 @@ const toggleMobileSidebar = () => {
 };
 
 onMounted(() => {
-  const savedTheme = localStorage.getItem('theme');
-  if (savedTheme === 'dark') {
-    setDarkMode();
-  }
-  
   const savedCollapseState = localStorage.getItem('sidebarCollapsed');
   if (savedCollapseState === 'true') {
     isCollapsed.value = true;
@@ -326,10 +295,6 @@ onBeforeUnmount(() => {
   padding: 0 16px;
   z-index: 1000;
   box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-}
-
-.mobile-header.dark-mode {
-  background: linear-gradient(135deg, #1a3a1c, #2e5c31);
 }
 
 .mobile-hamburger {
@@ -541,54 +506,14 @@ onBeforeUnmount(() => {
   display: flex;
 }
 
-.theme-toggle {
-  display: flex;
-  margin: 12px 8px;
-  background-color: rgba(255, 255, 255, 0.15);
-  border-radius: 8px;
-  padding: 4px;
-}
-
-.theme-btn {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 8px;
-  background: none;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  color: rgba(255, 255, 255, 0.8);
-  font-size: 0.85rem;
-}
-
-.theme-btn.active {
-  background-color: rgba(255, 255, 255, 0.25);
-  color: #ffffff;
-}
-
-/* Dark mode styles */
-.dark-mode {
-  background: linear-gradient(135deg, #1a3a1c, #2e5c31);
-}
 
 /* Collapsed state styles */
-.sidebar.collapsed .nav-text,
-.sidebar.collapsed .theme-toggle span {
+.sidebar.collapsed .nav-text {
   display: none;
 }
 
 .sidebar.collapsed .nav-icon {
   margin-right: 0;
-}
-
-.sidebar.collapsed .theme-toggle {
-  flex-direction: column;
-  align-items: center;
-  padding: 4px;
-  gap: 4px;
 }
 
 /* Responsive styles */

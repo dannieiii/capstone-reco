@@ -71,9 +71,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue'
-import { collection, getDocs, query, where } from 'firebase/firestore'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+import { collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore'
 import { db, auth } from '@/firebase/firebaseConfig'
+import { normalizeOrdersForSeller, STATUS_WHITELIST, getPriceFromEntry } from '@/helpers/salesUtils'
 
 // Props
 const props = defineProps({
@@ -89,6 +90,8 @@ const orders = ref([])
 const loading = ref(true)
 const selectedPeriod = ref('month')
 const currentSellerId = ref('')
+const sellerDocId = ref('')
+let authUnsubscribe = null
 
 // Unit display mapping (same as Analytics.vue)
 const unitDisplayMap = {
@@ -151,31 +154,81 @@ const formatNumber = (num) => {
   return parseFloat(num).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")
 }
 
-// Fetch orders from Firebase - filtered by sellerId (same logic as Analytics.vue)
+// Fetch orders using the same normalization logic as SalesRevenueChart.vue
 const fetchOrders = async () => {
   try {
-    if (!currentSellerId.value) return
-    
-    const ordersQuery = query(
-      collection(db, "orders"),
-      where("sellerId", "==", currentSellerId.value)
-    )
-    
-    const ordersSnapshot = await getDocs(ordersQuery)
-    const ordersList = []
-    
-    ordersSnapshot.forEach((doc) => {
-      const orderData = doc.data()
-      ordersList.push({
-        id: doc.id,
-        ...orderData
+    if (!currentSellerId.value) {
+      orders.value = []
+      return
+    }
+
+    const ordersRef = collection(db, 'orders')
+
+    const tryQueryByField = async (field, value) => {
+      try {
+        try {
+          const snap = await getDocs(query(ordersRef, where(field, '==', value), orderBy('timestamp', 'desc'), limit(500)))
+          return snap.docs
+        } catch (e1) {
+          try {
+            const snap = await getDocs(query(ordersRef, where(field, '==', value), orderBy('createdAt', 'desc'), limit(500)))
+            return snap.docs
+          } catch (e2) {
+            const snap = await getDocs(query(ordersRef, where(field, '==', value), limit(500)))
+            return snap.docs
+          }
+        }
+      } catch (error) {
+        console.error('Error querying orders by field:', error)
+        return []
+      }
+    }
+
+    const aggregated = []
+    const seen = new Set()
+    const candidates = [currentSellerId.value]
+    if (sellerDocId.value && sellerDocId.value !== currentSellerId.value) {
+      candidates.push(sellerDocId.value)
+    }
+
+    const addEntries = (entries) => {
+      entries.forEach((entry) => {
+        const key = entry.id || `${entry.productName}-${entry.saleDate?.toISOString?.()}`
+        if (seen.has(key)) return
+        seen.add(key)
+        aggregated.push(entry)
       })
-    })
-    
-    orders.value = ordersList
-    
+    }
+
+    for (const id of candidates) {
+      let docs = await tryQueryByField('sellerId', id)
+      if (!docs.length) docs = await tryQueryByField('sellerID', id)
+      if (!docs.length) docs = await tryQueryByField('sellerUid', id)
+      if (!docs.length) docs = await tryQueryByField('sellerUID', id)
+
+      if (!docs.length) {
+        let recentSnap
+        try {
+          recentSnap = await getDocs(query(ordersRef, orderBy('timestamp', 'desc'), limit(500)))
+        } catch (e3) {
+          try {
+            recentSnap = await getDocs(query(ordersRef, orderBy('createdAt', 'desc'), limit(500)))
+          } catch (e4) {
+            recentSnap = await getDocs(query(ordersRef, limit(500)))
+          }
+        }
+        const normalizedFallback = normalizeOrdersForSeller(recentSnap.docs, id, { statusWhitelist: STATUS_WHITELIST })
+        addEntries(normalizedFallback)
+      } else {
+        const normalized = normalizeOrdersForSeller(docs, id, { statusWhitelist: STATUS_WHITELIST })
+        addEntries(normalized)
+      }
+    }
+
+    orders.value = aggregated
   } catch (error) {
-    console.error("Error fetching orders:", error)
+    console.error('Error fetching orders:', error)
+    orders.value = []
   }
 }
 
@@ -188,18 +241,18 @@ const calculateTopProducts = () => {
   
   filteredOrders.forEach(order => {
     // Skip cancelled orders
-    if (order.status === 'Cancelled') return
+    if (order.status && order.status.toLowerCase() === 'cancelled') return
     
-    const productName = order.productName
+    const productName = order.productName || 'Unnamed Product'
     if (!productSales[productName]) {
       productSales[productName] = {
         productName: productName,
         category: order.category || 'Other',
-        unitPrice: order.unitPrice || 0,
+        unitPrice: order.unitPrice || (order.price && order.quantity ? order.price / Math.max(order.quantity, 1) : 0) || 0,
         unit: order.unit || 'piece',
         sold: 0,
         profit: 0,
-        image: order.productImage || '',
+        image: order.productImage || (Array.isArray(order.images) ? order.images[0] : ''),
         productImage: order.productImage || ''
       }
     }
@@ -208,8 +261,9 @@ const calculateTopProducts = () => {
     productSales[productName].sold += order.quantity || 0
     
     // Add profit (simplified calculation - same as Analytics.vue)
-    const itemPrice = order.itemPrice || (order.unitPrice * order.quantity) || order.totalPrice || 0
-    productSales[productName].profit += itemPrice * 0.3 // Assume 30% profit margin
+    const itemPrice = getPriceFromEntry(order)
+    const explicitProfit = typeof order.profit === 'number' ? order.profit : null
+    productSales[productName].profit += explicitProfit !== null ? explicitProfit : itemPrice * 0.3
   })
   
   // Convert to array and sort by quantity sold - TOP 5 ONLY
@@ -243,10 +297,14 @@ const filterOrdersByPeriod = (ordersList) => {
   
   return ordersList.filter(order => {
     let orderDate
-    if (order.createdAt && typeof order.createdAt.toDate === 'function') {
+    if (order.normalizedDate instanceof Date) {
+      orderDate = order.normalizedDate
+    } else if (order.createdAt && typeof order.createdAt.toDate === 'function') {
       orderDate = order.createdAt.toDate()
     } else if (order.timestamp && typeof order.timestamp.toDate === 'function') {
       orderDate = order.timestamp.toDate()
+    } else if (order.saleDate instanceof Date) {
+      orderDate = order.saleDate
     } else {
       orderDate = new Date()
     }
@@ -268,23 +326,52 @@ const fetchTopProducts = async () => {
   }
 }
 
+const resolveSellerDocId = async (userId) => {
+  if (!userId) {
+    sellerDocId.value = ''
+    return
+  }
+  try {
+    const sellersRef = collection(db, 'sellers')
+    const snap = await getDocs(query(sellersRef, where('userId', '==', userId), limit(1)))
+    sellerDocId.value = snap.empty ? '' : snap.docs[0].id
+  } catch (error) {
+    console.error('Error resolving seller document ID:', error)
+    sellerDocId.value = ''
+  }
+}
+
+const initializeForSeller = async (sellerId) => {
+  if (!sellerId) return
+  currentSellerId.value = sellerId
+  await resolveSellerDocId(sellerId)
+  await fetchTopProducts()
+}
+
 // Watch for sellerId changes
-watch(() => props.sellerId, (newSellerId) => {
+watch(() => props.sellerId, async (newSellerId) => {
   if (newSellerId) {
-    currentSellerId.value = newSellerId
-    fetchTopProducts()
+    await initializeForSeller(newSellerId)
   }
 }, { immediate: true })
 
 // Lifecycle
 onMounted(() => {
-  // Get current user/seller ID (same as Analytics.vue)
-  auth.onAuthStateChanged((user) => {
+  authUnsubscribe = auth.onAuthStateChanged(async (user) => {
     if (user) {
-      currentSellerId.value = props.sellerId || user.uid
-      fetchTopProducts()
+      if (!props.sellerId) {
+        await initializeForSeller(user.uid)
+      }
+    } else {
+      currentSellerId.value = ''
+      orders.value = []
+      topProducts.value = []
     }
   })
+})
+
+onUnmounted(() => {
+  if (authUnsubscribe) authUnsubscribe()
 })
 </script>
 

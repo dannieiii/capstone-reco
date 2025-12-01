@@ -162,18 +162,18 @@
               <div class="product-info">
                 <h4>{{ product.name || product.productName || 'Untitled Product' }}</h4>
                 <div class="product-meta">
-                  <p class="product-price">₱{{ getProductPrice(product) }}</p>
-                  <p class="product-unit">/ {{ getProductUnit(product) }}</p>
-                </div>
-                <div class="product-stats">
-                  <div class="stat">
+                  <div class="product-stats">
                     <Eye size="12" />
                     <span>{{ product.views || 0 }}</span>
                   </div>
-                  <div class="stat">
+                  <div class="product-stats">
                     <ShoppingBag size="12" />
                     <span>{{ product.sold || 0 }}</span>
                   </div>
+                </div>
+                <div class="price-info">
+                  <span class="product-price">₱{{ getProductPrice(product) }}</span>
+                  <span class="product-unit">/ {{ getProductUnit(product) }}</span>
                 </div>
                 <div class="stock-info" :class="{ 'low-stock': getProductStock(product) < 10, 'out-of-stock': getProductStock(product) <= 0 }">
                   <Package size="14" />
@@ -237,10 +237,11 @@
   
   // Computed property for filtered products
   const filteredProducts = computed(() => {
+    const visibleProducts = products.value.filter(product => product.status !== 'notAvailable');
     if (!selectedCategory.value) {
-      return products.value;
+      return visibleProducts;
     }
-    return products.value.filter(product => 
+    return visibleProducts.filter(product => 
       product.category === selectedCategory.value
     );
   });
@@ -1179,6 +1180,22 @@
   }
   
   .product-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+  
+  .product-stats {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: #666;
+  }
+  
+  .price-info {
     display: flex;
     align-items: baseline;
     margin-bottom: 8px;

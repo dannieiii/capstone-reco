@@ -678,39 +678,5 @@ watch(chartData, () => {
   }
 }
 
-/* Dark mode support */
-@media (prefers-color-scheme: dark) {
-  .sales-revenue-overview {
-    background-color: #1f2937;
-    border-color: #374151;
-  }
-
-  .chart-title h3 {
-    color: #f9fafb;
-  }
-
-  .chart-title p,
-  .legend-item,
-  .summary-label {
-    color: #9ca3af;
-  }
-
-  .summary-value {
-    color: #f9fafb;
-  }
-
-  .time-filter {
-    background-color: #374151;
-    border-color: #4b5563;
-    color: #f9fafb;
-  }
-
-  .chart-summary {
-    border-color: #374151;
-  }
-
-  .summary-item {
-    background-color: #374151;
-  }
-}
+/* Intentionally omit prefers-color-scheme overrides so the card stays light even when the OS is in dark mode */
 </style>

@@ -646,12 +646,13 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   position: relative;
+  overflow: hidden;
 }
 
 .product-image img {
-  max-width: 100%;
-  max-height: 80%;
-  object-fit: contain;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .product-badge {
