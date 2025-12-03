@@ -1726,18 +1726,34 @@ async handleBuyNowConfirm() {
 }
 
 .product-image-container {
-  height: 250px;
+  height: 300px;
   background-color: white;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
+  overflow: hidden;
 }
 
 .product-image {
-  max-width: 80%;
-  max-height: 80%;
-  object-fit: contain;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+/* Standard size for web/desktop screens - centered with consistent dimensions */
+@media (min-width: 768px) {
+  .product-image-container {
+    height: 350px;
+    max-width: 500px;
+    margin: 0 auto;
+    border-radius: 12px;
+  }
+  
+  .product-image {
+    border-radius: 12px;
+  }
 }
 
 /* Popularity badges */

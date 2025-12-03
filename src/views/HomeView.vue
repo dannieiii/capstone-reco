@@ -961,6 +961,14 @@ export default {
              (product.stockPerPiece > 0);
     };
 
+    const isProductVisible = (product) => {
+      if (!product) return false;
+      const status = product.status || 'available';
+      const adminBlocked = status === 'inactive' || status === 'notAvailable';
+      const sellerDisabled = product.isActive === false;
+      return !adminBlocked && !sellerDisabled;
+    };
+
     // Computed property for displayed categories (max 8, with "More" button if needed)
     const displayedCategories = computed(() => {
       console.log('Computing displayedCategories, total categories:', categories.value.length);
@@ -1076,8 +1084,8 @@ export default {
 const filteredProducts = computed(() => {
   let result = [...products.value];
 
-  // Exclude products deactivated by Admin
-  result = result.filter(p => p.status !== 'notAvailable' && p.isActive !== false);
+  // Exclude products deactivated by admin or seller
+  result = result.filter(isProductVisible);
   
   // Apply category filter (exact match with category.category)
   if (selectedCategory.value) {
@@ -1322,16 +1330,19 @@ const filteredProducts = computed(() => {
           limit(5))
         );
         
-    trendingProducts.value = querySnapshot.docs.map(doc => {
+        trendingProducts.value = querySnapshot.docs.map(doc => {
           const data = doc.data();
+          const status = data.status || 'available';
+          const baseIsActive = data.isActive !== undefined ? data.isActive : true;
+          const adminBlocked = status === 'inactive' || status === 'notAvailable';
           return {
-            id: doc.id,
+        id: doc.id,
       ...data,
-      status: data.status || 'available',
-      isActive: data.isActive !== undefined ? data.isActive : true,
-            isTrending: true
+      status,
+      isActive: baseIsActive && !adminBlocked,
+        isTrending: true
           };
-  }).filter(p => p.status !== 'notAvailable' && p.isActive !== false);
+      }).filter(isProductVisible);
       } catch (error) {
         console.error('Error fetching trending products:', error);
       }
@@ -1370,6 +1381,10 @@ const fetchProducts = async () => {
             }
           }
           
+          const status = productData.status || 'available';
+          const baseIsActive = productData.isActive !== undefined ? productData.isActive : true;
+          const adminBlocked = status === 'inactive' || status === 'notAvailable';
+
           return {
             id: doc.id,
             ...productData,
@@ -1382,8 +1397,8 @@ const fetchProducts = async () => {
             ribbon: ribbon,
             isTrending,
             isHotSeller,
-            status: productData.status || 'available',
-            isActive: productData.isActive !== undefined ? productData.isActive : true,
+            status,
+            isActive: baseIsActive && !adminBlocked,
             // Ensure all unit price fields are set
             pricePerKilo: productData.pricePerKilo || 0,
             pricePerSack: productData.pricePerSack || 0,
@@ -1424,12 +1439,12 @@ const fetchProducts = async () => {
 
     // Add computed property for wholesale products
     const wholesaleProducts = computed(() => {
-  return products.value.filter(product => product.wholesaleAvailable === true && product.status !== 'notAvailable' && product.isActive !== false);
+  return products.value.filter(product => product.wholesaleAvailable === true && isProductVisible(product));
     });
 
     // Add computed property for pre-order products
     const preOrderProducts = computed(() => {
-  return products.value.filter(product => (product.preOrders === true || product.isPreOrder === true) && product.status !== 'notAvailable' && product.isActive !== false);
+  return products.value.filter(product => (product.preOrders === true || product.isPreOrder === true) && isProductVisible(product));
     });
 
     // Add method to filter by wholesale

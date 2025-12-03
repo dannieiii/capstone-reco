@@ -33,8 +33,12 @@
     "@vue/cli-plugin-router": "~5.0.0",
     "@vue/cli-plugin-vuex": "~5.0.0",
     "@vue/cli-service": "~5.0.0",
+    "crypto-browserify": "^3.12.1",
     "favicons": "^7.2.0",
     "fs-extra": "^11.2.0",
-    "jimp": "^0.22.10"
+    "jimp": "^0.22.10",
+    "path-browserify": "^1.0.1",
+    "stream-browserify": "^3.0.0",
+    "vm-browserify": "^1.1.2"
   }
 }

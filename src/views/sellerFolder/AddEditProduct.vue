@@ -86,40 +86,37 @@
 
       <form @submit.prevent="saveProduct" class="product-form">
         <div class="form-grid">
-          
-          <!-- Basic Information -->
-          <div class="form-section">
-            <h2>Basic Information</h2>
-              <!-- Category Selection with Search -->
-            <div class="form-group">
-              <label for="category">Category *</label>
-              <div class="searchable-dropdown">
-                <input 
-                  type="text" 
-                  v-model="categorySearchText"
-                  @input="onCategorySearch"
-                  @focus="showCategoryDropdown = true"
-                  @blur="hideCategoryDropdown"
-                  placeholder="Type to search or select category..."
-                  class="searchable-input"
-                  autocomplete="off"
-                >
+        <div class="form-section">
+          <h2>Basic Information</h2>
+          <div class="form-group">
+            <label for="category">Category *</label>
+            <div class="searchable-dropdown">
+              <input 
+                type="text" 
+                v-model="categorySearchText"
+                @input="onCategorySearch"
+                @focus="showCategoryDropdown = true"
+                @blur="hideCategoryDropdown"
+                placeholder="Type to search or select category..."
+                class="searchable-input"
+                autocomplete="off"
+              >
+              <div 
+                v-if="showCategoryDropdown && filteredCategories.length > 0" 
+                class="dropdown-list"
+              >
                 <div 
-                  v-if="showCategoryDropdown && filteredCategories.length > 0" 
-                  class="dropdown-list"
+                  v-for="cat in filteredCategories" 
+                  :key="cat.id" 
+                  @mousedown="selectCategory(cat.category)"
+                  class="dropdown-item"
                 >
-                  <div 
-                    v-for="cat in filteredCategories" 
-                    :key="cat.id" 
-                    @mousedown="selectCategory(cat.category)"
-                    class="dropdown-item"
-                  >
-                    {{ cat.category }}
-                  </div>
+                  {{ cat.category }}
                 </div>
               </div>
-            </div>     
-                       <!-- Product Name Selection with Search -->
+            </div>
+          </div>     
+                   <!-- Product Name Selection with Search -->
                 <div class="form-group">
   <label for="productName">Product Name *</label>
   <div class="product-select-container">
@@ -1210,12 +1207,19 @@
 
             <div class="form-group">
               <label>Status *</label>
-              <select v-model="product.status" required>
+              <select v-model="product.status" :disabled="isStatusLocked" required>
                 <option value="available">Available</option>
                 <option value="limited">Limited Stock</option>
                 <option value="preorder">Pre-order Only</option>
                 <option value="notAvailable">Not Available (hide)</option>
+                <option value="inactive">Inactive (admin only)</option>
               </select>
+              <p v-if="isStatusLocked" class="admin-lock-note">
+                Status is locked until all selected unit prices fall within the official D.A. price range that triggered the deactivation.
+              </p>
+              <p v-else-if="hasAdminDeactivation" class="compliance-note">
+                Pricing now matches the D.A. range. You can adjust the status after saving your changes.
+              </p>
             </div>
           </div>
 
@@ -1382,7 +1386,26 @@ export default {
       { value: 'perBundle', label: 'Per Bundle' },
       { value: 'perTray', label: 'Per Tray' },
       { value: 'perPiece', label: 'Per Piece' }
-    ]);    // Component state
+    ]);
+
+    const unitPriceFieldMap = {
+      'per kilo': 'pricePerKilo',
+      'perkilo': 'pricePerKilo',
+      'per sack': 'pricePerSack',
+      'persack': 'pricePerSack',
+      'per tali': 'pricePerTali',
+      'pertali': 'pricePerTali',
+      'per kaing': 'pricePerKaing',
+      'perkaing': 'pricePerKaing',
+      'per bundle': 'pricePerBundle',
+      'perbundle': 'pricePerBundle',
+      'per tray': 'pricePerTray',
+      'pertray': 'pricePerTray',
+      'per piece': 'pricePerPiece',
+      'perpiece': 'pricePerPiece'
+    };
+
+    // Component state
     const isEditing = computed(() => route.name === 'EditProduct');
     const isSaving = ref(false);
     const selectedUnits = ref([]);
@@ -1553,6 +1576,50 @@ export default {
       updatedAt: null,
       availableUnits: []
     });
+
+    const parseCurrencyValue = (val) => {
+      if (val === undefined || val === null || val === '') return NaN;
+      if (typeof val === 'number') return val;
+      const cleaned = val.toString().replace(/[^0-9.]/g, '');
+      return cleaned ? parseFloat(cleaned) : NaN;
+    };
+
+    const extractRangeValue = (rangeText, type = 'min') => {
+      if (!rangeText) return NaN;
+      const matches = rangeText.toString().match(/\d+(?:\.\d+)?/g);
+      if (!matches || matches.length === 0) return NaN;
+      return parseFloat(type === 'max' ? matches[matches.length - 1] : matches[0]);
+    };
+
+    const hasAdminDeactivation = computed(() => {
+      const adminFlag = product.value.deactivatedBy || product.value.deactivationReason;
+      return product.value.status === 'inactive' && !!adminFlag;
+    });
+
+    const isPricingCompliant = computed(() => {
+      if (!hasAdminDeactivation.value) return false;
+      if (!selectedReferenceUnits.value || selectedReferenceUnits.value.length === 0) return false;
+
+      return selectedReferenceUnits.value.every(unitRef => {
+        if (!unitRef) return false;
+        const unitKey = (unitRef.unit || '').toString().toLowerCase().replace(/\s+/g, ' ').trim();
+        const keyNormalized = unitKey.replace(/\s/g, '');
+        const priceField = unitPriceFieldMap[unitKey] || unitPriceFieldMap[keyNormalized];
+        if (!priceField) return false;
+        const priceValue = parseCurrencyValue(product.value[priceField]);
+        if (!isFinite(priceValue) || priceValue <= 0) return false;
+        const rawMin = unitRef.minPrice ?? unitRef.newMinPrice;
+        const rawMax = unitRef.maxPrice ?? unitRef.newMaxPrice;
+        const parsedMin = parseCurrencyValue(rawMin);
+        const parsedMax = parseCurrencyValue(rawMax);
+        const minPrice = isFinite(parsedMin) ? parsedMin : extractRangeValue(unitRef.priceRange, 'min');
+        const maxPrice = isFinite(parsedMax) ? parsedMax : extractRangeValue(unitRef.priceRange, 'max');
+        if (!isFinite(minPrice) || !isFinite(maxPrice) || maxPrice <= 0) return false;
+        return priceValue >= minPrice && priceValue <= maxPrice;
+      });
+    });
+
+    const isStatusLocked = computed(() => hasAdminDeactivation.value && !isPricingCompliant.value);
 
     // Methods
     const generateProductCode = () => {
@@ -2416,6 +2483,7 @@ const selectProductUnit = (productItem, unitSummary) => {
       isSaving.value = true;
 
       try {
+        const enforcedStatus = isStatusLocked.value ? 'inactive' : (product.value.status || 'available');
         // Create a clean product data object
         const productData = {
           // Basic product information
@@ -2459,7 +2527,7 @@ const selectProductUnit = (productItem, unitSummary) => {
           // Product details
           packagingType: product.value.packagingType || 'none',
           image: product.value.image || '',
-          status: product.value.status || 'available',
+          status: enforcedStatus,
           
           // Business features
           wholesaleAvailable: product.value.wholesaleAvailable || false,
@@ -2700,6 +2768,9 @@ const selectProductUnit = (productItem, unitSummary) => {
 
     return {
       getDisplayProductName,
+      hasAdminDeactivation,
+      isStatusLocked,
+      isPricingCompliant,
       isEditing,
       isSaving,
       product,
@@ -4076,6 +4147,26 @@ const selectProductUnit = (productItem, unitSummary) => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.admin-lock-note {
+  margin-top: 8px;
+  font-size: 0.85rem;
+  color: #991b1b;
+  background-color: #fef2f2;
+  border-left: 3px solid #ef4444;
+  padding: 8px 10px;
+  border-radius: 6px;
+}
+
+.compliance-note {
+  margin-top: 8px;
+  font-size: 0.85rem;
+  color: #065f46;
+  background-color: #ecfdf5;
+  border-left: 3px solid #10b981;
+  padding: 8px 10px;
+  border-radius: 6px;
 }
 
 /* Updated D.A. Reference styles */

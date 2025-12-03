@@ -29,7 +29,16 @@
               </option>
             </select>
           </div>
-          
+
+          <div class="control-group">
+            <label>Model</label>
+            <select v-model="selectedModelType" class="model-select">
+              <option v-for="model in modelOptions" :key="model.value" :value="model.value">
+                {{ model.label }}
+              </option>
+            </select>
+          </div>
+
           <button @click="generateForecast" class="generate-btn" :disabled="loading">
             <RefreshCw v-if="loading" size="16" class="spinner" />
             <span v-else>Generate Forecast</span>
@@ -43,60 +52,60 @@
           <h2>Processing Forecast</h2>
           <p>Training the AI model on your sales data. This may take a moment...</p>
           <div class="loading-state">
-        <div class="loading-progress">
-          <div class="progress-circle">
-            <svg class="progress-ring" width="80" height="80">
-              <circle
-                class="progress-ring-circle"
-                stroke="#e5e7eb"
-                stroke-width="4"
-                fill="transparent"
-                r="36"
-                cx="40"
-                cy="40"
-              />
-              <circle
-                class="progress-ring-circle progress-ring-fill"
-                stroke="#2e5c31"
-                stroke-width="4"
-                fill="transparent"
-                r="36"
-                cx="40"
-                cy="40"
-                :stroke-dasharray="226"
-                :stroke-dashoffset="226 - (loadingProgress / 100) * 226"
-              />
-            </svg>
-            <div class="progress-text">{{ Math.round(loadingProgress) }}%</div>
-          </div>
-        </div>
-        <h3>{{ loadingStage }}</h3>
-        <p>{{ loadingMessage }}</p>
-        <div class="loading-steps">
-          <div class="step" :class="{ active: currentStep >= 1, completed: currentStep > 1 }">
-            <div class="step-icon">1</div>
-            <span>Fetching Data</span>
-          </div>
-          <div class="step" :class="{ active: currentStep >= 2, completed: currentStep > 2 }">
-            <div class="step-icon">2</div>
-            <span>Training Model</span>
-          </div>
-          <div class="step" :class="{ active: currentStep >= 3, completed: currentStep > 3 }">
-            <div class="step-icon">3</div>
-            <span>Generating Forecast</span>
-          </div>
-          <div class="step" :class="{ active: currentStep >= 4, completed: currentStep > 4 }">
-            <div class="step-icon">4</div>
-            <span>Finalizing Results</span>
-          </div>
-        </div>
-        <button class="cancel-btn" @click="cancelForecast" :disabled="cancelRequested">
-          {{ cancelRequested ? 'Cancelling...' : 'Cancel Forecast' }}
-        </button>
+            <div class="loading-progress">
+              <div class="progress-circle">
+                <svg class="progress-ring" width="80" height="80">
+                  <circle
+                    class="progress-ring-circle"
+                    stroke="#e5e7eb"
+                    stroke-width="4"
+                    fill="transparent"
+                    r="36"
+                    cx="40"
+                    cy="40"
+                  />
+                  <circle
+                    class="progress-ring-circle progress-ring-fill"
+                    stroke="#2e5c31"
+                    stroke-width="4"
+                    fill="transparent"
+                    r="36"
+                    cx="40"
+                    cy="40"
+                    :stroke-dasharray="226"
+                    :stroke-dashoffset="226 - (loadingProgress / 100) * 226"
+                  />
+                </svg>
+                <div class="progress-text">{{ Math.round(loadingProgress) }}%</div>
+              </div>
+            </div>
+            <h3>{{ loadingStage }}</h3>
+            <p>{{ loadingMessage }}</p>
+            <div class="loading-steps">
+              <div class="step" :class="{ active: currentStep >= 1, completed: currentStep > 1 }">
+                <div class="step-icon">1</div>
+                <span>Fetching Data</span>
+              </div>
+              <div class="step" :class="{ active: currentStep >= 2, completed: currentStep > 2 }">
+                <div class="step-icon">2</div>
+                <span>Training Model</span>
+              </div>
+              <div class="step" :class="{ active: currentStep >= 3, completed: currentStep > 3 }">
+                <div class="step-icon">3</div>
+                <span>Generating Forecast</span>
+              </div>
+              <div class="step" :class="{ active: currentStep >= 4, completed: currentStep > 4 }">
+                <div class="step-icon">4</div>
+                <span>Finalizing Results</span>
+              </div>
+            </div>
+            <button class="cancel-btn" @click="cancelForecast" :disabled="cancelRequested">
+              {{ cancelRequested ? 'Cancelling...' : 'Cancel Forecast' }}
+            </button>
           </div>
         </div>
       </div>
-      
+
       <div v-else-if="error" class="error-state">
         <div class="error-icon">!</div>
         <p>{{ error }}</p>
@@ -105,7 +114,7 @@
           <p>Debug Info: {{ debugInfo }}</p>
         </div>
       </div>
-      
+
       <div v-else-if="forecastData.length > 0" class="forecast-results">
         <!-- Cache Status Indicator -->
         <div v-if="usingCache" class="cache-indicator">
@@ -135,13 +144,52 @@
                 <button @click="toggleChartExportDropdown" class="export-toggle-btn" :disabled="exporting">
                   <Download v-if="!exporting" size="16" />
                   <Loader2 v-else size="16" class="spinner" />
-                  Export Chart
-                  <ChevronDown size="14" :class="{ 'rotate-180': showChartExportDropdown }" />
+                  <span>Export Chart</span>
+                  <ChevronDown size="16" />
                 </button>
-                
                 <div v-if="showChartExportDropdown" class="export-dropdown-menu">
                   <div class="export-section">
-                    <button @click="exportCompleteReport" class="export-option complete-report" :disabled="exporting">
+                    <button
+                      class="export-option"
+                      :disabled="exporting"
+                      @click="showChartExportDropdown = false; exportForecastToCSV()"
+                    >
+                      <FileText size="14" />
+                      Forecast CSV
+                    </button>
+                    <button
+                      class="export-option"
+                      :disabled="exporting"
+                      @click="showChartExportDropdown = false; exportForecastToPDF()"
+                    >
+                      <FileText size="14" />
+                      Forecast PDF
+                    </button>
+                  </div>
+                  <div class="export-section">
+                    <button
+                      class="export-option"
+                      :disabled="exporting"
+                      @click="showChartExportDropdown = false; exportProductsToCSV()"
+                    >
+                      <FileText size="14" />
+                      Products CSV
+                    </button>
+                    <button
+                      class="export-option"
+                      :disabled="exporting"
+                      @click="showChartExportDropdown = false; exportProductsToPDF()"
+                    >
+                      <FileText size="14" />
+                      Products PDF
+                    </button>
+                  </div>
+                  <div class="export-section">
+                    <button
+                      class="export-option complete-report"
+                      :disabled="exporting"
+                      @click="showChartExportDropdown = false; exportCompleteReport()"
+                    >
                       <FileText size="14" />
                       Complete Report (PDF)
                     </button>
@@ -150,27 +198,30 @@
               </div>
             </div>
           </div>
-          
+
           <div class="chart-wrapper">
             <canvas ref="forecastChart"></canvas>
           </div>
-          <div class="chart-legend">
-            <div class="legend-item">
-              <div class="legend-color positive"></div>
-              <span>Growing Products (positive growth)</span>
-            </div>
-            <div class="legend-item">
-              <div class="legend-color negative"></div>
-              <span>Declining Products (negative growth)</span>
-            </div>
-            <div class="legend-item">
-              <div class="legend-color neutral"></div>
-              <span>Stable Products (little to no change)</span>
+
+          <div v-if="displayedProducts.length" class="chart-legend">
+            <div
+              class="legend-item"
+              v-for="product in displayedProducts.slice(0, 5)"
+              :key="`legend-${product.id}`"
+            >
+              <div
+                class="legend-color"
+                :class="{
+                  positive: product.growth > 0,
+                  negative: product.growth < 0,
+                  neutral: product.growth === 0
+                }"
+              ></div>
+              <span>{{ product.name }} ({{ product.growth > 0 ? '+' : '' }}{{ product.growth }}%)</span>
             </div>
           </div>
         </div>
 
-        <!-- Forecast Data Table (Toggleable) -->
         <div v-if="showDataTable" class="forecast-table-container">
           <div class="table-header">
             <h2>Forecast Data Table</h2>
@@ -178,41 +229,49 @@
               <button @click="toggleForecastTableExportDropdown" class="export-toggle-btn small" :disabled="exporting">
                 <Download v-if="!exporting" size="14" />
                 <Loader2 v-else size="14" class="spinner" />
-                Export
-                <ChevronDown size="12" :class="{ 'rotate-180': showForecastTableExportDropdown }" />
+                <span>Export Table</span>
+                <ChevronDown size="14" />
               </button>
-              
               <div v-if="showForecastTableExportDropdown" class="export-dropdown-menu">
                 <div class="export-section">
-                  <button @click="exportForecastToPDF" class="export-option" :disabled="exporting">
+                  <button
+                    class="export-option"
+                    :disabled="exporting"
+                    @click="showForecastTableExportDropdown = false; exportForecastToCSV()"
+                  >
                     <FileText size="14" />
-                    PDF Report
+                    Forecast CSV
                   </button>
-                  <button @click="exportForecastToCSV" class="export-option" :disabled="exporting">
-                    <Download size="14" />
-                    CSV Data
+                  <button
+                    class="export-option"
+                    :disabled="exporting"
+                    @click="showForecastTableExportDropdown = false; exportForecastToPDF()"
+                  >
+                    <FileText size="14" />
+                    Forecast PDF
                   </button>
                 </div>
               </div>
             </div>
           </div>
-          
           <div class="table-wrapper">
             <table class="forecast-table">
               <thead>
                 <tr>
                   <th>Date</th>
                   <th>Projected Sales (₱)</th>
-                  <th>Growth Rate (%)</th>
-                  <th>Confidence Level</th>
+                  <th>Growth</th>
+                  <th>Confidence</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(day, index) in forecastData" :key="index">
+                <tr v-for="(day, index) in forecastData" :key="`forecast-row-${index}`">
                   <td>{{ formatDate(day.date) }}</td>
-                  <td>₱{{ Math.round(day.value).toLocaleString() }}</td>
-                  <td :class="getGrowthClass(calculateDayGrowth(index))">
-                    {{ calculateDayGrowth(index) > 0 ? '+' : '' }}{{ calculateDayGrowth(index) }}%
+                  <td>{{ formatCurrency(Math.round(day.value), 0) }}</td>
+                  <td>
+                    <span class="status-badge" :class="getStatusClass(calculateDayGrowth(index))">
+                      {{ calculateDayGrowth(index) > 0 ? '+' : '' }}{{ calculateDayGrowth(index) }}%
+                    </span>
                   </td>
                   <td>
                     <div class="confidence-indicator">
@@ -227,117 +286,125 @@
             </table>
           </div>
         </div>
-        
-        <div class="forecast-details">
-          <div class="forecast-products">
-            <div class="products-header">
-              <h2>Product Forecasts</h2>
-              
-              <div class="product-controls">
-                <button @click="showProductCards = !showProductCards" class="toggle-cards-btn">
-                  <Grid v-if="!showProductCards" size="16" />
-                  <List v-else size="16" />
-                  {{ showProductCards ? 'Hide' : 'Show' }} Cards
-                </button>
-                
-                <div class="export-dropdown" ref="productTableExportDropdown">
-                  <button @click="toggleProductTableExportDropdown" class="export-toggle-btn small" :disabled="exporting">
-                    <Download v-if="!exporting" size="14" />
-                    <Loader2 v-else size="14" class="spinner" />
-                    Export
-                    <ChevronDown size="12" :class="{ 'rotate-180': showProductTableExportDropdown }" />
-                  </button>
-                  
-                  <div v-if="showProductTableExportDropdown" class="export-dropdown-menu">
-                    <div class="export-section">
-                      <button @click="exportProductsToPDF" class="export-option" :disabled="exporting">
-                        <FileText size="14" />
-                        PDF Report
-                      </button>
-                      <button @click="exportProductsToCSV" class="export-option" :disabled="exporting">
-                        <Download size="14" />
-                        CSV Data
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <div class="table-wrapper">
-              <table class="products-table">
-                <thead>
-                  <tr>
-                    <th>Product</th>
-                    <th>Category</th>
-                    <th>Projected Sales</th>
-                    <th>Projected Revenue (₱)</th>
-                    <th>Growth (%)</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="product in displayedProducts" :key="product.id">
-                    <td>
-                      <div class="product-cell">
-                        <img :src="product.image" :alt="product.name" class="product-thumb" />
-                        <span>{{ product.name }}</span>
-                      </div>
-                    </td>
-                    <td>{{ product.category }}</td>
-                    <td>
-                      <div class="sales-breakdown">
-                        <div v-for="(value, unit) in product.projectedSales" :key="unit" class="unit-sales">
-                          {{ value }} {{ getUnitDisplay(unit) }}
-                        </div>
-                      </div>
-                    </td>
-                    <td>₱{{ product.projectedRevenue.toLocaleString() }}</td>
-                    <td :class="getGrowthClass(product.growth)">
-                      {{ product.growth > 0 ? '+' : '' }}{{ product.growth }}%
-                    </td>
-                    <td>
-                      <span class="status-badge" :class="getStatusClass(product.growth)">
-                        {{ getStatusText(product.growth) }}
-                      </span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
 
-            <div v-if="showProductCards" class="product-cards">
-              <div v-for="product in displayedProducts" :key="product.id" class="product-card">
-                <div class="product-image">
-                  <img :src="product.image" :alt="product.name" />
-                </div>
-                <div class="product-info">
-                  <h3>{{ product.name }}</h3>
-                  <p class="category">{{ product.category }}</p>
-                  <div class="forecast-stats">
-                    <div class="stat">
-                      <span class="stat-label">Projected Sales</span>
-                      <div class="unit-sales" v-for="(value, unit) in product.projectedSales" :key="unit">
-                        <span class="stat-value">{{ value }} {{ getUnitDisplay(unit) }}</span>
-                      </div>
-                    </div>
-                    <div class="stat">
-                      <span class="stat-label">Projected Revenue</span>
-                      <span class="stat-value">₱{{ product.projectedRevenue.toLocaleString() }}</span>
-                    </div>
-                    <div class="stat">
-                      <span class="stat-label">Growth</span>
-                      <span class="stat-value" :class="getGrowthClass(product.growth)">
-                        {{ product.growth > 0 ? '+' : '' }}{{ product.growth }}%
-                      </span>
-                    </div>
+        <div class="forecast-products" v-if="displayedProducts.length">
+          <div class="products-header">
+            <h2>Product Performance</h2>
+            <div class="product-controls">
+              <button class="toggle-cards-btn" @click="showProductCards = !showProductCards">
+                <Grid v-if="!showProductCards" size="16" />
+                <List v-else size="16" />
+                {{ showProductCards ? 'Show Table View' : 'Show Card View' }}
+              </button>
+              <div class="export-dropdown" ref="productTableExportDropdown">
+                <button @click="toggleProductTableExportDropdown" class="export-toggle-btn small" :disabled="exporting">
+                  <Download v-if="!exporting" size="14" />
+                  <Loader2 v-else size="14" class="spinner" />
+                  <span>Export Products</span>
+                  <ChevronDown size="14" />
+                </button>
+                <div v-if="showProductTableExportDropdown" class="export-dropdown-menu">
+                  <div class="export-section">
+                    <button
+                      class="export-option"
+                      :disabled="exporting"
+                      @click="showProductTableExportDropdown = false; exportProductsToCSV()"
+                    >
+                      <FileText size="14" />
+                      Products CSV
+                    </button>
+                    <button
+                      class="export-option"
+                      :disabled="exporting"
+                      @click="showProductTableExportDropdown = false; exportProductsToPDF()"
+                    >
+                      <FileText size="14" />
+                      Products PDF
+                    </button>
                   </div>
                 </div>
               </div>
             </div>
           </div>
+
+          <div v-if="showProductCards" class="product-cards">
+            <div v-for="product in displayedProducts" :key="product.id" class="product-card">
+              <div class="product-image">
+                <img :src="product.image || defaultProductImage" :alt="product.name" />
+              </div>
+              <div class="product-info">
+                <h3>{{ product.name }}</h3>
+                <p class="category">{{ product.category || 'Uncategorized' }}</p>
+                <div class="forecast-stats">
+                  <div class="stat">
+                    <span class="stat-label">Projected Revenue</span>
+                    <span class="stat-value">{{ formatCurrency(product.projectedRevenue, 0) }}</span>
+                  </div>
+                  <div class="stat">
+                    <span class="stat-label">Growth</span>
+                    <span
+                      class="stat-value"
+                      :class="product.growth > 0 ? 'positive' : product.growth < 0 ? 'negative' : 'neutral'"
+                    >
+                      {{ product.growth > 0 ? '+' : '' }}{{ product.growth }}%
+                    </span>
+                  </div>
+                  <div
+                    class="stat"
+                    v-for="(quantity, unit) in product.projectedSales"
+                    :key="`${product.id}-${unit}`"
+                  >
+                    <span class="stat-label">{{ getUnitDisplay(unit) }}</span>
+                    <span class="stat-value">{{ quantity.toLocaleString() }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div v-else class="table-wrapper">
+            <table class="products-table">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th>Projected Revenue (₱)</th>
+                  <th>Projected Sales</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="product in displayedProducts" :key="`products-row-${product.id}`">
+                  <td class="product-cell">
+                    <img class="product-thumb" :src="product.image || defaultProductImage" :alt="product.name" />
+                    <div>
+                      <div>{{ product.name }}</div>
+                      <div class="unit-sales">{{ product.category || 'Uncategorized' }}</div>
+                    </div>
+                  </td>
+                  <td>{{ formatCurrency(product.projectedRevenue, 0) }}</td>
+                  <td>
+                    <div class="sales-breakdown">
+                      <span
+                        class="unit-sales"
+                        v-for="(quantity, unit) in product.projectedSales"
+                        :key="`${product.id}-sales-${unit}`"
+                      >
+                        {{ quantity.toLocaleString() }} {{ getUnitDisplay(unit) }}
+                      </span>
+                    </div>
+                  </td>
+                  <td>
+                    <span class="status-badge" :class="getStatusClass(product.growth)">
+                      {{ getStatusText(product.growth) }}
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
           
-          <div class="forecast-insights">
+        <div class="forecast-insights">
             <h2>Insights & Recommendations</h2>
             <div class="insights-container">
               <div v-for="(insight, index) in insights" :key="index" class="insight-card">
@@ -359,7 +426,7 @@
             <div class="model-details">
               <div class="model-detail">
                 <h4>Model</h4>
-                <p>TensorFlow.js LSTM Neural Network</p>
+                <p>{{ trainingStats.modelUsed }}</p>
               </div>
               <div class="model-detail">
                 <h4>Training Data</h4>
@@ -428,6 +495,10 @@
                       <span>{{ selectedTrainingRun.learningRate }}</span>
                     </div>
                     <div>
+                      <strong>Model:</strong>
+                      <span>{{ selectedTrainingRun.modelLabel || 'Sequence Forecaster' }}</span>
+                    </div>
+                    <div>
                       <strong>Final Loss:</strong>
                       <span>{{ selectedTrainingRun.metrics.finalLoss ?? 'N/A' }}</span>
                     </div>
@@ -452,13 +523,13 @@
                   <div class="training-history-chart-wrapper accuracy-chart">
                     <canvas ref="accuracyHistoryChart"></canvas>
                   </div>
-                  <div class="training-history-subtitle">
+                  <div class="training-history-subtitle validation-subtitle">
                     <div>
                       <h3>Actual vs Predicted (Validation)</h3>
                       <p>Lines overlap when the model closely tracks real sales during validation.</p>
                     </div>
                   </div>
-                  <div class="training-history-chart-wrapper accuracy-chart">
+                  <div class="training-history-chart-wrapper accuracy-chart validation-chart">
                     <canvas ref="actualPredChart"></canvas>
                   </div>
                   <div class="training-history-table-wrapper" v-if="actualVsPredRows.length">
@@ -469,6 +540,10 @@
                           <th>Actual (₱)</th>
                           <th>Predicted (₱)</th>
                           <th>Difference (₱)</th>
+                          <th>Total Loss</th>
+                          <th>Validation Loss</th>
+                          <th>RMSE (₱)</th>
+                          <th>MAE (₱)</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -479,12 +554,11 @@
                           <td>{{ row.index }}</td>
                           <td>{{ formatCurrency(row.actual) }}</td>
                           <td>{{ formatCurrency(row.predicted) }}</td>
-                          <td>
-                            <span v-if="row.actual !== null && row.predicted !== null">
-                              {{ formatCurrency(Number(row.predicted) - Number(row.actual)) }}
-                            </span>
-                            <span v-else>—</span>
-                          </td>
+                          <td>{{ row.difference !== null ? formatCurrency(row.difference) : '—' }}</td>
+                          <td>{{ typeof row.totalLoss === 'number' ? row.totalLoss.toFixed(4) : row.totalLoss ?? '—' }}</td>
+                          <td>{{ typeof row.validationLoss === 'number' ? row.validationLoss.toFixed(4) : row.validationLoss ?? '—' }}</td>
+                          <td>{{ row.rmse !== null ? formatCurrency(row.rmse) : '—' }}</td>
+                          <td>{{ row.mae !== null ? formatCurrency(row.mae) : '—' }}</td>
                         </tr>
                       </tbody>
                     </table>
@@ -575,7 +649,6 @@
               <div v-if="!selectedTrainingRun && showTrainingHistory" class="training-history-empty">Select a trial above to review its metrics.</div>
             </div>
           </div>
-        </div>
         
         <div v-if="exportStatus" class="export-status" :class="exportStatus.type">
           <CheckCircle v-if="exportStatus.type === 'success'" size="16" />
@@ -583,7 +656,7 @@
           {{ exportStatus.message }}
         </div>
       </div>
-      
+
       <div v-else class="empty-state">
         <div class="empty-icon">
           <BarChart2 size="48" />
@@ -629,8 +702,16 @@ const mainContentStyles = computed(() => ({
   paddingTop: isMobileViewport.value ? mobileTopOffset : ''
 }));
 
+const modelOptions = [
+  { value: 'lstm', label: 'LSTM Sequence Forecaster' },
+  { value: 'gru', label: 'GRU Sequence Forecaster' },
+  { value: 'simpleRnn', label: 'Simple RNN Forecaster' },
+  
+];
+
 // Enhanced data properties with performance tracking
 const forecastPeriod = ref('14');
+const selectedModelType = ref(modelOptions[0].value);
 const selectedCategory = ref('all');
 const availableCategories = ref([]);
 const loading = ref(false);
@@ -686,6 +767,7 @@ const trainingStats = ref({
   dataPoints: 0,
   startDate: '',
   endDate: '',
+  modelUsed: modelOptions[0].label,
   accuracy: 0,
   smape: 0,
   mape: 0,
@@ -713,6 +795,11 @@ const unitDisplayMap = {
 };
 
 // Helper functions
+const getModelLabel = (modelType) => {
+  const match = modelOptions.find(option => option.value === modelType);
+  return match ? match.label : 'Sequence Forecaster';
+};
+
 const getUnitDisplay = (unit) => {
   return unitDisplayMap[unit] || unit || 'Unit';
 };
@@ -925,7 +1012,32 @@ const accuracyTableTotalPages = computed(() => {
 });
 
 const buildActualVsPredRows = (run) => {
-  return getValidationSeriesForDisplay(run);
+  if (!run) return [];
+  const series = getValidationSeriesForDisplay(run);
+  if (!series.length) return [];
+
+  const statsSnapshot = trainingStats.value || {};
+  const totalLoss = run.metrics?.finalLoss ?? null;
+  const validationLoss = run.metrics?.finalValLoss ?? null;
+  const rmse = run.metrics?.rmse ?? statsSnapshot.rmse ?? null;
+  const mae = run.metrics?.mae ?? run.metrics?.finalMae ?? statsSnapshot.mae ?? null;
+
+  return series.map(entry => {
+    const actual = Number.isFinite(entry.actual) ? entry.actual : null;
+    const predicted = Number.isFinite(entry.predicted) ? entry.predicted : null;
+    const difference = actual !== null && predicted !== null ? predicted - actual : null;
+
+    return {
+      ...entry,
+      actual,
+      predicted,
+      difference,
+      totalLoss,
+      validationLoss,
+      rmse,
+      mae
+    };
+  });
 };
 
 const actualVsPredRows = computed(() => buildActualVsPredRows(selectedTrainingRun.value));
@@ -970,7 +1082,7 @@ const goToActualPredPage = (direction) => {
 
 // Enhanced cache functions with performance tracking
 const getCacheKey = () => {
-  return `${forecastPeriod.value}-${selectedCategory.value}`;
+  return `${forecastPeriod.value}-${selectedCategory.value}-${selectedModelType.value}`;
 };
 
 const getFromCache = (key) => {
@@ -1539,245 +1651,250 @@ const processSalesData = (sales) => {
   return Object.values(salesByDate).sort((a, b) => a.date - b.date);
 };
 
-// Enhanced ML model with better performance and accuracy
-const createAndTrainModel = async (salesData, options = {}) => {
-  const { onEpochMetric, forcedEpochs } = options;
-  updateProgress('Training Model', 'Initializing neural network...', 55, 2);
-  
-  try {
-    const salesValues = salesData.map(day => day.totalSales);
-    
-    if (salesValues.length < 7) {
-      throw new Error('Not enough sales data for forecasting. Need at least 7 days of data.');
-    }
-    
-    const max = Math.max(...salesValues);
-    const min = Math.min(...salesValues);
-    const range = max - min || 1;
-    
-    const normalizedSales = salesValues.map(value => (value - min) / range);
-    
-    const windowSize = Math.min(7, Math.floor(salesValues.length / 3)); // Dynamic window size
-    const inputs = [];
-    const outputs = [];
-    
-    for (let i = 0; i < normalizedSales.length - windowSize; i++) {
-      const inputWindow = normalizedSales.slice(i, i + windowSize);
-      const target = normalizedSales[i + windowSize];
-      
-      inputs.push(inputWindow);
-      outputs.push(target);
-    }
-    
-    updateProgress('Training Model', 'Preparing training data...', 65, 2);
-    
-    // Train/validation split
-    const splitIndex = Math.max(1, Math.floor(inputs.length * 0.8));
-    const trainInputs = inputs.slice(0, splitIndex);
-    const trainOutputs = outputs.slice(0, splitIndex);
-    const valInputs = inputs.slice(splitIndex);
-    const valOutputs = outputs.slice(splitIndex);
-
-    const inputTensorTrain = tf.tensor3d(
-      trainInputs.map(window => window.map(value => [value])),
-      [trainInputs.length, windowSize, 1]
-    );
-    const outputTensorTrain = tf.tensor2d(trainOutputs, [trainOutputs.length, 1]);
-    
-    let inputTensorVal = null;
-    let outputTensorVal = null;
-    if (valInputs.length > 0) {
-      inputTensorVal = tf.tensor3d(
-        valInputs.map(window => window.map(value => [value])),
-        [valInputs.length, windowSize, 1]
-      );
-      outputTensorVal = tf.tensor2d(valOutputs, [valOutputs.length, 1]);
-    }
-    
-    const model = tf.sequential();
-    
-    // Enhanced model architecture for better accuracy
-    model.add(tf.layers.lstm({
-      units: 64, // Increased units
-      inputShape: [windowSize, 1],
-      returnSequences: true,
-      dropout: 0.2
-    }));
-    
-    model.add(tf.layers.lstm({
-      units: 32,
-      returnSequences: false,
-      dropout: 0.2
-    }));
-    
-    model.add(tf.layers.dense({ units: 16, activation: 'relu' }));
-    model.add(tf.layers.dense({ units: 1 }));
-    
-    model.compile({
-      optimizer: tf.train.adam(0.001), // Reduced learning rate for stability
-      loss: 'meanSquaredError',
-      metrics: ['mae']
-    });
-    
-    updateProgress('Training Model', 'Training neural network...', 70, 2);
-    
-    const dynamicEpochs = Math.min(100, Math.max(30, salesValues.length * 2));
-    const epochs = forcedEpochs ?? dynamicEpochs;
-    
-    const fitResult = await model.fit(inputTensorTrain, outputTensorTrain, {
-      epochs: epochs,
-      batchSize: Math.min(32, Math.max(8, Math.floor(trainInputs.length / 4))),
-      shuffle: true,
-  validationData: valInputs.length > 0 ? [inputTensorVal, outputTensorVal] : null,
-      callbacks: {
-        onEpochEnd: (epoch, logs) => {
-          if (epoch % 10 === 0) {
-            const progress = 70 + (epoch / epochs) * 20;
-            updateProgress('Training Model', `Training progress: ${epoch + 1}/${epochs} epochs`, progress, 2);
-          }
-          if (typeof onEpochMetric === 'function') {
-            onEpochMetric(epoch, logs);
-          }
-        }
-      }
-    });
-    
-    updateProgress('Training Model', 'Validating model accuracy...', 90, 2);
-    // Use validation set for metrics on original scale
-  let mape = 0, mae = 0, rmse = 0, n = 0, smape = 0;
-    let residuals = [];
-    let validationSeries = [];
-
-  if (valInputs.length > 0 && inputTensorVal && outputTensorVal) {
-      const predValTensor = model.predict(inputTensorVal);
-      const predVal = Array.from(await predValTensor.data());
-      const actValNorm = Array.from(await outputTensorVal.data());
-      const actVal = actValNorm.map(v => v * range + min);
-      const predDenorm = predVal.map(v => Math.max(0, v * range + min));
-
-      validationSeries = actVal.map((value, idx) => ({
-        index: idx + 1,
-        actual: value,
-        predicted: predDenorm[idx]
-      }));
-
-      for (let i = 0; i < predDenorm.length; i++) {
-        const a = actVal[i];
-        const p = predDenorm[i];
-        const e = p - a;
-        residuals.push(e);
-        mae += Math.abs(e);
-        rmse += e * e;
-        if (a !== 0) {
-          mape += Math.abs(e / a) * 100;
-          n++;
-        }
-        // sMAPE contribution (bounded, handles near-zero better)
-        const denom = (Math.abs(a) + Math.abs(p));
-        if (denom > 0) {
-          smape += (200 * Math.abs(p - a)) / denom;
-        }
-      }
-
-  const count = predDenorm.length;
-  mae = count > 0 ? mae / count : 0;
-  rmse = count > 0 ? Math.sqrt(rmse / count) : 0;
-  mape = n > 0 ? mape / n : 0;
-  smape = count > 0 ? (smape / count) : 0;
-
-  predValTensor.dispose();
-    } else {
-      // Fallback metrics if no validation set
-      mape = 0;
-      mae = 0;
-      rmse = 0;
-      smape = 30; // conservative default when no validation set
-      validationSeries = [];
-    }
-
-    // Accuracy from sMAPE (100 - smape/2), bounded to avoid 0% scary display
-    let accuracy = 100 - (smape / 2);
-    if (!Number.isFinite(accuracy)) accuracy = 80;
-    accuracy = Math.max(40, Math.min(99, Math.round(accuracy)));
-
-    // Residual std dev for optional confidence intervals
-    const meanResidual = residuals.length ? residuals.reduce((s, v) => s + v, 0) / residuals.length : 0;
-    const residualStd = residuals.length ? Math.sqrt(residuals.reduce((s, v) => s + Math.pow(v - meanResidual, 2), 0) / residuals.length) : 0;
-
-  inputTensorTrain.dispose();
-  outputTensorTrain.dispose();
-  if (inputTensorVal) inputTensorVal.dispose();
-  if (outputTensorVal) outputTensorVal.dispose();
-    
-    return {
-      model,
-      min,
-      max,
-      windowSize,
-      epochsUsed: epochs,
-  accuracy,
-      mape,
-  smape,
-      mae,
-      rmse,
-      residualStd,
-      salesData,
-      validationSeries,
-      epochHistory: {
-        loss: fitResult.history.loss || [],
-        valLoss: fitResult.history.val_loss || [],
-        maeHistory: fitResult.history.mae || []
-      }
-    };
-  } catch (err) {
-    console.error("Error in model training:", err);
-    throw new Error(`Failed to train model: ${err.message}`);
-  }
+const determineGruWindow = (seriesLength) => {
+  if (seriesLength >= 120) return 30;
+  if (seriesLength >= 90) return 24;
+  if (seriesLength >= 60) return 20;
+  if (seriesLength >= 30) return 14;
+  return Math.max(6, Math.floor(seriesLength / 2));
 };
 
-// Enhanced forecast generation
-const generateModelForecast = async (modelData, days) => {
-  updateProgress('Generating Forecast', 'Creating predictions...', 92, 3);
-  
-  const { model, min, max, windowSize, salesData } = modelData;
-  const range = max - min || 1;
-  
+const normalizeSeries = (values) => {
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = Math.max(1, max - min);
+  const normalized = values.map(value => (value - min) / range);
+  return { normalized, min, range };
+};
+
+const createWindowedDataset = (series, windowSize) => {
+  const sequences = [];
+  const targets = [];
+  for (let index = 0; index < series.length - windowSize; index++) {
+    const window = series.slice(index, index + windowSize).map(value => [value]);
+    sequences.push(window);
+    targets.push(series[index + windowSize]);
+  }
+  return { sequences, targets };
+};
+
+const buildSequenceModel = (modelType, windowSize) => {
+  const model = tf.sequential();
+  const recurrentConfig = { units: 64, returnSequences: false, inputShape: [windowSize, 1], activation: 'tanh' };
+  if (modelType === 'simpleRnn') {
+    model.add(tf.layers.simpleRNN(recurrentConfig));
+  } else if (modelType === 'lstm') {
+    model.add(tf.layers.lstm(recurrentConfig));
+  } else {
+    model.add(tf.layers.gru(recurrentConfig));
+  }
+  model.add(tf.layers.dropout({ rate: 0.2 }));
+  model.add(tf.layers.dense({ units: 1 }));
+  return model;
+};
+
+const computeErrorMetrics = (actualValues, predictedValues) => {
+  if (!actualValues.length || actualValues.length !== predictedValues.length) {
+    return {
+      mae: 0,
+      rmse: 0,
+      mape: 0,
+      smape: 0,
+      accuracy: 70,
+      residualStd: 0
+    };
+  }
+  let mae = 0;
+  let rmse = 0;
+  let mape = 0;
+  let smape = 0;
+  let mapeCount = 0;
+  const residuals = [];
+  actualValues.forEach((actual, index) => {
+    const predicted = Math.max(0, predictedValues[index] ?? 0);
+    const error = predicted - actual;
+    residuals.push(error);
+    mae += Math.abs(error);
+    rmse += error * error;
+    if (actual !== 0) {
+      mape += Math.abs(error / actual) * 100;
+      mapeCount++;
+    }
+    const denom = Math.abs(actual) + Math.abs(predicted);
+    if (denom > 0) {
+      smape += (200 * Math.abs(predicted - actual)) / denom;
+    }
+  });
+  const count = actualValues.length;
+  const meanResidual = residuals.length ? residuals.reduce((sum, value) => sum + value, 0) / residuals.length : 0;
+  const residualStd = residuals.length
+    ? Math.sqrt(residuals.reduce((sum, value) => sum + Math.pow(value - meanResidual, 2), 0) / residuals.length)
+    : 0;
+  const avgSmape = count ? smape / count : 0;
+  const accuracy = Math.max(40, Math.min(99, Math.round(100 - avgSmape / 2)));
+  return {
+    mae: count ? mae / count : 0,
+    rmse: count ? Math.sqrt(rmse / count) : 0,
+    mape: mapeCount ? mape / mapeCount : 0,
+    smape: avgSmape,
+    accuracy,
+    residualStd
+  };
+};
+
+// Train sequence model (GRU or Simple RNN) on normalized sales sequences
+const trainSequenceModel = async (modelType, salesData, options = {}) => {
+  const { forcedEpochs } = options;
+  const modelLabel = getModelLabel(modelType);
+  updateProgress('Training Model', `Preparing ${modelLabel} dataset...`, 55, 2);
+
+  await tf.ready();
   const salesValues = salesData.map(day => day.totalSales);
-  const lastValues = salesValues.slice(-windowSize);
-  
-  const normalizedLastValues = lastValues.map(value => (value - min) / range);
-  
-  const forecast = [];
-  let currentWindow = [...normalizedLastValues];
-  
-  for (let i = 0; i < days; i++) {
-    const inputTensor = tf.tensor3d(
-      [currentWindow.map(value => [value])],
-      [1, windowSize, 1]
-    );
-    
+  if (salesValues.length < 10) {
+    throw new Error('Not enough sales data for neural forecasting. Need at least 10 days of history.');
+  }
+
+  const windowSize = determineGruWindow(salesValues.length);
+  const holdoutSize = Math.min(14, Math.max(4, Math.floor(salesValues.length * 0.2)));
+  const validationActual = salesValues.slice(-holdoutSize);
+  const { normalized, min, range } = normalizeSeries(salesValues);
+  const trainingPortion = normalized.slice(0, normalized.length - holdoutSize);
+  const { sequences, targets } = createWindowedDataset(trainingPortion, windowSize);
+
+  if (sequences.length < 4) {
+    throw new Error('Not enough sliding windows to train the selected model. Collect more sales data.');
+  }
+
+  const xsTensor = tf.tensor3d(sequences, [sequences.length, windowSize, 1]);
+  const ysTensor = tf.tensor2d(targets, [targets.length, 1]);
+
+  const learningRate = 0.01;
+  const model = buildSequenceModel(modelType, windowSize);
+  model.compile({ optimizer: tf.train.adam(learningRate), loss: 'meanSquaredError', metrics: ['mae'] });
+
+  const epochsPlan = forcedEpochs ?? getPlannedEpochsForNextTrial();
+  const epochs = Math.min(60, Math.max(20, epochsPlan));
+  const batchSize = Math.min(32, Math.max(8, Math.floor(sequences.length / 4))) || 8;
+  const validationSplit = sequences.length > 60 ? 0.2 : 0.15;
+
+  const history = await model.fit(xsTensor, ysTensor, {
+    epochs,
+    batchSize,
+    validationSplit,
+    shuffle: true,
+    callbacks: {
+      onEpochEnd: (epoch, logs) => {
+        const progress = 55 + Math.min(30, ((epoch + 1) / epochs) * 25);
+        const lossMsg = logs?.loss ? `Loss ${(logs.loss).toFixed(4)}` : 'Optimizing weights';
+        updateProgress('Training Model', `${modelLabel} epoch ${epoch + 1}/${epochs} · ${lossMsg}`, progress, 2);
+      }
+    }
+  });
+
+  xsTensor.dispose();
+  ysTensor.dispose();
+
+  updateProgress('Training Model', 'Evaluating validation window...', 85, 2);
+
+  const historyLoss = (history.history.loss || []).map(value => Number(value.toFixed(6)));
+  const historyValLoss = (history.history.val_loss || []).map(value => Number(value?.toFixed(6)));
+  const historyMae = (history.history.mae || history.history.loss || []).map(value => Number(value?.toFixed(6)));
+  const epochHistory = { loss: historyLoss, valLoss: historyValLoss, maeHistory: historyMae };
+  const epochLog = historyLoss.map((lossValue, index) => ({
+    epoch: index + 1,
+    loss: lossValue,
+    valLoss: historyValLoss[index] ?? null,
+    mae: historyMae[index] ?? null
+  }));
+
+  const safeRange = Math.max(1, range);
+  const startIndex = Math.max(0, normalized.length - holdoutSize - windowSize);
+  let rollingWindow = normalized.slice(startIndex, startIndex + windowSize);
+  const predictedNormalized = [];
+
+  for (let step = 0; step < validationActual.length; step++) {
+    const inputTensor = tf.tensor3d([rollingWindow.map(value => [value])], [1, windowSize, 1]);
     const predictionTensor = model.predict(inputTensor);
-    const predictionValue = await predictionTensor.data();
-    
-  let forecastValue = predictionValue[0] * range + min;
-  forecastValue = Math.max(0, forecastValue); // deterministic central estimate
-    
-    const forecastDate = new Date();
-    forecastDate.setDate(forecastDate.getDate() + i + 1);
-    
-    forecast.push({
-      date: forecastDate,
-      value: forecastValue
-    });
-    
-    currentWindow.shift();
-    currentWindow.push(predictionValue[0]);
-    
+    const nextValue = predictionTensor.dataSync()[0];
+    predictedNormalized.push(nextValue);
     inputTensor.dispose();
     predictionTensor.dispose();
+    rollingWindow = [...rollingWindow.slice(1), normalized[normalized.length - holdoutSize + step]];
   }
-  
-  return forecast;
+
+  const predictedValues = predictedNormalized.map(value => Math.max(0, value * safeRange + min));
+  const validationSeries = validationActual.map((value, index) => ({
+    index: index + 1,
+    actual: value,
+    predicted: predictedValues[index] ?? value
+  }));
+
+  const metrics = computeErrorMetrics(validationActual, predictedValues);
+
+  return {
+    modelType,
+    modelLabel,
+    model,
+    epochsUsed: epochs,
+    learningRate,
+    accuracy: metrics.accuracy,
+    mape: metrics.mape,
+    smape: metrics.smape,
+    mae: metrics.mae,
+    rmse: metrics.rmse,
+    residualStd: metrics.residualStd,
+    salesData,
+    validationSeries,
+    epochHistory,
+    epochLog,
+    windowSize,
+    normalization: { min, range: safeRange },
+    recentValues: salesValues.slice(-windowSize)
+  };
+};
+
+// Forecast future days using the trained sequence model
+const generateSequenceForecast = async (modelData, days) => {
+  updateProgress('Generating Forecast', `Running ${modelData.modelLabel} inference...`, 92, 3);
+
+  const { model, salesData, windowSize, normalization, recentValues } = modelData;
+  const min = normalization?.min ?? 0;
+  const range = normalization?.range ?? 1;
+  const normalizeValue = (value) => (value - min) / range;
+  const lastKnownDate = salesData[salesData.length - 1]?.date || new Date();
+  const baseDate = new Date(lastKnownDate);
+
+  let rollingWindow = recentValues.slice(-windowSize);
+  if (rollingWindow.length < windowSize) {
+    const padValue = rollingWindow[0] ?? min;
+    rollingWindow = Array.from({ length: windowSize - rollingWindow.length }, () => padValue).concat(rollingWindow);
+  }
+
+  const forecast = [];
+  try {
+    for (let step = 0; step < days; step++) {
+      const inputTensor = tf.tensor3d([
+        rollingWindow.map(value => [normalizeValue(value)])
+      ], [1, windowSize, 1]);
+      const predictionTensor = model.predict(inputTensor);
+      const normalizedPrediction = predictionTensor.dataSync()[0];
+      inputTensor.dispose();
+      predictionTensor.dispose();
+
+      const denormalized = Math.max(0, normalizedPrediction * range + min);
+      const forecastDate = new Date(baseDate);
+      forecastDate.setDate(forecastDate.getDate() + step + 1);
+      forecast.push({
+        date: forecastDate,
+        value: Number(denormalized.toFixed(2))
+      });
+
+      rollingWindow = [...rollingWindow.slice(1), denormalized];
+    }
+    return forecast;
+  } finally {
+    model.dispose?.();
+  }
 };
 
 // Enhanced product forecasts with better accuracy
@@ -2366,7 +2483,7 @@ const exportCompleteReport = async () => {
         
         <h2>Model Information</h2>
         <div class="meta-info">
-          <p><strong>Model:</strong> Enhanced TensorFlow.js LSTM Neural Network</p>
+          <p><strong>Model:</strong> ${trainingStats.value.modelUsed}</p>
           <p><strong>Training Data Points:</strong> ${trainingStats.value.dataPoints}</p>
           <p><strong>Data Range:</strong> ${trainingStats.value.startDate} to ${trainingStats.value.endDate}</p>
           <p><strong>Accuracy:</strong> ${trainingStats.value.accuracy}% (sMAPE-based)</p>
@@ -2637,32 +2754,18 @@ const generateForecast = async () => {
     
     const trainingRunId = `run-${Date.now()}`;
     const trainingStartedAt = new Date();
-    const runEpochLog = [];
     const forcedEpochs = getPlannedEpochsForNextTrial();
-    const modelData = await createAndTrainModel(processedSales, {
-      forcedEpochs,
-      onEpochMetric: (epoch, logs) => {
-        runEpochLog.push({
-          epoch: epoch + 1,
-          loss: logs?.loss !== undefined ? roundMetric(logs.loss, 6) : null,
-          valLoss: logs?.val_loss !== undefined ? roundMetric(logs.val_loss, 6) : null,
-          mae: logs?.mae !== undefined ? roundMetric(logs.mae, 6) : null,
-          timestamp: Date.now()
-        });
-      }
-    });
+    const modelType = selectedModelType.value;
+    const modelData = await trainSequenceModel(modelType, processedSales, { forcedEpochs });
     if (shouldAbortForecast()) return;
     const epochHistory = modelData.epochHistory || {};
-    const fallbackEpochLog = runEpochLog.length > 0 ? runEpochLog : (epochHistory.loss || []).map((value, index) => ({
-      epoch: index + 1,
-      loss: value !== undefined ? roundMetric(value, 6) : null,
-      valLoss: epochHistory.valLoss && epochHistory.valLoss[index] !== undefined ? roundMetric(epochHistory.valLoss[index], 6) : null,
-      mae: epochHistory.maeHistory && epochHistory.maeHistory[index] !== undefined ? roundMetric(epochHistory.maeHistory[index], 6) : null,
+    const fallbackEpochLog = (modelData.epochLog || []).map(entry => ({
+      ...entry,
       timestamp: Date.now()
     }));
     
     const days = parseInt(forecastPeriod.value);
-    const forecast = await generateModelForecast(modelData, days);
+    const forecast = await generateSequenceForecast(modelData, days);
     if (shouldAbortForecast()) return;
     
     const productForecasts = generateProductForecasts(processedSales, productsData, forecast);
@@ -2675,13 +2778,24 @@ const generateForecast = async () => {
       dataPoints: processedSales.length,
       startDate: processedSales[0].date.toLocaleDateString(),
       endDate: processedSales[processedSales.length - 1].date.toLocaleDateString(),
+      modelUsed: modelData.modelLabel || 'Sequence Forecaster',
       accuracy: Math.round(modelData.accuracy),
-  smape: Math.round(modelData.smape || 0),
+        smape: Math.round(modelData.smape || 0),
       mape: Math.round(modelData.mape || 0),
       mae: Math.round(modelData.mae || 0),
       rmse: Math.round(modelData.rmse || 0)
     };
     if (shouldAbortForecast()) return;
+
+    const finalLossValue = epochHistory.loss && epochHistory.loss.length
+      ? roundMetric(epochHistory.loss[epochHistory.loss.length - 1], 5)
+      : null;
+    const finalValLossValue = epochHistory.valLoss && epochHistory.valLoss.length
+      ? roundMetric(epochHistory.valLoss[epochHistory.valLoss.length - 1], 5)
+      : null;
+    const finalMaeValue = epochHistory.maeHistory && epochHistory.maeHistory.length
+      ? roundMetric(epochHistory.maeHistory[epochHistory.maeHistory.length - 1], 5)
+      : null;
 
     const runRecord = {
       id: trainingRunId,
@@ -2689,15 +2803,19 @@ const generateForecast = async () => {
       completedAt: new Date(),
       category: selectedCategory.value === 'all' ? 'All Categories' : selectedCategory.value,
       periodDays: parseInt(forecastPeriod.value, 10),
-      windowSize: modelData.windowSize,
+      windowSize: modelData.windowSize || 1,
       epochs: modelData.epochsUsed,
-      learningRate: 0.001,
+      learningRate: modelData.learningRate ?? '—',
+      modelType: modelData.modelType,
+      modelLabel: modelData.modelLabel,
       dataPoints: processedSales.length,
       metrics: {
-        finalLoss: epochHistory.loss && epochHistory.loss.length ? roundMetric(epochHistory.loss.at(-1), 5) : null,
-        finalValLoss: epochHistory.valLoss && epochHistory.valLoss.length ? roundMetric(epochHistory.valLoss.at(-1), 5) : null,
-        finalMae: epochHistory.maeHistory && epochHistory.maeHistory.length ? roundMetric(epochHistory.maeHistory.at(-1), 5) : null,
-        accuracy: Math.round(modelData.accuracy)
+        finalLoss: finalLossValue,
+        finalValLoss: finalValLossValue,
+        finalMae: finalMaeValue,
+        accuracy: Math.round(modelData.accuracy),
+        rmse: roundMetric(modelData.rmse, 4),
+        mae: roundMetric(modelData.mae, 4)
       },
       epochLog: fallbackEpochLog,
       actualVsPredicted: modelData.validationSeries || []
@@ -2792,7 +2910,7 @@ onUnmounted(() => {
 
 // Enhanced watchers with debouncing
 let watchTimeout = null;
-watch([selectedCategory, forecastPeriod], () => {
+watch([selectedCategory, forecastPeriod, selectedModelType], () => {
   if (forecastData.value.length > 0) {
     // Debounce to prevent excessive API calls
     if (watchTimeout) {
@@ -2891,7 +3009,8 @@ watch(selectedTrainingRunId, () => {
 }
 
 .period-select,
-.category-select {
+.category-select,
+.model-select {
   padding: 8px 12px;
   border: 1px solid #d1d5db;
   border-radius: 6px;
@@ -3842,6 +3961,11 @@ watch(selectedTrainingRunId, () => {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+}
+
+.training-history-subtitle.validation-subtitle,
+.training-history-chart-wrapper.validation-chart {
+  margin-top: 28px;
 }
 
 .training-history-subtitle h3 {
