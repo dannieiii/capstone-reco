@@ -20,6 +20,8 @@
     "crypto-js": "^4.2.0",
     "emailjs-com": "^3.2.0",
     "firebase": "^11.3.1",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^3.0.4",
     "leaflet": "^1.9.4",
     "lucide-vue-next": "^0.477.0",
     "register-service-worker": "^1.7.2",

@@ -131,23 +131,15 @@
               </div>
               
               <div class="export-controls">
-                <div class="export-dropdown">
-                  <button class="export-dropdown-btn" @click="toggleExportDropdown" :disabled="isExporting">
-                    <Download size="14" />
-                    Export
-                    <ChevronDown size="14" />
-                  </button>
-                  <div v-if="showExportDropdown" class="export-dropdown-menu">
-                    <button @click="exportToCSV" class="export-dropdown-item" :disabled="isExporting">
-                      <FileText size="14" />
-                      Export as CSV
-                    </button>
-                    <button @click="exportToPDF" class="export-dropdown-item" :disabled="isExporting">
-                      <FileText size="14" />
-                      Export as PDF
-                    </button>
-                  </div>
-                </div>
+                <button
+                  type="button"
+                  class="export-pdf-btn"
+                  @click="exportToPDF"
+                  :disabled="isExporting"
+                >
+                  <FileText size="14" />
+                  Export PDF
+                </button>
               </div>
             </div>
           </div>
@@ -548,6 +540,23 @@
       </div>
     </div>
   </div>
+
+  <PriceMonitoringExportPreview
+    v-model="showMonitoringPreview"
+    :rows="monitoringPreviewRows"
+    :generated-at="monitoringPreviewGeneratedAt"
+    :subtitle="monitoringPreviewSubtitle"
+    title="Product Price Analysis Preview"
+  />
+
+  <PriceAnalysisExportPreview
+    v-model="showChartPreview"
+    :chart-src="chartPreviewImage"
+    :generated-at="chartPreviewGeneratedAt"
+    :title="chartPreviewTitle"
+    :subtitle="chartPreviewSubtitle"
+    :stats="chartPreviewStats"
+  />
 </template>
 
 <script setup>
@@ -558,6 +567,8 @@ import Chart from 'chart.js/auto';
 import AdminSidebar from '@/components/AdminSidebar.vue';
 import OverpricedProducts from '@/components/OverpricedProducts.vue';
 import UnderpricedProducts from '@/components/UnderpricedProducts.vue';
+import PriceMonitoringExportPreview from '@/components/previewpdf/PriceMonitoringExportPreview.vue';
+import PriceAnalysisExportPreview from '@/components/previewpdf/PriceAnalysisExportPreview.vue';
 import {
   RefreshCw,
   TrendingUp,
@@ -591,6 +602,41 @@ const inactiveProducts = ref([]);
 const overpricedProducts = ref([]);
 const underpricedProducts = ref([]);
 const customProducts = ref([]);
+const showMonitoringPreview = ref(false);
+const monitoringPreviewRows = ref([]);
+const monitoringPreviewGeneratedAt = ref(new Date());
+const monitoringPreviewSubtitle = ref('');
+const showChartPreview = ref(false);
+const chartPreviewImage = ref('');
+const chartPreviewGeneratedAt = ref(new Date());
+const chartPreviewTitle = ref('Price Analysis - Oriental Mindoro');
+const chartPreviewSubtitle = ref('');
+const chartPreviewStats = ref([]);
+const isExporting = ref(false);
+const showTableExportDropdown = ref(false);
+const selectedCategory = ref('');
+const selectedProductType = ref('');
+const selectedPriceStatus = ref('');
+const sortBy = ref('productName');
+const currentPage = ref(1);
+const searchQuery = ref('');
+const currentChartView = ref('deviation');
+const chartCategoryFilter = ref('');
+const chartWarningFilter = ref('');
+const itemsPerPage = ref(10);
+const totalItems = ref(0);
+const chartViews = [
+  { value: 'deviation', label: 'Deviation Overview' },
+  { value: 'category', label: 'By Category' },
+  { value: 'warnings', label: 'Warning Levels' }
+];
+const showProductModal = ref(false);
+const selectedProduct = ref(null);
+const showWarningModal = ref(false);
+const warningTarget = ref(null);
+const warningMessage = ref('');
+const includeGuidelines = ref(false);
+const requestResponse = ref(false);
 
 // Chart refs
 const priceChart = ref(null);
@@ -604,70 +650,16 @@ const avgDeviationTrend = ref('neutral');
 const sellersCount = ref(0);
 const flaggedSellers = ref([]);
 const severeOverpriced = ref([]);
-
-// Filters
-const selectedCategory = ref('');
-const selectedProductType = ref('');
-const selectedPriceStatus = ref('');
-const sortBy = ref('productName');
-const searchQuery = ref('');
-
-// Chart filtering (separate from table filtering)
-const chartCategoryFilter = ref('');
-const chartWarningFilter = ref('');
-
-// Pagination
-const currentPage = ref(1);
-const itemsPerPage = ref(10);
-const totalItems = ref(0);
-
-// Chart views
-const currentChartView = ref('deviation');
-const chartViews = [
-  { label: 'Price Deviation', value: 'deviation' },
-  { label: 'By Category', value: 'category' },
-  { label: 'Warning Levels', value: 'warnings' }
-];
-
-// Modal state
-const showProductModal = ref(false);
-const showWarningModal = ref(false);
-const selectedProduct = ref(null);
-const warningTarget = ref(null);
-const warningMessage = ref('');
-const includeGuidelines = ref(true);
-const requestResponse = ref(true);
 const statusMessage = ref(null);
-
-// Export functionality
-const isExporting = ref(false);
-const showExportDropdown = ref(false);
-const showTableExportDropdown = ref(false);
-
-// Categories
 const categories = ref([]);
 
-// Unit mapping for proper price comparison
-const unitMapping = {
-  'perKilo': { label: 'Per Kilo', stockField: 'stockPerKilo', priceField: 'pricePerKilo', stockUnit: 'kg' },
-  'perSack': { label: 'Per Sack', stockField: 'stockPerSack', priceField: 'pricePerSack', stockUnit: 'sacks' },
-  'perTali': { label: 'Per Tali', stockField: 'stockPerTali', priceField: 'pricePerTali', stockUnit: 'tali' },
-  'perKaing': { label: 'Per Kaing', stockField: 'stockPerKaing', priceField: 'pricePerKaing', stockUnit: 'kaing' },
-  'perBundle': { label: 'Per Bundle', stockField: 'stockPerBundle', priceField: 'pricePerBundle', stockUnit: 'bundles' },
-  'perTray': { label: 'Per Tray', stockField: 'stockPerTray', priceField: 'pricePerTray', stockUnit: 'trays' },
-  'perPiece': { label: 'Per Piece', stockField: 'stockPerPiece', priceField: 'pricePerPiece', stockUnit: 'pieces' }
-};
-
-// Fetch data from Firebase
 const fetchData = async () => {
   loading.value = true;
   try {
-    console.log('Starting data fetch...');
-    
-    // Fetch D.A. reference products
+    console.log('Fetching price monitoring data...');
+
     const daProductsSnapshot = await getDocs(collection(db, 'productPrices'));
     const daProductsData = [];
-    
     daProductsSnapshot.forEach((doc) => {
       const data = doc.data();
       daProductsData.push({
@@ -680,15 +672,12 @@ const fetchData = async () => {
         updatedAt: data.updatedAt
       });
     });
-    
     daProducts.value = daProductsData;
     console.log('DA Products loaded:', daProductsData.length);
-    
-    // Fetch seller products
+
     const productsSnapshot = await getDocs(collection(db, 'products'));
     const productsData = [];
     const uniqueCategories = new Set();
-    
     productsSnapshot.forEach((doc) => {
       const productData = doc.data();
       if (productData.category) {
@@ -699,38 +688,31 @@ const fetchData = async () => {
         ...productData
       });
     });
-    
     products.value = productsData;
-    categories.value = Array.from(uniqueCategories);
+    categories.value = Array.from(uniqueCategories).sort();
     console.log('Products loaded:', productsData.length);
-    
-    // Fetch sellers
+
     const sellersSnapshot = await getDocs(collection(db, 'sellers'));
     const sellersData = [];
-    
     sellersSnapshot.forEach((doc) => {
+      const data = doc.data();
       sellersData.push({
         id: doc.id,
-        sellerId: doc.data().userId || doc.id,
-        ...doc.data(),
-        personalInfo: doc.data().personalInfo || {},
-        farmDetails: doc.data().farmDetails || {},
+        sellerId: data.userId || doc.id,
+        ...data,
+        personalInfo: data.personalInfo || {},
+        farmDetails: data.farmDetails || {}
       });
     });
-    
     sellers.value = sellersData;
     console.log('Sellers loaded:', sellersData.length);
-    
-    // Process and analyze products
+
     await processProductAnalysis();
-    
-    // Render chart
     setTimeout(() => {
       renderChart();
     }, 100);
-    
   } catch (error) {
-    console.error("Error fetching data:", error);
+    console.error('Error fetching data:', error);
     showStatus('error', 'Failed to load data');
   } finally {
     loading.value = false;
@@ -872,6 +854,16 @@ const processProductAnalysis = async () => {
 };
 
 // Get product units with pricing and stock info - FIXED VERSION
+const unitMapping = {
+  perKilo: { label: 'Per Kilo', priceField: 'pricePerKilo', stockField: 'stockPerKilo', stockUnit: 'kg' },
+  perSack: { label: 'Per Sack', priceField: 'pricePerSack', stockField: 'stockPerSack', stockUnit: 'sacks' },
+  perTali: { label: 'Per Tali', priceField: 'pricePerTali', stockField: 'stockPerTali', stockUnit: 'tali' },
+  perKaing: { label: 'Per Kaing', priceField: 'pricePerKaing', stockField: 'stockPerKaing', stockUnit: 'kaing' },
+  perBundle: { label: 'Per Bundle', priceField: 'pricePerBundle', stockField: 'stockPerBundle', stockUnit: 'bundles' },
+  perTray: { label: 'Per Tray', priceField: 'pricePerTray', stockField: 'stockPerTray', stockUnit: 'trays' },
+  perPiece: { label: 'Per Piece', priceField: 'pricePerPiece', stockField: 'stockPerPiece', stockUnit: 'pcs' }
+};
+
 const getProductUnits = (product) => {
   if (!product || !product.availableUnits || !Array.isArray(product.availableUnits)) {
     return [];
@@ -1545,90 +1537,40 @@ const buildReportHTML = (title, subtitle, list) => {
   `;
 };
 
-// Build a PDF page with the current chart image
-const buildChartPDFHTML = (title, subtitle, chartSrc) => {
-  return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8" />
-      <title>${title}</title>
-      <style>
-        body { font-family: Arial, sans-serif; margin: 24px; }
-        h1 { color: #2e5c31; margin: 0 0 6px 0; }
-        .sub { color: #555; margin-bottom: 16px; }
-        .chart-wrap { width: 100%; border: 1px solid #eee; padding: 8px; border-radius: 6px; }
-        .chart-wrap img { width: 100%; max-height: 720px; object-fit: contain; display: block; image-rendering: optimizeQuality; }
-        /* Force color in print preview/PDF */
-        @media print {
-          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-          body, img { filter: none !important; }
-        }
-      </style>
-    </head>
-    <body>
-      <h1>${title}</h1>
-      <div class="sub">${subtitle}</div>
-      <div class="chart-wrap">
-        ${chartSrc ? `<img src="${chartSrc}" alt="Analysis Chart" />` : '<div>Chart not available</div>'}
-      </div>
-    </body>
-    </html>
-  `;
-};
-
 // Export functionality
-const toggleExportDropdown = () => {
-  showExportDropdown.value = !showExportDropdown.value;
-};
-
-const exportToCSV = async () => {
-  showExportDropdown.value = false;
-  isExporting.value = true;
-  try {
-    const csvContent = generateCSVContent();
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    
-    link.setAttribute('href', url);
-    link.setAttribute('download', `price-monitoring-${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    
-    showStatus('success', 'CSV export completed successfully!');
-  } catch (error) {
-    console.error('Export error:', error);
-    showStatus('error', 'Failed to export CSV');
-  } finally {
-    isExporting.value = false;
-  }
-};
 
 const exportToPDF = async () => {
-  showExportDropdown.value = false;
   isExporting.value = true;
   try {
-    // Capture the current analysis chart as an image
     await nextTick();
     const canvas = priceChart.value;
-    const chartSrc = canvas && canvas.toDataURL ? canvas.toDataURL('image/png', 1.0) : null;
-    const viewMap = { deviation: 'Price Deviation', category: 'By Category', warnings: 'Warning Levels' };
-    const title = `Price Analysis - Oriental Mindoro (${viewMap[currentChartView.value] || 'Analysis'})`;
-    const subtitle = `Generated on: ${new Date().toLocaleDateString()} • Filters → Category: ${chartCategoryFilter.value || 'All'}, Warning: ${chartWarningFilter.value || 'All'}`;
-    const html = buildChartPDFHTML(title, subtitle, chartSrc);
+    if (!canvas || typeof canvas.toDataURL !== 'function') {
+      throw new Error('Chart not available');
+    }
 
-    const w = window.open('', '_blank');
-    w.document.write(html);
-    w.document.close();
-    w.focus();
-    w.print();
-    showStatus('success', 'PDF ready — includes the current analysis chart');
+    const chartSrc = canvas.toDataURL('image/png', 1.0);
+    const viewMap = { deviation: 'Price Deviation', category: 'By Category', warnings: 'Warning Levels' };
+    const filtersLabel = currentChartView.value === 'category'
+      ? `Category Filter: ${chartCategoryFilter.value || 'All'}`
+      : currentChartView.value === 'warnings'
+        ? `Warning Filter: ${chartWarningFilter.value || 'All'}`
+        : 'All Categories & Warning Levels';
+
+    chartPreviewImage.value = chartSrc;
+    chartPreviewGeneratedAt.value = new Date();
+    chartPreviewTitle.value = 'Price Analysis - Oriental Mindoro';
+    chartPreviewSubtitle.value = `${viewMap[currentChartView.value] || 'Analysis'} • ${filtersLabel}`;
+    chartPreviewStats.value = [
+      { label: 'Avg Deviation', value: avgDeviation.value },
+      { label: 'Overpriced Products', value: overpricedProducts.value.length },
+      { label: 'Underpriced Products', value: underpricedProducts.value.length },
+      { label: 'Sellers Monitored', value: sellersCount.value }
+    ];
+
+    showChartPreview.value = true;
   } catch (error) {
     console.error('Export error:', error);
-    showStatus('error', 'Failed to export PDF');
+    showStatus('error', 'Failed to prepare PDF preview');
   } finally {
     isExporting.value = false;
   }
@@ -1838,25 +1780,61 @@ const exportFilteredToCSV = async () => {
   }
 };
 
-const exportFilteredToPDF = async () => {
+const buildMonitoringPreviewRows = () => {
+  const rows = [];
+  filteredProducts.value.forEach(product => {
+    const units = Array.isArray(product.units) ? product.units : [];
+    if (!units.length) {
+      rows.push({
+        id: `${product.id}-no-unit`,
+        productName: product.productName,
+        category: product.category,
+        seller: getSellerName(product.sellerId),
+        unit: 'N/A',
+        currentPrice: Number(product.price ?? 0),
+        daMin: null,
+        daMax: null,
+        deviation: null,
+        status: 'No Units',
+        variety: product.variety || 'Normal'
+      });
+      return;
+    }
+
+    units.forEach((unit, index) => {
+      if (!unit) return;
+      const daRef = unit.daReference || null;
+      const daMin = daRef ? Number(daRef.newMinPrice ?? daRef.minPrice ?? daRef.min ?? null) : null;
+      const daMax = daRef ? Number(daRef.newMaxPrice ?? daRef.maxPrice ?? daRef.max ?? null) : null;
+      rows.push({
+        id: `${product.id}-${unit.type || index}`,
+        productName: product.productName,
+        category: product.category,
+        seller: getSellerName(product.sellerId),
+        unit: unit.type || 'N/A',
+        currentPrice: Number(unit.price ?? product.price ?? 0),
+        daMin: Number.isFinite(daMin) ? daMin : null,
+        daMax: Number.isFinite(daMax) ? daMax : null,
+        deviation: typeof unit.deviation === 'number' ? unit.deviation : null,
+        status: getUnitStatusText(unit) || 'N/A',
+        variety: product.variety || 'Normal'
+      });
+    });
+  });
+  return rows;
+};
+
+const exportFilteredToPDF = () => {
   showTableExportDropdown.value = false;
-  isExporting.value = true;
-  try {
-    const title = 'Product Price Analysis (Filtered)';
-    const subtitle = `Generated on: ${new Date().toLocaleDateString()} • Filters → Category: ${selectedCategory.value || 'All'}, Type: ${selectedProductType.value || 'All'}, Status: ${selectedPriceStatus.value || 'All'}`;
-    const html = buildReportHTML(title, subtitle, filteredProducts.value);
-    const w = window.open('', '_blank');
-    w.document.write(html);
-    w.document.close();
-    w.focus();
-    w.print();
-    showStatus('success', 'Filtered PDF ready — use the print dialog to save');
-  } catch (error) {
-    console.error('Export error:', error);
-    showStatus('error', 'Failed to export filtered PDF');
-  } finally {
-    isExporting.value = false;
+  const rows = buildMonitoringPreviewRows();
+  if (!rows.length) {
+    showStatus('error', 'No products available to export');
+    return;
   }
+  monitoringPreviewRows.value = rows;
+  monitoringPreviewGeneratedAt.value = new Date();
+  monitoringPreviewSubtitle.value = `Filters → Category: ${selectedCategory.value || 'All'}, Type: ${selectedProductType.value || 'All'}, Status: ${selectedPriceStatus.value || 'All'}`;
+  showMonitoringPreview.value = true;
 };
 
 const generateFilteredCSVContent = () => {
@@ -2519,6 +2497,41 @@ onMounted(() => {
 .export-controls {
   display: flex;
   gap: 8px;
+}
+
+.export-pdf-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 22px;
+  border-radius: 999px;
+  border: 1px solid #16a34a;
+  background: linear-gradient(135deg, #e8fbe9, #c5f3d2);
+  color: #166534;
+  font-weight: 600;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  box-shadow: 0 8px 16px rgba(22, 101, 52, 0.15);
+  transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.export-pdf-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.export-pdf-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #16a34a, #15803d);
+  color: #f0fdf4;
+  box-shadow: 0 10px 18px rgba(21, 128, 61, 0.3);
+  transform: translateY(-1px);
+}
+
+.export-pdf-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .export-btn {

@@ -14,187 +14,203 @@
       </header>
 
       <div class="content-wrapper">
-        <!-- Stats Section -->
-        <div class="sellers-stats">
-          <div class="stat-card">
-            <h3>Total Sellers</h3>
-            <p class="stat-value">{{ allSellers.length }}</p>
-          </div>
-          <div class="stat-card">
-            <h3>Active Sellers</h3>
-            <p class="stat-value">{{ activeSellers }}</p>
-          </div>
-          <div class="stat-card">
-            <h3>Pending Sellers</h3>
-            <p class="stat-value">{{ pendingSellers }}</p>
-          </div>
+        <div v-if="isLoading" class="loading-container">
+          <i class="fas fa-spinner fa-spin"></i>
+          <span>Loading sellers...</span>
         </div>
-
-        <!-- Test Email Button (for debugging) -->
-        
-
-        <div class="actions-bar">
-          <div class="search-and-filter">
-            <div class="search-box">
-              <i class="i-lucide-search search-icon"></i>
-              <input type="text" placeholder="Search sellers..." v-model="searchQuery" @input="handleSearch" />
+        <div v-else-if="loadError" class="error-message">
+          <i class="fas fa-exclamation-triangle"></i>
+          <span>{{ loadError }}</span>
+        </div>
+        <div v-else>
+          <!-- Stats Section -->
+          <div class="sellers-stats">
+            <div class="stat-card">
+              <h3>Total Sellers</h3>
+              <p class="stat-value">{{ allSellers.length }}</p>
+            </div>
+            <div class="stat-card">
+              <h3>Active Sellers</h3>
+              <p class="stat-value">{{ activeSellers }}</p>
+            </div>
+            <div class="stat-card">
+              <h3>Pending Sellers</h3>
+              <p class="stat-value">{{ pendingSellers }}</p>
             </div>
           </div>
-          <div class="filter-actions">
-            <div class="export-dropdown">
-              <button class="export-btn">
-                <i class="fas fa-download"></i>
-                Export
-                <i class="fas fa-chevron-down ml-1"></i>
-              </button>
-              <div class="export-menu">
-                <button class="export-option" @click="exportData('csv')">
-                  <i class="fas fa-file-csv"></i>
-                  Export as CSV
+
+          <!-- Test Email Button (for debugging) -->
+          
+
+          <div class="actions-bar">
+            <div class="search-and-filter">
+              <div class="search-box">
+                <i class="i-lucide-search search-icon"></i>
+                <input type="text" placeholder="Search sellers..." v-model="searchQuery" @input="handleSearch" />
+              </div>
+            </div>
+            <div class="filter-actions">
+              <div class="export-dropdown" ref="exportDropdownRef">
+                <button class="export-btn" type="button" @click.stop="toggleExportMenu">
+                  <i class="fas fa-download"></i>
+                  Export
+                  <i class="fas fa-chevron-down ml-1"></i>
                 </button>
-                <button class="export-option" @click="exportData('pdf')">
-                  <i class="fas fa-file-pdf"></i>
-                  Export as PDF
-                </button>
+                <div class="export-menu" v-show="isExportMenuOpen">
+                  <button class="export-option" @click="handleExport('csv')">
+                    <i class="fas fa-file-csv"></i>
+                    Export as CSV
+                  </button>
+                  <button class="export-option" @click="handleExport('pdf')">
+                    <i class="fas fa-file-pdf"></i>
+                    Export as PDF
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        <table class="sellers-table">
-          <thead>
-            <tr>
-              <th>Seller</th>
-              <th>Contact</th>
-              <th>Farm Details</th>
-              <th>Total Sales</th>
-              <th>Registration Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="seller in paginatedSellers" :key="seller.id">
-              <td>
-                <div class="seller-cell">
-                  <div class="seller-avatar" :style="{ backgroundColor: getAvatarColor(seller.personalInfo?.email) }">
-                    {{ getInitials(seller.personalInfo?.firstName, seller.personalInfo?.lastName) }}
+          <table class="sellers-table">
+            <thead>
+              <tr>
+                <th>Seller</th>
+                <th>Contact</th>
+                <th>Farm Details</th>
+                <th>Total Sales</th>
+                <th>Registration Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="seller in paginatedSellers" :key="seller.id">
+                <td>
+                  <div class="seller-cell">
+                    <div class="seller-avatar" :style="{ backgroundColor: getAvatarColor(seller.personalInfo?.email) }">
+                      {{ getInitials(seller.personalInfo?.firstName, seller.personalInfo?.lastName) }}
+                    </div>
+                    <div class="seller-info">
+                      <div class="seller-name">{{ seller.personalInfo?.firstName || 'N/A' }} {{ seller.personalInfo?.lastName || 'N/A' }}</div>
+                      <div class="seller-email">{{ seller.personalInfo?.email || 'N/A' }}</div>
+                    </div>
                   </div>
-                  <div class="seller-info">
-                    <div class="seller-name">{{ seller.personalInfo?.firstName || 'N/A' }} {{ seller.personalInfo?.lastName || 'N/A' }}</div>
-                    <div class="seller-email">{{ seller.personalInfo?.email || 'N/A' }}</div>
+                </td>
+                <td>
+                  <div class="contact-cell">
+                    <div class="phone-number">
+                      <i class="i-lucide-phone contact-icon"></i>
+                      {{ seller.personalInfo?.contact || 'N/A' }}
+                    </div>
+                    <div class="address">
+                      <i class="i-lucide-map-pin contact-icon"></i>
+                      {{ seller.personalInfo?.address || 'N/A' }}
+                    </div>
                   </div>
-                </div>
-              </td>
-              <td>
-                <div class="contact-cell">
-                  <div class="phone-number">
-                    <i class="i-lucide-phone contact-icon"></i>
-                    {{ seller.personalInfo?.contact || 'N/A' }}
+                </td>
+                <td>
+                  <div class="farm-cell">
+                    <div class="farm-name">
+                      <i class="i-lucide-home contact-icon"></i>
+                      {{ seller.farmDetails?.farmName || 'N/A' }}
+                    </div>
+                    <div class="farm-type">
+                      <i class="i-lucide-leaf contact-icon"></i>
+                      {{ seller.farmDetails?.farmType || 'N/A' }}
+                    </div>
                   </div>
-                  <div class="address">
-                    <i class="i-lucide-map-pin contact-icon"></i>
-                    {{ seller.personalInfo?.address || 'N/A' }}
+                </td>
+                <td>
+                  <div class="sales-cell">
+                    <div class="sales-amount">₱{{ formatNumber(seller.totalSales || 0) }}</div>
+                    <div class="sales-orders">{{ seller.totalOrders || 0 }} orders</div>
                   </div>
-                </div>
-              </td>
-              <td>
-                <div class="farm-cell">
-                  <div class="farm-name">
-                    <i class="i-lucide-home contact-icon"></i>
-                    {{ seller.farmDetails?.farmName || 'N/A' }}
+                </td>
+                <td>
+                  <div class="status-container">
+                    <!-- Show dropdown only if not verified -->
+                    <div v-if="!seller.isVerified" class="custom-dropdown">
+                      <select 
+                        v-model="seller.registrationStatus" 
+                        @change="updateRegistrationStatus(seller)"
+                        class="status-dropdown"
+                      >
+                        <option value="Pending">Pending</option>
+                        <option value="Accept">Accept</option>
+                        <option value="Decline">Decline</option>
+                      </select>
+                      <i class="fas fa-chevron-down dropdown-icon"></i>
+                    </div>
+                    <!-- Show verified badge if already verified -->
+                    <span v-else :class="['status-badge', 'verified']">
+                      Verified
+                    </span>
                   </div>
-                  <div class="farm-type">
-                    <i class="i-lucide-leaf contact-icon"></i>
-                    {{ seller.farmDetails?.farmType || 'N/A' }}
+                </td>
+                <td>
+                  <div class="action-buttons">
+                    <button class="action-btn view-btn" @click="viewSellerDetails(seller)" title="View Details">
+                      <Eye :size="16" />
+                    </button>
+                    <button class="action-btn delete-btn" @click="deleteSeller(seller)" title="Delete Seller">
+                      <Trash2 :size="16" />
+                    </button>
                   </div>
-                </div>
-              </td>
-              <td>
-                <div class="sales-cell">
-                  <div class="sales-amount">₱{{ formatNumber(seller.totalSales || 0) }}</div>
-                  <div class="sales-orders">{{ seller.totalOrders || 0 }} orders</div>
-                </div>
-              </td>
-              <td>
-                <div class="status-container">
-                  <!-- Show dropdown only if not verified -->
-                  <div v-if="!seller.isVerified" class="custom-dropdown">
-                    <select 
-                      v-model="seller.registrationStatus" 
-                      @change="updateRegistrationStatus(seller)"
-                      class="status-dropdown"
-                    >
-                      <option value="Pending">Pending</option>
-                      <option value="Accept">Accept</option>
-                      <option value="Decline">Decline</option>
-                    </select>
-                    <i class="fas fa-chevron-down dropdown-icon"></i>
+                </td>
+              </tr>
+              <tr v-if="paginatedSellers.length === 0">
+                <td colspan="6" class="empty-state">
+                  <div class="empty-message">
+                    <i class="i-lucide-search-x empty-icon"></i>
+                    <p>No sellers found</p>
                   </div>
-                  <!-- Show verified badge if already verified -->
-                  <span v-else :class="['status-badge', 'verified']">
-                    Verified
-                  </span>
-                </div>
-              </td>
-              <td>
-                <div class="action-buttons">
-                  <button class="action-btn view-btn" @click="viewSellerDetails(seller)" title="View Details">
-                    <Eye :size="16" />
-                  </button>
-                  <button class="action-btn delete-btn" @click="deleteSeller(seller)" title="Delete Seller">
-                    <Trash2 :size="16" />
-                  </button>
-                </div>
-              </td>
-            </tr>
-            <tr v-if="paginatedSellers.length === 0">
-              <td colspan="6" class="empty-state">
-                <div class="empty-message">
-                  <i class="i-lucide-search-x empty-icon"></i>
-                  <p>No sellers found</p>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+                </td>
+              </tr>
+            </tbody>
+          </table>
 
-        <!-- Pagination -->
-        <div class="pagination-container" v-if="totalPages > 1">
-          <div class="pagination-info">
-            Showing {{ startIndex + 1 }} to {{ Math.min(endIndex, filteredSellers.length) }} of {{ filteredSellers.length }} sellers
-          </div>
-          <div class="pagination-controls">
-            <button 
-              class="pagination-btn" 
-              @click="goToPage(currentPage - 1)" 
-              :disabled="currentPage === 1"
-              title="Previous Page"
-            >
-              <i class="i-lucide-chevron-left"></i>
-            </button>
-            
-            <button 
-              v-for="page in visiblePages" 
-              :key="page"
-              class="pagination-btn page-number"
-              :class="{ active: page === currentPage }"
-              @click="goToPage(page)"
-            >
-              {{ page }}
-            </button>
-            
-            <button 
-              class="pagination-btn" 
-              @click="goToPage(currentPage + 1)" 
-              :disabled="currentPage === totalPages"
-              title="Next Page"
-            >
-              <i class="i-lucide-chevron-right"></i>
-            </button>
+          <!-- Pagination -->
+          <div class="pagination-container" v-if="totalPages > 1">
+            <div class="pagination-info">
+              Showing {{ startIndex + 1 }} to {{ Math.min(endIndex, filteredSellers.length) }} of {{ filteredSellers.length }} sellers
+            </div>
+            <div class="pagination-controls">
+              <button 
+                class="pagination-btn" 
+                @click="goToPage(currentPage - 1)" 
+                :disabled="currentPage === 1"
+                title="Previous Page"
+              >
+                <i class="i-lucide-chevron-left"></i>
+              </button>
+              
+              <button 
+                v-for="page in visiblePages" 
+                :key="page"
+                class="pagination-btn page-number"
+                :class="{ active: page === currentPage }"
+                @click="goToPage(page)"
+              >
+                {{ page }}
+              </button>
+              
+              <button 
+                class="pagination-btn" 
+                @click="goToPage(currentPage + 1)" 
+                :disabled="currentPage === totalPages"
+                title="Next Page"
+              >
+                <i class="i-lucide-chevron-right"></i>
+              </button>
+            </div>
           </div>
         </div>
       </div>
     </div>
+
+      <SellerExportPreview
+        v-model="showPdfPreview"
+        :sellers="pdfPreviewData"
+        :generated-at="pdfGeneratedAt"
+      />
     
     <!-- Custom Notification -->
     <div v-if="notification.show" class="custom-notification" :class="notification.type">
@@ -228,9 +244,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useRouter } from 'vue-router';
 import AdminSidebar from '@/components/AdminSidebar.vue';
+import SellerExportPreview from '@/components/previewpdf/SellerExportPreview.vue';
 import { db } from '@/firebase/firebaseConfig';
 import { collection, getDocs, doc, deleteDoc, updateDoc, query, where } from "firebase/firestore";
 import { Eye, Trash2 } from 'lucide-vue-next';
@@ -241,6 +258,8 @@ const allSellers = ref([]);
 const searchQuery = ref('');
 const currentPage = ref(1);
 const itemsPerPage = 10;
+const isLoading = ref(true);
+const loadError = ref(null);
 
 // Notification system
 const notification = ref({
@@ -357,8 +376,17 @@ const visiblePages = computed(() => {
 const activeSellers = computed(() => allSellers.value.filter(s => s.registrationStatus === 'Accept' || s.isVerified).length);
 const pendingSellers = computed(() => allSellers.value.filter(s => s.registrationStatus === 'Pending' && !s.isVerified).length);
 
+// PDF preview state
+const showPdfPreview = ref(false);
+const pdfPreviewData = ref([]);
+const pdfGeneratedAt = ref(new Date().toISOString());
+const isExportMenuOpen = ref(false);
+const exportDropdownRef = ref(null);
+
 // Methods
 const fetchSellers = async () => {
+  isLoading.value = true;
+  loadError.value = null;
   try {
     const querySnapshot = await getDocs(collection(db, "sellers"));
     const sellersList = [];
@@ -396,6 +424,10 @@ const fetchSellers = async () => {
     
   } catch (error) {
     console.error("Error fetching sellers:", error);
+    loadError.value = 'Failed to load sellers. Please try again.';
+    allSellers.value = [];
+  } finally {
+    isLoading.value = false;
   }
 };
 
@@ -725,13 +757,22 @@ const deleteSeller = async (seller) => {
 
 const exportData = (format) => {
   try {
-    const dataToExport = filteredSellers.value; // Export filtered data
+    const filteredData = filteredSellers.value;
+    if (!filteredData.length) {
+      showNotification(
+        'No Sellers to Export',
+        'Adjust your filters or add sellers before exporting.',
+        'warning',
+        5000
+      );
+      return;
+    }
     
     if (format === 'csv') {
       const headers = ['Name', 'Email', 'Contact', 'Farm Name', 'Farm Type', 'Total Sales', 'Total Orders', 'Registration Status'];
       const csvContent = [
         headers.join(','),
-        ...dataToExport.map(seller => [
+        ...filteredData.map(seller => [
           `${seller.personalInfo?.firstName || ''} ${seller.personalInfo?.lastName || ''}`.trim() || 'N/A',
           seller.personalInfo?.email || 'N/A',
           seller.personalInfo?.contact || 'N/A',
@@ -755,73 +796,11 @@ const exportData = (format) => {
       link.click();
       document.body.removeChild(link);
     } else if (format === 'pdf') {
-      const printWindow = window.open('', '_blank');
-      
-      let pdfContent = '<!DOCTYPE html>';
-      pdfContent += '<html>';
-      pdfContent += '<head>';
-      pdfContent += '<title>Sellers Export</title>';
-      pdfContent += '<style>';
-      pdfContent += 'body { font-family: Arial, sans-serif; margin: 20px; }';
-      pdfContent += 'h1 { color: #2e5c31; margin-bottom: 20px; }';
-      pdfContent += 'table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }';
-      pdfContent += 'th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }';
-      pdfContent += 'th { background-color: #f2f2f2; font-weight: bold; }';
-      pdfContent += 'tr:nth-child(even) { background-color: #f9f9f9; }';
-      pdfContent += '.export-info { margin-top: 20px; font-size: 12px; color: #666; }';
-      pdfContent += '.status-badge { display: inline-flex; align-items: center; justify-content: center; padding: 8px 12px; border-radius: 6px; font-size: 0.875rem; font-weight: 500; text-align: center; min-width: 100px; height: 36px; line-height: 1.2; }';
-      pdfContent += '.status-verified { background-color: #d1fae5; color: #059669; }';
-      pdfContent += '.status-pending { background-color: #fef3c7; color: #d97706; }';
-      pdfContent += '</style>';
-      pdfContent += '</head>';
-      pdfContent += '<body>';
-      pdfContent += '<h1>Sellers Export</h1>';
-      pdfContent += '<table>';
-      pdfContent += '<thead>';
-      pdfContent += '<tr>';
-      pdfContent += '<th>Name</th>';
-      pdfContent += '<th>Email</th>';
-      pdfContent += '<th>Contact</th>';
-      pdfContent += '<th>Farm Name</th>';
-      pdfContent += '<th>Farm Type</th>';
-      pdfContent += '<th>Total Sales</th>';
-      pdfContent += '<th>Total Orders</th>';
-      pdfContent += '<th>Registration Status</th>';
-      pdfContent += '</tr>';
-      pdfContent += '</thead>';
-      pdfContent += '<tbody>';
-      
-      dataToExport.forEach(seller => {
-        const fullName = `${seller.personalInfo?.firstName || ''} ${seller.personalInfo?.lastName || ''}`.trim() || 'N/A';
-        const statusClass = seller.isVerified ? 'status-verified' : 'status-pending';
-        
-        pdfContent += '<tr>';
-        pdfContent += `<td>${escapeHtml(fullName)}</td>`;
-        pdfContent += `<td>${escapeHtml(seller.personalInfo?.email || 'N/A')}</td>`;
-        pdfContent += `<td>${escapeHtml(seller.personalInfo?.contact || 'N/A')}</td>`;
-        pdfContent += `<td>${escapeHtml(seller.farmDetails?.farmName || 'N/A')}</td>`;
-        pdfContent += `<td>${escapeHtml(seller.farmDetails?.farmType || 'N/A')}</td>`;
-        pdfContent += `<td>₱${formatNumber(seller.totalSales || 0)}</td>`;
-        pdfContent += `<td>${seller.totalOrders || 0}</td>`;
-        pdfContent += `<td><span class="status-badge ${statusClass}">${escapeHtml(seller.registrationStatus || 'N/A')}</span></td>`;
-        pdfContent += '</tr>';
-      });
-      
-      pdfContent += '</tbody>';
-      pdfContent += '</table>';
-      pdfContent += '<div class="export-info">';
-      pdfContent += `<p>Generated on: ${new Date().toLocaleString()}</p>`;
-      pdfContent += `<p>Total Sellers: ${dataToExport.length}</p>`;
-      pdfContent += '</div>';
-      pdfContent += '<script>';
-      pdfContent += 'window.onload = function() { window.print(); }';
-      pdfContent += '<\/script>';
-      pdfContent += '</body>';
-      pdfContent += '</html>';
-      
-      printWindow.document.open();
-      printWindow.document.write(pdfContent);
-      printWindow.document.close();
+      const visibleSellers = paginatedSellers.value;
+      const previewSource = visibleSellers.length ? visibleSellers : filteredData;
+      pdfPreviewData.value = previewSource.map((seller) => JSON.parse(JSON.stringify(seller)));
+      pdfGeneratedAt.value = new Date().toISOString();
+      showPdfPreview.value = true;
     }
   } catch (error) {
     console.error(`Error exporting ${format}:`, error);
@@ -832,13 +811,6 @@ const exportData = (format) => {
       6000
     );
   }
-};
-
-const escapeHtml = (text) => {
-  if (!text) return '';
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
 };
 
 // Helper functions for styling
@@ -871,8 +843,33 @@ const formatNumber = (num) => {
   return parseFloat(num).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 };
 
+const toggleExportMenu = () => {
+  isExportMenuOpen.value = !isExportMenuOpen.value;
+};
+
+const closeExportMenu = () => {
+  isExportMenuOpen.value = false;
+};
+
+const handleExport = (format) => {
+  closeExportMenu();
+  exportData(format);
+};
+
+const handleClickOutside = (event) => {
+  if (!exportDropdownRef.value) return;
+  if (!exportDropdownRef.value.contains(event.target)) {
+    closeExportMenu();
+  }
+};
+
 onMounted(() => {
   fetchSellers();
+  document.addEventListener('click', handleClickOutside);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleClickOutside);
 });
 </script>
 
@@ -1055,11 +1052,6 @@ onMounted(() => {
   z-index: 10;
   min-width: 180px;
   overflow: hidden;
-  display: none;
-}
-
-.export-dropdown:hover .export-menu {
-  display: block;
 }
 
 .export-option {
@@ -1296,6 +1288,32 @@ onMounted(() => {
   font-size: 2rem;
   margin-bottom: 10px;
   color: #9ca3af;
+}
+
+.loading-container,
+.error-message {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 40px 20px;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background-color: #f9fafb;
+  color: #6b7280;
+  font-size: 0.95rem;
+  min-height: 160px;
+}
+
+.loading-container i,
+.error-message i {
+  font-size: 1.5rem;
+}
+
+.error-message {
+  background-color: #fef3c7;
+  border-color: #fcd34d;
+  color: #b45309;
 }
 
 /* Pagination Styles */

@@ -547,6 +547,12 @@
     {{ notification.message }}
     <button class="notification-close" @click="closeNotification">&times;</button>
   </div>
+
+  <ProductExportPreview
+    v-model="showProductPreview"
+    :products="previewProducts"
+    :generated-at="previewGeneratedAt"
+  />
 </div>
 </template>
 
@@ -570,13 +576,15 @@ orderBy
 } from 'firebase/firestore';
 import { Chart, registerables } from 'chart.js';
 import AdminSidebar from '@/components/AdminSidebar.vue';
+import ProductExportPreview from '@/components/previewpdf/ProductExportPreview.vue';
 
 // Register Chart.js components
 Chart.register(...registerables);
 
 export default {
 components: {
-  AdminSidebar
+  AdminSidebar,
+  ProductExportPreview
 },
 setup() {
   // Router
@@ -644,6 +652,9 @@ setup() {
     value: null
   });
   const editInput = ref(null);
+  const showProductPreview = ref(false);
+  const previewProducts = ref([]);
+  const previewGeneratedAt = ref(new Date());
 
   const setEditInputRef = (el) => {
     editInput.value = el;
@@ -722,6 +733,7 @@ setup() {
     return { min, max };
   };
 
+
   // Export methods
   const exportToCSV = () => {
     const headers = ['Product Name', 'Category', 'Unit', 'Min Price', 'Max Price', 'Variety'];
@@ -765,79 +777,15 @@ setup() {
     showNotification('Products exported to CSV successfully');
   };
 
-  // Replace the exportToPDF function with this simpler version:
   const exportToPDF = () => {
-    // Create a simple HTML content for printing
-    const printContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Product Price Management Report</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 20px; }
-          h1 { color: #2e5c31; margin-bottom: 10px; }
-          .date { color: #666; margin-bottom: 20px; }
-          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-          th { background-color: #2e5c31; color: white; }
-          tr:nth-child(even) { background-color: #f9f9f9; }
-        </style>
-      </head>
-      <body>
-        <h1>Product Price Management Report</h1>
-        <div class="date">Generated on: ${new Date().toLocaleDateString()}</div>
-        <table>
-          <thead>
-            <tr>
-              <th>Product Name</th>
-              <th>Category</th>
-              <th>Unit</th>
-              <th>Min Price</th>
-              <th>Max Price</th>
-              <th>Variety</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${filteredProducts.value.map(product => {
-              if (product.unitPricing && Object.keys(product.unitPricing).length > 0) {
-                return Object.entries(product.unitPricing).map(([unit, pricing]) => {
-                  const np = normalizeUnitPricingForExport(pricing);
-                  return `
-                  <tr>
-                    <td>${product.productName}</td>
-                    <td>${product.category}</td>
-                    <td>${unit}</td>
-                    <td>₱${np.min.toFixed(2)}</td>
-                    <td>₱${np.max.toFixed(2)}</td>
-                    <td>${product.variety || 'Normal'}</td>
-                  </tr>
-                `;}).join('');
-              } else {
-                return `
-                  <tr>
-                    <td>${product.productName}</td>
-                    <td>${product.category}</td>
-                    <td>No units</td>
-                    <td>₱0.00</td>
-                    <td>₱0.00</td>
-                    <td>${product.variety || 'Normal'}</td>
-                  </tr>
-                `;
-              }
-            }).join('')}
-          </tbody>
-        </table>
-      </body>
-      </html>
-    `;
-    
-    // Open print dialog
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(printContent);
-    printWindow.document.close();
-    printWindow.print();
-    
-    showNotification('PDF export initiated - use your browser\'s print dialog to save as PDF');
+    if (paginatedProducts.value.length === 0) {
+      showNotification('No products available on this page to export', 'error');
+      return;
+    }
+
+    previewGeneratedAt.value = new Date();
+    previewProducts.value = buildPreviewRows();
+    showProductPreview.value = true;
   };
 
   // Helper functions for unit dropdown
@@ -857,6 +805,26 @@ setup() {
     const defaultUnit = availableUnits[0];
     selectedUnits.value[product.id] = defaultUnit;
     return defaultUnit;
+  };
+
+  const buildPreviewRows = () => {
+    return paginatedProducts.value.map(product => {
+      const selectedUnitName = getSelectedUnit(product);
+      const selectedPricing = selectedUnitName && product.unitPricing
+        ? product.unitPricing[selectedUnitName]
+        : null;
+      const normalizedPricing = selectedPricing ? normalizeUnitPricingForExport(selectedPricing) : null;
+
+      return {
+        id: product.id,
+        productName: product.productName,
+        category: product.category,
+        unit: selectedUnitName || 'No units',
+        minPrice: normalizedPricing ? normalizedPricing.min : null,
+        maxPrice: normalizedPricing ? normalizedPricing.max : null,
+        variety: product.variety || 'Normal'
+      };
+    });
   };
 
   const updateSelectedUnit = (product, unit) => {
@@ -2596,11 +2564,15 @@ try {
     sendCombinedPriceUpdateNotification,
     sendTestNotificationToAllSellers,
     testPriceRollingLogic,
-    setEditInputRef
+    setEditInputRef,
+    showProductPreview,
+    previewProducts,
+    previewGeneratedAt
   };
 }
 };
 </script>
+
 
 <style scoped>
 @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css');

@@ -23,6 +23,9 @@
             <button @click="downloadCSV" class="export-option">
               <i class="fas fa-file-csv"></i> CSV
             </button>
+            <button @click="openPdfPreview" class="export-option">
+              <i class="fas fa-file-pdf"></i> PDF
+            </button>
           </div>
         </div>
       </div>
@@ -68,13 +71,21 @@
         </tbody>
       </table>
     </div>
+
+    <UnderpricedExportPreview
+      v-model="showPdfPreview"
+      :rows="pdfRows"
+      :generated-at="pdfGeneratedAt"
+      :reminded-count="remindersSent"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { collection, addDoc, serverTimestamp, getDocs } from 'firebase/firestore';
+import { ref } from 'vue';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/firebase/firebaseConfig';
+import UnderpricedExportPreview from '@/components/previewpdf/UnderpricedExportPreview.vue';
 
 const props = defineProps({
   underpricedProducts: { type: Array, required: true },
@@ -84,9 +95,46 @@ const props = defineProps({
 const emit = defineEmits(['refresh-products']);
 
 const showExportDropdown = ref(false);
+const showPdfPreview = ref(false);
+const pdfRows = ref([]);
+const pdfGeneratedAt = ref(new Date());
+const remindersSent = ref(0);
 
 const toggleExportDropdown = () => {
   showExportDropdown.value = !showExportDropdown.value;
+};
+
+const toNumber = (value, fallback = 0) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const buildPdfRows = () => {
+  return (props.underpricedProducts || []).map(product => {
+    const unit = getUnderUnit(product);
+    const daMin = unit?.daReference?.minPrice ?? unit?.daReference?.newMinPrice ?? null;
+    return {
+      id: product.id,
+      productName: product.productName,
+      seller: getSellerName(product.sellerId),
+      unit: unit?.type || 'N/A',
+      sellerPrice: toNumber(unit?.price ?? product.price ?? 0, 0),
+      daMin: toNumber(daMin, 0),
+      deviation: typeof unit?.deviation === 'number' ? unit.deviation : null
+    };
+  });
+};
+
+const openPdfPreview = () => {
+  showExportDropdown.value = false;
+  const rows = buildPdfRows();
+  if (!rows.length) {
+    showToast('No underpriced products available to export.', 'error');
+    return;
+  }
+  pdfRows.value = rows;
+  pdfGeneratedAt.value = new Date();
+  showPdfPreview.value = true;
 };
 
 const getUnderUnit = (p) => {
@@ -147,6 +195,7 @@ const notifySeller = async (product) => {
       productId: product.id,
       link: `/seller/products/edit/${product.id}`
     });
+    remindersSent.value += 1;
     showToast('Reminder sent.', 'success');
   } catch (e) {
     console.error('notifySeller error', e);
@@ -167,6 +216,7 @@ const notifyAll = async () => {
 };
 
 const downloadCSV = () => {
+  showExportDropdown.value = false;
   try {
     const rows = props.underpricedProducts.map(p => {
       const u = getUnderUnit(p);

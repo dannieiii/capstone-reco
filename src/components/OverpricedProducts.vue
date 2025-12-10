@@ -454,10 +454,17 @@
       </div>
     </div>
   </div>
+
+  <OverpricedExportPreview
+    v-model="showPdfPreview"
+    :rows="pdfPreviewRows"
+    :generated-at="pdfGeneratedAt"
+  />
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
+import OverpricedExportPreview from '@/components/previewpdf/OverpricedExportPreview.vue';
 import { 
   collection, 
   addDoc, 
@@ -515,6 +522,9 @@ const showExportPreview = ref(false);
 const exportFormat = ref('csv');
 const exportPreviewData = ref([]);
 const exportHeaders = ref([]);
+const showPdfPreview = ref(false);
+const pdfPreviewRows = ref([]);
+const pdfGeneratedAt = ref(new Date());
 
 // Enhanced Auto-notification settings
 const autoNotificationsEnabled = ref(true);
@@ -708,10 +718,61 @@ const toggleExportDropdown = () => {
   showExportDropdown.value = !showExportDropdown.value;
 };
 
+const normalizeNumber = (value, fallback = 0) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const getDisplayedProductsForPreview = () => {
+  if (paginatedProducts.value.length) {
+    return paginatedProducts.value;
+  }
+  return filteredOverpricedProducts.value;
+};
+
+const buildPdfPreviewRows = () => {
+  return getDisplayedProductsForPreview().map(product => {
+    const unitLabel = product.currentPrice?.unitLabel || getDisplayUnit(product) || 'N/A';
+    const sellerPrice = normalizeNumber(product.currentPrice?.price ?? product.price ?? 0, 0);
+    const daMaxRaw = product.daReference?.maxPrice ?? product.daReference?.newMaxPrice ?? product.daReference?.max ?? null;
+    const daMax = normalizeNumber(daMaxRaw, 0);
+    const lastWarningDate = getLastWarningDate(product.id);
+    return {
+      id: product.id,
+      productName: product.productName,
+      category: product.category || 'N/A',
+      seller: getSellerName(product.sellerId),
+      unit: unitLabel,
+      sellerPrice,
+      daMax,
+      excess: normalizeNumber(product.excessAmount ?? 0, 0),
+      deviation: typeof product.deviation === 'number' ? product.deviation : null,
+      warningLevel: product.warningLevel || 'mild',
+      status: getWarningStatusText(product),
+      lastWarning: lastWarningDate ? formatDate(lastWarningDate) : 'Never'
+    };
+  });
+};
+
+const openPdfPreview = () => {
+  const rows = buildPdfPreviewRows();
+  if (!rows.length) {
+    notify('warning', 'No overpriced products available on this page.');
+    return;
+  }
+  pdfPreviewRows.value = rows;
+  pdfGeneratedAt.value = new Date();
+  showPdfPreview.value = true;
+};
+
 const previewExport = (format) => {
+  showExportDropdown.value = false;
+  if (format === 'pdf') {
+    openPdfPreview();
+    return;
+  }
   exportFormat.value = format;
   generateExportPreview();
-  showExportDropdown.value = false;
   showExportPreview.value = true;
 };
 
@@ -754,8 +815,6 @@ const closeExportPreview = () => {
 const confirmExport = () => {
   if (exportFormat.value === 'csv') {
     downloadCSV();
-  } else if (exportFormat.value === 'pdf') {
-    downloadPDF();
   }
   closeExportPreview();
 };
@@ -799,67 +858,6 @@ const downloadCSV = () => {
   } catch (error) {
     console.error('CSV export error:', error);
   notify('error', 'Failed to export CSV. Please try again.');
-  }
-};
-
-const downloadPDF = () => {
-  try {
-    // Create a simple HTML table for PDF generation
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Overpriced Products Report</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 20px; }
-          h1 { color: #2e5c31; text-align: center; }
-          .report-info { margin-bottom: 20px; text-align: center; color: #666; }
-          table { width: 100%; border-collapse: collapse; font-size: 10px; }
-          th, td { border: 1px solid #ddd; padding: 4px; text-align: left; }
-          th { background-color: #f5f5f5; font-weight: bold; }
-          .warning-severe { color: #dc2626; }
-          .warning-moderate { color: #ea580c; }
-          .warning-mild { color: #92400e; }
-        </style>
-      </head>
-      <body>
-        <h1>Overpriced Products Report</h1>
-        <div class="report-info">
-          <p>Generated on: ${new Date().toLocaleString()}</p>
-          <p>Total Records: ${exportPreviewData.value.length}</p>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              ${exportHeaders.value.map(header => `<th>${header}</th>`).join('')}
-            </tr>
-          </thead>
-          <tbody>
-            ${exportPreviewData.value.map(row => `
-              <tr>
-                ${exportHeaders.value.map(header => `<td>${row[header]}</td>`).join('')}
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </body>
-      </html>
-    `;
-    
-    const blob = new Blob([htmlContent], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    
-    // Open in new window for printing/saving as PDF
-    const printWindow = window.open(url, '_blank');
-    printWindow.onload = () => {
-      printWindow.print();
-    };
-    
-  notify('success', 'PDF preview opened in new window. Use your browser\'s print function to save as PDF.');
-    
-  } catch (error) {
-    console.error('PDF export error:', error);
-  notify('error', 'Failed to generate PDF. Please try again.');
   }
 };
 
