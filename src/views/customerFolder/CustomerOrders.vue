@@ -128,10 +128,12 @@
               <!-- View/Print Receipt (available for any status) -->
               <button 
                 class="reorder-btn"
-                @click="printReceipt(order)"
+                :disabled="receiptPreviewLoading && receiptPreviewTargetId === order.id"
+                @click="openReceiptPreview(order)"
               >
                 <FileText size="14" />
-                Receipt
+                <span v-if="receiptPreviewLoading && receiptPreviewTargetId === order.id">Preparing...</span>
+                <span v-else>Order Receipt</span>
               </button>
               
              
@@ -331,11 +333,20 @@
     <div v-if="showImageModal" class="image-modal-overlay" @click="closeImageModal">
       <div class="image-modal-content">
         <img :src="selectedImage" alt="Evidence" />
-        <button class="close-image-modal" @click="closeImageModal">
+        <button class="close-image-modal" @click.stop="closeImageModal">
           <X size="24" />
         </button>
       </div>
     </div>
+
+    <teleport to="body">
+      <CustomerReceiptOrderPreview
+        v-if="showReceiptPreview"
+        v-model="showReceiptPreview"
+        :receipt="receiptPreviewData"
+        :loading="receiptPreviewLoading"
+      />
+    </teleport>
   </div>
 </template>
 
@@ -344,6 +355,8 @@ import BottomNavigation from '@/components/BottomNavigation.vue';
 import ReviewForm from '@/components/ReviewForm.vue';
 import ConfirmModalOrder from '@/components/sellerside/ConfirmModalOrder.vue';
 import RefundOrder from '@/components/refundorders/RefundOrder.vue';
+import CustomerReceiptOrderPreview from '@/components/previewpdf/CustomerReceiptOrderPreview.vue';
+
 import { 
   ChevronLeft, 
   ShoppingCart, 
@@ -357,7 +370,7 @@ import {
   RotateCcw,
   FileText
 } from 'lucide-vue-next';
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { getFirestore, collection, query, where, getDocs, getDoc, doc, onSnapshot } from 'firebase/firestore';
 import { serverTimestamp, updateDoc, runTransaction, increment } from 'firebase/firestore';
@@ -382,6 +395,7 @@ export default {
     AlertCircle,
     RotateCcw,
     FileText,
+    CustomerReceiptOrderPreview,
   },
   setup() {
   const router = useRouter();
@@ -404,9 +418,21 @@ export default {
     const selectedRefundDetail = ref(null);
     const showImageModal = ref(false);
     const selectedImage = ref('');
+    const showReceiptPreview = ref(false);
+    const receiptPreviewData = ref(null);
+    const receiptPreviewLoading = ref(false);
+    const receiptPreviewTargetId = ref(null);
     const userId = ref('');
     const username = ref('');
     const userReviews = ref([]);
+
+    watch(showReceiptPreview, (isOpen) => {
+      if (!isOpen) {
+        receiptPreviewData.value = null;
+        receiptPreviewTargetId.value = null;
+        receiptPreviewLoading.value = false;
+      }
+    });
 
     // Unit helpers for display
     const unitDisplayMap = {
@@ -610,51 +636,34 @@ export default {
 
     
 
-    const printReceipt = async (order) => {
-      const receiptWindow = window.open('', '_blank');
-      if (!receiptWindow) {
-        showNotification('Please allow pop-ups to print receipts', 'error');
-        return;
-      }
-      // Minimal loading state to avoid popup blockers closing the window
-      receiptWindow.document.open();
-      receiptWindow.document.write('<!DOCTYPE html><html><head><title>Loading receipt...</title></head><body style="font-family:Arial,sans-serif;padding:20px;color:#333;">Generating receipt…</body></html>');
-      receiptWindow.document.close();
+    const formatPaymentStatusLabel = (status) => {
+      const raw = (status || 'unpaid').toString().toLowerCase();
+      if (raw === 'availing') return 'Availing';
+      if (raw === 'paying') return 'Paying';
+      if (raw === 'paid') return 'Paid';
+      return 'Unpaid';
+    };
 
-      const orderDate = formatDateTimeLong(order.createdAt || order.timestamp);
-      const unitLabel = resolveUnit(order);
+    const formatPaymentMethodLabel = (method) => {
+      if (!method) return 'Cash on Delivery';
+      const normalized = String(method).toLowerCase();
+      if (normalized.includes('gcash')) return 'GCash';
+      if (normalized.includes('cod') || normalized.includes('cash')) return 'Cash on Delivery';
+      return method;
+    };
+
+    const buildReceiptDetails = async (order) => {
+      if (!order) return null;
+      const unitLabel = resolveUnit(order) || 'unit';
+      const unitDisplay = unitLabel.charAt(0).toUpperCase() + unitLabel.slice(1);
       const unitPrice = getUnitPrice(order);
       const qty = Number(order.quantity) || Number(order.weight) || 0;
-      const itemSubtotal = unitPrice * qty;
+      const itemSubtotal = (Number(unitPrice) || 0) * qty;
       const deliveryFee = Number(order.deliveryFee || 0);
       const tax = Number(order.tax || 0);
       const total = Number(order.totalPrice || (itemSubtotal + deliveryFee + tax) || 0);
-      const paymentStatusDisplay = (() => {
-        const raw = (order.paymentStatus || order.payStatus || 'unpaid') + '';
-        const v = raw.toLowerCase();
-        if (v === 'availing') return 'Availing';
-        if (v === 'paying') return 'Paying';
-        if (v === 'paid') return 'Paid';
-        return 'Unpaid';
-      })();
-
-      const formatPaymentMethod = (method) => {
-        if (!method) return 'Cash on Delivery';
-        const m = String(method).toLowerCase();
-        if (m.includes('gcash')) return 'GCash';
-        if (m.includes('cod') || m.includes('cash')) return 'Cash on Delivery';
-        return method;
-      };
-
-      const address = getAddressDisplay(
-        order.Location || order.address || order.deliveryAddress || order.shippingAddress || order.location
-      );
       const code = order.orderCode || (order.id ? order.id.substring(0, 6) : '');
-      const instructions = order?.Location?.instructions || order?.instructions || order?.deliveryInstructions || '';
-      const deliveryLabel = order?.deliveryOption || order?.delivery || order?.deliveryType || '';
-      const paymentMethodLabel = formatPaymentMethod(order.paymentMethod);
 
-      // Seller name & address (reuse pre-fetched if present)
       let sellerName = order.sellerName || 'N/A';
       let sellerAddress = order.sellerAddress || 'N/A';
       if (sellerName === 'N/A' || sellerAddress === 'N/A') {
@@ -663,138 +672,74 @@ export default {
           const details = await fetchSellerDetails({ sellerId: ensuredSellerId, productId: order.productId });
           sellerName = details.name || sellerName;
           sellerAddress = details.address || sellerAddress;
-        } catch {}
+        } catch (error) {
+          console.error('Failed to fetch seller details for receipt preview:', error);
+        }
       }
 
-      // Shipping address: prefer address on order, otherwise pull from user's profile
-      const shippingAddress = (() => {
-        const addr = getAddressDisplay(
-          order.Location || order.address || order.deliveryAddress || order.shippingAddress || order.location
-        );
-        return addr && addr !== 'N/A' ? addr : null;
-      })();
-      let finalShippingAddress = shippingAddress;
+      const orderAddress = getAddressDisplay(
+        order.Location || order.address || order.deliveryAddress || order.shippingAddress || order.location
+      );
+      let finalShippingAddress = orderAddress && orderAddress !== 'N/A' ? orderAddress : null;
       if (!finalShippingAddress) {
         const fetched = await fetchUserAddress(order.userId);
         finalShippingAddress = fetched || 'N/A';
       }
 
-      const html = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8" />
-          <title>Customer Receipt #${code}</title>
-          <style>
-            body { font-family: Arial, sans-serif; margin: 0; padding: 20px; color: #333; }
-            .receipt { max-width: 800px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; }
-            .receipt-header { text-align: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid #4a8f4d; }
-            .receipt-header h1 { color: #2e5c31; margin: 0; font-size: 24px; }
-            .receipt-header p { margin: 5px 0; color: #666; }
-            .receipt-info { display: flex; justify-content: space-between; margin-bottom: 20px; }
-            .info-group { flex: 1; }
-            .info-group h3 { margin-top: 0; color: #2e5c31; font-size: 16px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
-            .info-group p { margin: 5px 0; font-size: 14px; }
-            .info-group strong { display: inline-block; min-width: 110px; }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-            th, td { padding: 10px; text-align: left; border-bottom: 1px solid #eee; }
-            th { background-color: #f9f9f9; font-weight: bold; }
-            .total-row td { font-weight: bold; border-top: 2px solid #ddd; }
-            .text-right { text-align: right; }
-            .receipt-footer { text-align: center; margin-top: 30px; padding-top: 10px; border-top: 1px solid #eee; font-size: 14px; color: #666; }
-            .status-badge { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 12px; background-color: #f3f4f6; color: #4b5563; }
-            .no-print { display: none; }
-            @media print {
-              body { padding: 0; margin: 0; }
-              .receipt { border: none; padding: 0; }
-              .no-print { display: none; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="receipt">
-            <div class="receipt-header">
-              <h1>FarmXpress</h1>
-              <p>Customer Receipt</p>
-              <p>Order #${code}</p>
-              <p>${orderDate}</p>
-            </div>
-            <div class="receipt-info">
-              <div class="info-group">
-                <h3>Seller</h3>
-                <p><strong>Name:</strong> ${sellerName}</p>
-                <p><strong>Address:</strong> ${sellerAddress}</p>
-              </div>
-              <div class="info-group">
-                <h3>Shipping To</h3>
-                <p><strong>Address:</strong> ${finalShippingAddress}</p>
-                ${instructions ? `<p><strong>Instructions:</strong> ${instructions}</p>` : ''}
-                ${deliveryLabel ? `<p><strong>Delivery:</strong> ${deliveryLabel}</p>` : ''}
-              </div>
-              <div class="info-group">
-                <h3>Order Summary</h3>
-                <p><strong>Status:</strong> <span class="status-badge">${order.status}</span></p>
-                <p><strong>Payment Method:</strong> ${paymentMethodLabel}</p>
-                <p><strong>Payment Status:</strong> ${paymentStatusDisplay}</p>
-                <p><strong>Order Code:</strong> ${code}</p>
-              </div>
-            </div>
-            <table>
-              <thead>
-                <tr>
-                  <th>Item</th>
-                  <th>Unit</th>
-                  <th>Quantity</th>
-                  <th>Unit Price</th>
-                  <th>Subtotal</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>${order.productName || 'N/A'}</td>
-                  <td>${unitLabel.charAt(0).toUpperCase() + unitLabel.slice(1)}</td>
-                  <td>${qty}</td>
-                  <td>₱${(unitPrice || 0).toFixed(2)}</td>
-                  <td>₱${(itemSubtotal || 0).toFixed(2)}</td>
-                </tr>
-              </tbody>
-              <tfoot>
-                ${deliveryFee ? `
-                <tr>
-                  <td colspan="4" class="text-right">Delivery Fee</td>
-                  <td>₱${deliveryFee.toFixed(2)}</td>
-                </tr>` : ''}
-                ${tax ? `
-                <tr>
-                  <td colspan="4" class="text-right">Tax</td>
-                  <td>₱${tax.toFixed(2)}</td>
-                </tr>` : ''}
-                <tr class="total-row">
-                  <td colspan="4" class="text-right">Total</td>
-                  <td>₱${total.toFixed(2)}</td>
-                </tr>
-              </tfoot>
-            </table>
-            <div class="receipt-footer">
-              <p>Thank you for your order!</p>
-              <p>This receipt is for your records. For questions or concerns, please contact customer support.</p>
-              <p class="no-print">
-                <button onclick="window.print();" style="padding: 8px 16px; background-color: #4a8f4d; color: white; border: none; border-radius: 4px; cursor: pointer;">Print Receipt</button>
-              </p>
-            </div>
-          </div>
-          <script>
-            window.onload = function() {
-              setTimeout(function() { window.print(); }, 400);
-            };
-          <\/script>
-        </body>
-        </html>
-      `;
+      return {
+        orderCode: code,
+        orderDate: formatDateTimeLong(order.createdAt || order.timestamp),
+        sellerName,
+        sellerAddress,
+        shippingAddress: finalShippingAddress || 'N/A',
+        instructions: order?.Location?.instructions || order?.instructions || order?.deliveryInstructions || '',
+        deliveryLabel: order?.deliveryOption || order?.delivery || order?.deliveryType || '',
+        status: order.status || 'N/A',
+        paymentMethod: formatPaymentMethodLabel(order.paymentMethod),
+        paymentStatus: formatPaymentStatusLabel(order.paymentStatus || order.payStatus),
+        total,
+        deliveryFee,
+        tax,
+        customerName: order.username || order.customerName || '',
+        items: [
+          {
+            name: order.productName || 'N/A',
+            unit: unitDisplay,
+            quantity: qty,
+            unitPrice: unitPrice || 0,
+            subtotal: itemSubtotal || 0
+          }
+        ]
+      };
+    };
 
-      receiptWindow.document.open();
-      receiptWindow.document.write(html);
-      receiptWindow.document.close();
+    const openReceiptPreview = async (order) => {
+      if (!order) return;
+
+      receiptPreviewTargetId.value = order.id || null;
+      receiptPreviewLoading.value = true;
+      receiptPreviewData.value = null;
+      showReceiptPreview.value = true;
+
+      try {
+        const details = await buildReceiptDetails(order);
+        if (!details) {
+          throw new Error('Missing receipt details');
+        }
+
+        if (!showReceiptPreview.value) {
+          return;
+        }
+
+        receiptPreviewData.value = details;
+      } catch (error) {
+        console.error('Failed to open receipt preview:', error);
+        showNotification('Unable to open the receipt preview. Please try again.', 'error');
+        showReceiptPreview.value = false;
+      } finally {
+        receiptPreviewLoading.value = false;
+        receiptPreviewTargetId.value = null;
+      }
     };
     
   // Real-time listener
@@ -1391,7 +1336,11 @@ export default {
       // quantity/unit helpers
       displayQuantity,
       formatUnitPrice,
-      printReceipt,
+      openReceiptPreview,
+      showReceiptPreview,
+      receiptPreviewData,
+      receiptPreviewLoading,
+      receiptPreviewTargetId,
       payOrder
     };
   }

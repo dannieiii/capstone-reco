@@ -245,6 +245,12 @@
           </div>
         </div>
       </div>
+
+      <CustomerExportPreview
+        v-model="showCustomerExportPreview"
+        :customers="exportPreviewCustomers"
+        :generated-at="exportPreviewGeneratedAt"
+      />
     </div>
   </div>
 </template>
@@ -252,12 +258,11 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import Sidebar from '@/components/Sidebar.vue';
+import CustomerExportPreview from '@/components/previewpdf/CustomerExportPreview.vue';
 import { db } from '@/firebase/firebaseConfig';
 import { collection, getDocs, query, where, doc, getDoc } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { useSidebarOffset } from '@/composables/useSidebarOffset';
-// Remove this line:
-// import { escapeHtml } from '@/utils/helpers';
 
 // UI State
 const isDarkMode = ref(false);
@@ -272,6 +277,9 @@ const orders = ref([]);
 const usersData = ref({});
 const currentSellerId = ref('');
 const exportDropdown = ref(null);
+const showCustomerExportPreview = ref(false);
+const exportPreviewCustomers = ref([]);
+const exportPreviewGeneratedAt = ref(new Date());
 const { sidebarOffset, isMobileViewport, mobileTopOffset } = useSidebarOffset();
 const mainContentStyles = computed(() => ({
   marginLeft: `${sidebarOffset.value}px`,
@@ -570,7 +578,7 @@ const exportCustomers = (format) => {
   if (format === 'csv') {
     exportAsCSV();
   } else if (format === 'pdf') {
-    exportAsPDF();
+    openCustomerPdfPreview();
   }
 };
 
@@ -615,167 +623,15 @@ const exportAsCSV = () => {
   }
 };
 
-// Export as PDF
-const exportAsPDF = () => {
-  try {
-    // Create a new window for PDF content
-    const printWindow = window.open('', '_blank');
-    
-    if (!printWindow) {
-      alert('Please allow pop-ups to export PDF');
-      return;
-    }
-    
-    // Create PDF content
-    const currentDate = new Date().toLocaleDateString();
-    const totalCustomers = filteredCustomers.value.length;
-    
-    // Build HTML content as a proper string
-    let htmlContent = `<!DOCTYPE html>
-<html>
-<head>
-    <title>Customers Export</title>
-    <style>
-        body { 
-            font-family: Arial, sans-serif; 
-            margin: 20px; 
-            color: #333;
-        }
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
-            border-bottom: 2px solid #2e5c31;
-            padding-bottom: 20px;
-        }
-        h1 { 
-            color: #2e5c31; 
-            margin: 0 0 10px 0;
-            font-size: 28px;
-        }
-        .export-info {
-            color: #666;
-            font-size: 14px;
-        }
-        table { 
-            width: 100%; 
-            border-collapse: collapse; 
-            margin: 20px 0;
-            font-size: 12px;
-        }
-        th, td { 
-            border: 1px solid #ddd; 
-            padding: 8px; 
-            text-align: left; 
-        }
-        th { 
-            background-color: #2e5c31; 
-            color: white;
-            font-weight: bold; 
-        }
-        tr:nth-child(even) { 
-            background-color: #f9f9f9; 
-        }
-        .status-badge { 
-            display: inline-block; 
-            padding: 3px 8px; 
-            border-radius: 12px; 
-            font-size: 11px;
-            font-weight: 500;
-        }
-        .status-verified { 
-            background-color: #d1fae5; 
-            color: #059669; 
-        }
-        .status-pending { 
-            background-color: #fef3c7; 
-            color: #d97706; 
-        }
-        .footer {
-            margin-top: 30px;
-            text-align: center;
-            font-size: 12px;
-            color: #666;
-            border-top: 1px solid #ddd;
-            padding-top: 20px;
-        }
-        @media print {
-            body { margin: 0; }
-            .header { page-break-after: avoid; }
-        }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>Customers Export Report</h1>
-        <div class="export-info">
-            <p>Generated on: ${currentDate} | Total Customers: ${totalCustomers}</p>
-        </div>
-    </div>
-    <table>
-        <thead>
-            <tr>
-                <th>Username</th>
-                <th>Name</th>
-                <th>Email</th>
-                <th>Phone</th>
-                <th>Location</th>
-                <th>Orders</th>
-                <th>Total Spent</th>
-                <th>Status</th>
-            </tr>
-        </thead>
-        <tbody>`;
-    
-    // Add customer rows
-    filteredCustomers.value.forEach(customer => {
-      const fullName = `\${customer.firstName || ''} \${customer.lastName || ''}`.trim() || 'N/A';
-      const statusClass = customer.isVerified ? 'status-verified' : 'status-pending';
-      const statusText = customer.isVerified ? 'Verified' : 'Pending';
-      
-      htmlContent += `
-            <tr>
-                <td>\${escapeHtml(customer.username || 'Unknown')}</td>
-                <td>\${escapeHtml(fullName)}</td>
-                <td>\${escapeHtml(customer.email || 'N/A')}</td>
-                <td>\${escapeHtml(customer.contactNumber || 'N/A')}</td>
-                <td>\${escapeHtml(customer.address || 'N/A')}</td>
-                <td>\${customer.orderCount || 0}</td>
-                <td>₱\${(customer.totalSpent || 0).toFixed(2)}</td>
-                <td><span class="status-badge \${statusClass}">\${statusText}</span></td>
-            </tr>`;
-    });
-    
-    htmlContent += `
-        </tbody>
-    </table>
-    <div class="footer">
-        <p>This report contains \${totalCustomers} customer records.</p>
-    </div>
-</body>
-</html>`;
-    
-    // Write content to the new window
-    printWindow.document.open();
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
-    
-    // Trigger print after a short delay
-    setTimeout(() => {
-      printWindow.print();
-    }, 500);
-    
-  } catch (error) {
-    console.error('Error exporting PDF:', error);
-    alert('Error exporting PDF file. Please try again.');
+const openCustomerPdfPreview = () => {
+  if (!filteredCustomers.value.length) {
+  alert('No customers to export for the current filters.');
+  return;
   }
-};
 
-// Helper function to escape HTML - move this outside the exportAsPDF function
-const escapeHtml = (text) => {
-  if (!text) return '';
-  const div = document.createElement('div');
-  div.textContent = text.toString();
-  return div.innerHTML;
+  exportPreviewCustomers.value = filteredCustomers.value.map(customer => ({ ...customer }));
+  exportPreviewGeneratedAt.value = new Date();
+  showCustomerExportPreview.value = true;
 };
 </script>
 

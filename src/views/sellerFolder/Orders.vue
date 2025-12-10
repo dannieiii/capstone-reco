@@ -258,9 +258,15 @@
           <div class="modal-header">
             <h2>Order {{ selectedOrder.orderCode ? `#${selectedOrder.orderCode}` : '' }}</h2>
             <div class="modal-actions">
-              <button class="print-receipt-btn" @click="printReceipt">
+              <button
+                class="print-receipt-btn"
+                type="button"
+                :disabled="receiptPreviewLoading"
+                @click="openReceiptPreview(selectedOrder)"
+              >
                 <i class="i-lucide-printer"></i>
-                Print Receipt
+                <span v-if="receiptPreviewLoading">Preparing&hellip;</span>
+                <span v-else>Preview Receipt</span>
               </button>
               <button class="close-btn" @click="closeModal">
                 <i class="i-lucide-x"></i>
@@ -432,11 +438,28 @@
       :type="notificationType"
       @close="showNotification = false"
     />
+
+    <OrdersExportPreview
+      v-model="showOrdersExportPreview"
+      :orders="ordersExportRows"
+      :generated-at="ordersExportGeneratedAt"
+      :filter-label="ordersExportFilterLabel"
+      :date-range-label="ordersExportDateLabel"
+      :search-label="ordersExportSearchLabel"
+    />
+
+    <teleport to="body">
+      <CustomerReceiptPreview
+        v-model="showReceiptPreview"
+        :receipt="receiptPreviewData"
+        :loading="receiptPreviewLoading"
+      />
+    </teleport>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import Sidebar from '@/components/Sidebar.vue';
 import { db } from '@/firebase/firebaseConfig';
 import { collection, getDocs, getDoc, doc, updateDoc, query, where, onSnapshot, runTransaction, increment, serverTimestamp, addDoc } from 'firebase/firestore';
@@ -444,6 +467,8 @@ import { getAuth } from 'firebase/auth';
 import OrderStatusUpdate from '@/components/sellerside/OrderStatusUpdate.vue';
 import OrderNotif from '@/components/sellerside/OrderNotif.vue';
 import OfflineBanner from '@/components/OfflineBanner.vue';
+import OrdersExportPreview from '@/components/previewpdf/OrdersExportPreview.vue';
+import CustomerReceiptPreview from '@/components/previewpdf/CustomerReceiptPreview.vue';
 import { Clock, Package, Truck, CheckCircle, PackageCheck, RotateCcw } from 'lucide-vue-next';
 import { useSidebarOffset } from '@/composables/useSidebarOffset';
 
@@ -462,9 +487,36 @@ const startDate = ref('');
 const endDate = ref('');
 const currentSellerId = ref('');
 const showExportMenu = ref(false);
+const showOrdersExportPreview = ref(false);
+const ordersExportRows = ref([]);
+const ordersExportGeneratedAt = ref(new Date());
+const ordersExportFilterLabel = ref('All Orders');
+const ordersExportDateLabel = ref('All Dates');
+const ordersExportSearchLabel = ref('None');
 const refundDetailsInfo = ref(null);
 const isRefundLoading = ref(false);
 const refundLoadError = ref('');
+const showReceiptPreview = ref(false);
+const receiptPreviewData = ref(null);
+const receiptPreviewLoading = ref(false);
+const sellerProfile = ref({ name: 'N/A', address: 'N/A' });
+watch(showReceiptPreview, (isOpen) => {
+  if (!isOpen) {
+    receiptPreviewData.value = null;
+    receiptPreviewLoading.value = false;
+  }
+});
+const assignSellerProfile = (source) => {
+  if (!source) {
+    sellerProfile.value = { name: 'Your Store', address: 'N/A' };
+    return;
+  }
+  const candidateAddress = source.farmDetails?.address || source.address || source.businessAddress || source.location || '';
+  sellerProfile.value = {
+    name: source.farmDetails?.farmName || source.businessName || source.storeName || source.ownerName || source.name || 'Your Store',
+    address: candidateAddress ? getAddressDisplay(candidateAddress) : 'N/A'
+  };
+};
 const { sidebarOffset, isMobileViewport, mobileTopOffset } = useSidebarOffset();
 const mainContentStyles = computed(() => ({
   marginLeft: `${sidebarOffset.value}px`,
@@ -525,9 +577,13 @@ const getAddressDisplay = (location) => {
   
   // Construct address from components
   const parts = [];
+  if (location.street || location.streetAddress) parts.push(location.street || location.streetAddress);
   if (location.barangay) parts.push(location.barangay);
+  if (location.city) parts.push(location.city);
   if (location.municipality) parts.push(location.municipality);
   if (location.province) parts.push(location.province);
+  if (location.region) parts.push(location.region);
+  if (location.zip || location.postalCode) parts.push(location.zip || location.postalCode);
   
   return parts.length > 0 ? parts.join(', ') : 'N/A';
 };
@@ -547,6 +603,22 @@ const getUnitPrice = (order) => {
   return 0;
 };
 
+const formatPaymentStatusLabel = (status) => {
+  const raw = (status || 'unpaid').toString().toLowerCase();
+  if (raw === 'availing') return 'Availing';
+  if (raw === 'paying') return 'Paying';
+  if (raw === 'paid') return 'Paid';
+  return 'Unpaid';
+};
+
+const formatPaymentMethodLabel = (method) => {
+  if (!method) return 'Cash on Delivery';
+  const normalized = method.toString().toLowerCase();
+  if (normalized.includes('gcash')) return 'GCash';
+  if (normalized.includes('cod') || normalized.includes('cash')) return 'Cash on Delivery';
+  return method;
+};
+
 // Order type helpers
 const orderTypeLabel = (type, isPreOrderFlag) => {
   const t = (type || '').toLowerCase();
@@ -559,6 +631,44 @@ const orderTypeClass = (type, isPreOrderFlag) => {
   if (t === 'preorder' || isPreOrderFlag) return 'type-preorder';
   if (t === 'wholesale') return 'type-wholesale';
   return 'type-normal';
+};
+
+const buildReceiptDetails = (order) => {
+  if (!order) return null;
+  const quantity = Number(order.quantity) || 0;
+  const unitPrice = Number(getUnitPrice(order)) || 0;
+  const subtotal = quantity * unitPrice;
+  const deliveryFee = Number(order.deliveryFee || 0);
+  const tax = Number(order.tax || 0);
+  const total = Number(order.totalPrice || subtotal + deliveryFee + tax) || 0;
+  const shippingAddress = getAddressDisplay(order.Location);
+  const instructions = order.Location?.locationNotes || order.Location?.notes || order.deliveryInstructions || '';
+  const deliveryLabel = order.deliveryOption || order.deliveryMethod || '';
+  return {
+    orderCode: order.orderCode || (order.id ? order.id.substring(0, 6) : ''),
+    orderDate: formatDateTime(order.timestamp || order.createdAt),
+    paymentMethod: formatPaymentMethodLabel(order.paymentMethod || 'Cash on Delivery'),
+    paymentStatus: formatPaymentStatusLabel(order.payStatus || order.paymentStatus),
+    status: order.status || 'Pending',
+    sellerName: order.sellerName || sellerProfile.value.name || 'N/A',
+    sellerAddress: order.sellerAddress || sellerProfile.value.address || 'N/A',
+    shippingAddress: shippingAddress || 'N/A',
+    instructions: instructions || '',
+    deliveryLabel: deliveryLabel || '',
+    customerName: order.username || order.customerName || 'N/A',
+    total,
+    deliveryFee,
+    tax,
+    items: [
+      {
+        name: order.productName || 'N/A',
+        unit: getUnitDisplay(order.unit),
+        quantity: quantity || 0,
+        unitPrice,
+        subtotal: subtotal || 0
+      }
+    ]
+  };
 };
 
 // Real-time orders listener
@@ -592,11 +702,23 @@ const initializeOrders = async () => {
       console.log('Trying to use user ID directly as seller ID...');
       currentSellerId.value = currentUserId;
       console.log('Using user ID as seller ID:', currentSellerId.value);
+      try {
+        const fallbackSellerSnap = await getDoc(doc(db, 'users', currentUserId));
+        if (fallbackSellerSnap.exists()) {
+          assignSellerProfile(fallbackSellerSnap.data());
+        } else {
+          assignSellerProfile(null);
+        }
+      } catch (error) {
+        console.error('Failed to load profile from users collection:', error);
+        assignSellerProfile(null);
+      }
     } else {
       // Get the seller document ID (this is what we store in orders)
       const sellerDoc = sellersSnapshot.docs[0];
       const sellerData = sellerDoc.data();
       currentSellerId.value = sellerDoc.id; // This is the seller document ID
+      assignSellerProfile(sellerData);
       
       console.log('Found seller document:', {
         documentId: sellerDoc.id,
@@ -958,6 +1080,13 @@ const resetDateFilter = () => {
   currentPage.value = 1;
 };
 
+const buildDateRangeLabel = () => {
+  if (!startDate.value) return 'All Dates';
+  const startLabel = formatDate(startDate.value);
+  if (!endDate.value) return startLabel;
+  return `${startLabel} to ${formatDate(endDate.value)}`;
+};
+
 // Calculate total pages for pagination
 const totalPages = computed(() => Math.max(1, Math.ceil(filteredOrders.value.length / itemsPerPage)));
 
@@ -1187,6 +1316,40 @@ const closeModal = () => {
   isRefundLoading.value = false;
 };
 
+const openReceiptPreview = async (orderParam = null) => {
+  const order = orderParam || selectedOrder.value;
+  if (!order || !order.id) {
+    showOrderNotification(
+      'Receipt unavailable',
+      'Select an order to preview before printing.',
+      'error'
+    );
+    return;
+  }
+
+  receiptPreviewLoading.value = true;
+  receiptPreviewData.value = null;
+  showReceiptPreview.value = true;
+
+  try {
+    const details = buildReceiptDetails(order);
+    if (!details) {
+      throw new Error('Receipt details missing');
+    }
+    receiptPreviewData.value = details;
+  } catch (error) {
+    console.error('Failed to prepare receipt preview:', error);
+    showOrderNotification(
+      'Receipt unavailable',
+      'Unable to generate the receipt preview. Please try again.',
+      'error'
+    );
+    showReceiptPreview.value = false;
+  } finally {
+    receiptPreviewLoading.value = false;
+  }
+};
+
 // Notification helper function
 const showOrderNotification = (title, message, type = 'success', duration = null) => {
   // Clear any existing notification first
@@ -1232,166 +1395,6 @@ const handleStatusUpdated = (updateData) => {
   // No need for duplicate notification here
 };
 
-// Print receipt function
-const printReceipt = () => {
-  const order = selectedOrder.value;
-  const receiptWindow = window.open('', '_blank');
-    if (!receiptWindow) {
-    showOrderNotification(
-      'Print Failed',
-      'Please allow pop-ups to print receipts',
-      'error'
-    );
-    return;
-  }
-  
-  // Format the date for the receipt
-  const orderDate = formatDateTime(order.timestamp || order.createdAt);
-  
-  // Determine payment status label for receipt
-  const paymentStatusDisplay = (() => {
-    const raw = (order.payStatus && order.payStatus !== 'unpaid') ? order.payStatus : (order.paymentStatus || 'unpaid');
-    if (!raw) return 'Unpaid';
-    const v = ('' + raw).toLowerCase();
-    if (v === 'availing') return 'Availing';
-    if (v === 'paying') return 'Paying';
-    return v.charAt(0).toUpperCase() + v.slice(1);
-  })();
-
-  // Create receipt HTML content with escaped closing tags
-  const receiptContent = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Order Receipt #${order.orderCode || order.id.substring(0, 6)}</title>
-      <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; color: #333; }
-        .receipt { max-width: 800px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; }
-        .receipt-header { text-align: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid #4a8f4d; }
-        .receipt-header h1 { color: #2e5c31; margin: 0; font-size: 24px; }
-        .receipt-header p { margin: 5px 0; color: #666; }
-        .receipt-info { display: flex; justify-content: space-between; margin-bottom: 20px; }
-        .info-group { flex: 1; }
-        .info-group h3 { margin-top: 0; color: #2e5c31; font-size: 16px; border-bottom: 1px solid #eee; padding-bottom: 5px; }
-        .info-group p { margin: 5px 0; font-size: 14px; }
-        .info-group strong { display: inline-block; min-width: 100px; }
-        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #eee; }
-        th { background-color: #f9f9f9; font-weight: bold; }
-        .total-row td { font-weight: bold; border-top: 2px solid #ddd; }
-        .text-right { text-align: right; }
-        .receipt-footer { text-align: center; margin-top: 30px; padding-top: 10px; border-top: 1px solid #eee; font-size: 14px; color: #666; }
-        .status-badge { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 12px; background-color: #f3f4f6; color: #4b5563; }
-        .status-pending { background-color: #fef3c7; color: #d97706; }
-        .status-processing { background-color: #e0f2fe; color: #0284c7; }
-        .status-shipped { background-color: #dbeafe; color: #2563eb; }
-        .status-delivered { background-color: #d1fae5; color: #059669; }
-        .status-cancelled { background-color: #fee2e2; color: #dc2626; }
-        
-        @media print {
-          body { padding: 0; margin: 0; }
-          .receipt { border: none; padding: 0; }
-          .no-print { display: none; }
-        }
-      </style>
-    </head>
-    <body>
-      <div class="receipt">
-        <div class="receipt-header">
-          <h1>FarmXpress</h1>
-          <p>Order Receipt</p>
-          <p>Order #${order.orderCode || order.id.substring(0, 6)}</p>
-          <p>${orderDate}</p>
-        </div>
-        
-        <div class="receipt-info">
-          <div class="info-group">
-            <h3>Customer Information</h3>
-            <p><strong>Name:</strong> ${order.username || 'N/A'}</p>
-          </div>
-          
-          <div class="info-group">
-            <h3>Delivery Information</h3>
-            <p><strong>Address:</strong> ${getAddressDisplay(order.Location)}</p>
-            ${order.Location?.name ? `<p><strong>Name/Alias:</strong> ${order.Location.name}</p>` : ''}
-            ${order.Location?.locationNotes || order.Location?.notes ? `<p><strong>Instructions:</strong> ${order.Location.locationNotes || order.Location.notes}</p>` : ''}
-            ${order.deliveryOption ? `<p><strong>Delivery:</strong> ${order.deliveryOption}</p>` : ''}
-          </div>
-          
-          <div class="info-group">
-            <h3>Order Details</h3>
-            <p><strong>Status:</strong> <span class="status-badge status-${order.status.toLowerCase()}">${order.status}</span></p>
-            <p><strong>Payment:</strong> ${order.paymentMethod || 'Cash on Delivery'}</p>
-            <p><strong>Payment Status:</strong> ${paymentStatusDisplay}</p>
-            <p><strong>Order ID:</strong> ${order.id}</p>
-          </div>
-        </div>
-        
-        <table>
-          <thead>
-            <tr>
-              <th>Item</th>
-              <th>Unit</th>
-              <th>Quantity</th>
-              <th>Unit Price</th>
-              <th>Subtotal</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>${order.productName || 'N/A'}</td>
-              <td>${getUnitDisplay(order.unit)}</td>
-              <td>${order.quantity || 0}</td>              <td>₱${getUnitPrice(order).toFixed(2)}</td>
-              <td>₱${(order.itemPrice || (getUnitPrice(order) * order.quantity)).toFixed(2)}</td>
-            </tr>
-          </tbody>
-          <tfoot>
-            ${order.deliveryFee ? `
-            <tr>
-              <td colspan="4" class="text-right">Delivery Fee</td>
-              <td>₱${order.deliveryFee.toFixed(2)}</td>
-            </tr>` : ''}
-            ${order.tax ? `
-            <tr>
-              <td colspan="4" class="text-right">Tax</td>
-              <td>₱${order.tax.toFixed(2)}</td>
-            </tr>` : ''}
-            <tr class="total-row">
-              <td colspan="4" class="text-right">Total</td>
-              <td>₱${order.totalPrice ? order.totalPrice.toFixed(2) : '0.00'}</td>
-            </tr>
-          </tfoot>
-        </table>
-        
-        <div class="receipt-footer">
-          <p>Thank you for your order!</p>
-          <p>For any questions, please contact our customer support.</p>
-          <p class="no-print">
-            <button onclick="window.print();" style="padding: 8px 16px; background-color: #4a8f4d; color: white; border: none; border-radius: 4px; cursor: pointer;">
-              Print Receipt
-            </button>
-          </p>
-        </div>
-      </div>
-      
-      <script>
-        // Auto-print when the page loads
-        window.onload = function() {
-          setTimeout(function() {
-            window.print();
-          }, 500);
-        };
-      <\\/script>
-    <\\/body>
-    <\\/html>
-  `;
-  
-  // Write to the new window
-  receiptWindow.document.open();
-  receiptWindow.document.write(receiptContent);
-  receiptWindow.document.close();
-};
-
 // Export menu functions
 const toggleExportMenu = (event) => {
   if (event) event.stopPropagation();
@@ -1412,8 +1415,17 @@ const exportOrders = (format) => {
   if (format === 'csv') {
     exportAsCSV();
   } else if (format === 'pdf') {
-    exportAsPDF();
+    openOrdersExportPreview();
   }
+};
+
+const openOrdersExportPreview = () => {
+  ordersExportRows.value = paginatedOrders.value.map(order => ({ ...order }));
+  ordersExportGeneratedAt.value = new Date();
+  ordersExportFilterLabel.value = activeFilter.value;
+  ordersExportDateLabel.value = buildDateRangeLabel();
+  ordersExportSearchLabel.value = searchQuery.value ? `"${searchQuery.value}"` : 'None';
+  showOrdersExportPreview.value = true;
 };
 
 // Export as CSV
@@ -1456,145 +1468,6 @@ const exportAsCSV = () => {
   );
 };
 
-// Helper function to escape HTML
-const escapeHtml = (text) => {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-};
-
-const buildOrdersPDFHTML = (orders) => {
-  const generatedAt = new Date();
-  const dateFilterLabel = startDate.value
-    ? `${formatDate(startDate.value)}${endDate.value ? ` to ${formatDate(endDate.value)}` : ''}`
-    : 'All Dates';
-  const searchLabel = searchQuery.value ? `"${searchQuery.value}"` : 'None';
-  const statusSummary = statusOptions
-    .map(status => {
-      const count = orders.filter(order => (order.status || '').toLowerCase() === status.toLowerCase()).length;
-      return `<div class="summary-stat"><span>${status}</span><strong>${count}</strong></div>`;
-    })
-    .join('');
-
-  const rows = orders.length
-    ? orders.map(order => {
-        const statusClass = normalizeStatusClass(order.status || 'status');
-        return `
-          <tr>
-            <td>${escapeHtml(order.orderCode ? `#${order.orderCode}` : 'N/A')}</td>
-            <td>${escapeHtml(order.username || 'Unknown')}</td>
-            <td>${escapeHtml(order.productName || 'N/A')}</td>
-            <td>${escapeHtml(orderTypeLabel(order.orderType, order.isPreOrder))}</td>
-            <td>${order.quantity || 0} ${getUnitDisplay(order.unit)}</td>
-            <td>${escapeHtml(getAddressDisplay(order.Location))}</td>
-            <td>${escapeHtml(formatDateTime(order.timestamp || order.createdAt))}</td>
-            <td>₱${order.totalPrice ? order.totalPrice.toFixed(2) : '0.00'}</td>
-            <td><span class="status-badge ${statusClass}">${escapeHtml(order.status || 'N/A')}</span></td>
-          </tr>`;
-      }).join('')
-    : '<tr><td colspan="9" class="empty">No orders available for the selected filters.</td></tr>';
-
-  return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8" />
-      <title>Orders Export</title>
-      <style>
-        body { font-family: 'Inter', Arial, sans-serif; margin: 24px; color: #111827; background: #f7f9fb; }
-        h1 { margin: 0 0 4px; color: #1f2937; font-size: 24px; }
-        .sub { margin: 0 0 20px; color: #6b7280; }
-        .meta { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; font-size: 12px; color: #4b5563; }
-        .summary { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
-        .summary-stat { padding: 10px 14px; border-radius: 10px; background: #fff; border: 1px solid #e5e7eb; min-width: 120px; display: flex; justify-content: space-between; font-size: 13px; }
-        table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
-        th, td { padding: 12px 10px; text-align: left; font-size: 12px; border-bottom: 1px solid #e5e7eb; }
-        th { background-color: #2e5c31; color: #fff; font-size: 13px; letter-spacing: 0.03em; }
-        tr:nth-child(even) td { background-color: #f9fafb; }
-        .status-badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 9999px; font-size: 11px; font-weight: 600; text-transform: capitalize; }
-        .status-badge.pending { background: #fef3c7; color: #92400e; }
-        .status-badge.processing { background: #e0f2fe; color: #0369a1; }
-        .status-badge.shipped { background: #dbeafe; color: #1d4ed8; }
-        .status-badge.delivered { background: #d1fae5; color: #047857; }
-        .status-badge.order-received { background: #ecfccb; color: #3f6212; }
-        .status-badge.refund-processing { background: #fff7ed; color: #c2410c; }
-        .status-badge.cancelled { background: #fee2e2; color: #b91c1c; }
-        .status-badge.order\ received { background: #ecfccb; color: #3f6212; }
-        .empty { text-align: center; color: #6b7280; font-style: italic; }
-        @media print {
-          body { margin: 16px; background: #fff; }
-          table { box-shadow: none; }
-          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-        }
-      </style>
-    </head>
-    <body>
-      <h1>Orders Export</h1>
-      <div class="sub">Generated on ${generatedAt.toLocaleString()}</div>
-      <div class="meta">
-        <div>Filter: <strong>${escapeHtml(activeFilter.value)}</strong></div>
-        <div>Date Range: <strong>${escapeHtml(dateFilterLabel)}</strong></div>
-        <div>Search: <strong>${escapeHtml(searchLabel)}</strong></div>
-        <div>Total Orders: <strong>${orders.length}</strong></div>
-      </div>
-      <div class="summary">${statusSummary}</div>
-      <table>
-        <thead>
-          <tr>
-            <th>Order Code</th>
-            <th>Customer</th>
-            <th>Product</th>
-            <th>Type</th>
-            <th>Unit & Qty</th>
-            <th>Location</th>
-            <th>Date</th>
-            <th>Total</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows}
-        </tbody>
-      </table>
-    </body>
-    </html>
-  `;
-};
-
-// Export as PDF
-const exportAsPDF = () => {
-  showExportMenu.value = false;
-  const printWindow = window.open('', '_blank');
-  if (!printWindow) {
-    showOrderNotification(
-      'Export Failed',
-      'Please allow pop-ups to export as PDF',
-      'error'
-    );
-    return;
-  }
-
-  try {
-    const pdfContent = buildOrdersPDFHTML(filteredOrders.value);
-    printWindow.document.open();
-    printWindow.document.write(pdfContent);
-    printWindow.document.close();
-    printWindow.focus();
-    printWindow.print();
-    showOrderNotification(
-      'PDF Ready',
-      'Orders PDF generated — use the print dialog to save.',
-      'success'
-    );
-  } catch (error) {
-    console.error('PDF export error:', error);
-    showOrderNotification(
-      'Export Failed',
-      'Something went wrong while preparing the PDF.',
-      'error'
-    );
-  }
-};
 </script>
 <style scoped>
 .info-group p {
@@ -2358,6 +2231,15 @@ const exportAsPDF = () => {
 
 .print-receipt-btn:hover {
   background-color: #234425;
+}
+
+.print-receipt-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.print-receipt-btn:disabled:hover {
+  background-color: #2e5c31;
 }
 
 .close-btn {

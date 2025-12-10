@@ -436,78 +436,21 @@
       </div>
     </div>
     
-    <!-- Export Preview Modal -->
-    <div v-if="showExportPreview" class="modal-overlay" @click="closeExportPreview">
-      <div class="modal-content export-preview-modal" @click.stop>
-        <div class="modal-header">
-          <h3>Export Preview - {{ exportFormat.toUpperCase() }}</h3>
-          <button class="close-btn" @click="closeExportPreview">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-          </button>
-        </div>
-        
-        <div class="modal-body">
-          <div class="export-info">
-            <p><strong>Total Records:</strong> {{ filteredProducts.length }}</p>
-            <p><strong>Export Date:</strong> {{ new Date().toLocaleDateString() }}</p>
-            <p><strong>Format:</strong> {{ exportFormat.toUpperCase() }}</p>
-          </div>
-          
-          <div class="preview-content">
-            <div v-if="exportFormat === 'csv'" class="csv-preview">
-              <h4>CSV Preview (First 5 rows):</h4>
-              <pre>{{ csvPreview }}</pre>
-            </div>
-            
-            <div v-if="exportFormat === 'pdf'" class="pdf-preview">
-              <h4>PDF Preview:</h4>
-              <div class="pdf-preview-content">
-                <div class="pdf-header">
-                  <h2>Inventory Report</h2>
-                  <p>Generated on: {{ new Date().toLocaleDateString() }}</p>
-                </div>
-                <table class="preview-table">
-                  <thead>
-                    <tr>
-                      <th>Product Name</th>
-                      <th>Category</th>
-                      <th>Status</th>
-                      <th>Total Stock</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="product in filteredProducts.slice(0, 5)" :key="product.id">
-                      <td>{{ product.productName }}</td>
-                      <td>{{ product.category }}</td>
-                      <td>{{ product.status }}</td>
-                      <td>{{ getTotalStock(product) }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-                <p v-if="filteredProducts.length > 5" class="preview-note">
-                  ... and {{ filteredProducts.length - 5 }} more records
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        <div class="modal-footer">
-          <button class="cancel-btn" @click="closeExportPreview">Cancel</button>
-          <button class="confirm-btn" @click="confirmExport">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="7 10 12 15 17 10"></polyline>
-              <line x1="12" y1="15" x2="12" y2="3"></line>
-            </svg>
-            Download {{ exportFormat.toUpperCase() }}
-          </button>
-        </div>
-      </div>
-    </div>
+    <SalesPerformancePreview
+      v-model="showChartPreview"
+      :chart-src="chartPreviewImage"
+      :generated-at="chartPreviewGeneratedAt"
+      title="Sales Performance Snapshot"
+      :subtitle="chartPreviewSubtitle"
+      :stats="chartPreviewStats"
+    />
+
+    <InventoryExportPreview
+      v-model="showInventoryExportPreview"
+      :products="inventoryExportProducts"
+      :generated-at="inventoryExportGeneratedAt"
+      :filters-summary="inventoryFiltersSummary"
+    />
     
     <!-- Inventory Modal -->
     <InventoryModal
@@ -520,12 +463,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed, watch, onUnmounted } from 'vue';
+import { ref, onMounted, computed, watch, onUnmounted, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { db, auth } from '@/firebase/firebaseConfig';
 import { collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
 import Sidebar from '@/components/Sidebar.vue';
 import InventoryModal from '@/components/sellerside/InventoryModal.vue';
+import InventoryExportPreview from '@/components/previewpdf/InventoryExportPreview.vue';
+import SalesPerformancePreview from '@/components/previewpdf/SalesPerformancePreview.vue';
 import Chart from 'chart.js/auto';
 import OfflineBanner from '@/components/OfflineBanner.vue';
 import { normalizeOrdersForSeller, getPriceFromEntry, STATUS_WHITELIST } from '@/helpers/salesUtils';
@@ -584,11 +529,21 @@ const filters = ref({
   search: ''
 });
 
+const inventoryFiltersSummary = computed(() => {
+  const parts = [
+    `Category: ${filters.value.category || 'All'}`,
+    `Status: ${filters.value.status || 'All'}`,
+    `Stock Level: ${filters.value.stockLevel || 'All'}`,
+    `Search: ${filters.value.search ? `"${filters.value.search}"` : 'None'}`
+  ];
+  return parts.join(' • ');
+});
+
 // Export functionality
 const showExportMenu = ref(false);
-const showExportPreview = ref(false);
-const exportFormat = ref('');
-const csvPreview = ref('');
+const showInventoryExportPreview = ref(false);
+const inventoryExportProducts = ref([]);
+const inventoryExportGeneratedAt = ref(new Date());
 
 // Unit display mapping
 const unitDisplayMap = {
@@ -608,9 +563,27 @@ const unitDisplayMap = {
   'perPiece': 'Piece'
 };
 
+// Format number with commas and two decimals for currency display
+const formatNumber = (num) => {
+  return parseFloat(num || 0)
+    .toFixed(2)
+    .replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+};
+
 // Chart filtering and export
 const chartTimeRange = ref('month');
+const chartTimeRangeLabels = {
+  week: 'Last 7 Days',
+  month: 'Last 4 Weeks',
+  quarter: 'Last Quarter',
+  year: 'Year to Date'
+};
 const showChartExportMenu = ref(false);
+const showChartPreview = ref(false);
+const chartPreviewImage = ref('');
+const chartPreviewGeneratedAt = ref(new Date());
+const chartPreviewSubtitle = ref('');
+const chartPreviewStats = ref([]);
 
 // Modal state
 const showInventoryModal = ref(false);
@@ -818,7 +791,7 @@ const exportChart = (format) => {
   if (format === 'png') {
     exportChartAsPNG();
   } else if (format === 'pdf') {
-    exportChartAsPDF();
+    openChartPreview();
   }
 };
 
@@ -833,114 +806,33 @@ const exportChartAsPNG = () => {
   link.click();
 };
 
-const exportChartAsPDF = () => {
-  if (!salesChartInstance) return;
-  
-  const printWindow = window.open('', '_blank');
-  
-  if (!printWindow) {
-    alert('Please allow pop-ups to export as PDF');
+const openChartPreview = async () => {
+  if (!salesChartInstance || !salesChart.value) {
+    alert('Chart preview is not available yet. Please try again after the chart loads.');
     return;
   }
-  
-  const canvas = salesChart.value;
-  const chartImageUrl = canvas.toDataURL('image/png');
-  
-  const pdfContent = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Sales Performance Chart</title>
-      <style>
-        body { 
-          font-family: Arial, sans-serif; 
-          margin: 20px; 
-          text-align: center;
-        }
-        h1 { 
-          color: #2e5c31; 
-          margin-bottom: 20px; 
-        }
-        .chart-container {
-          margin: 20px 0;
-          display: flex;
-          justify-content: center;
-        }
-        .chart-image {
-          max-width: 100%;
-          height: auto;
-          border: 1px solid #ddd;
-          border-radius: 8px;
-        }
-        .export-info { 
-          margin-top: 20px; 
-          font-size: 12px; 
-          color: #666; 
-        }
-        .summary-stats {
-          display: flex;
-          justify-content: space-around;
-          margin: 20px 0;
-          padding: 20px;
-          background-color: #f9f9f9;
-          border-radius: 8px;
-        }
-        .stat-item {
-          text-align: center;
-        }
-        .stat-value {
-          font-size: 24px;
-          font-weight: bold;
-          color: #2e5c31;
-        }
-        .stat-label {
-          font-size: 14px;
-          color: #666;
-        }
-      </style>
-    </head>
-    <body>
-      <h1>Sales Performance Report</h1>
-      <p>Period: ${chartTimeRange.value.charAt(0).toUpperCase() + chartTimeRange.value.slice(1)}</p>
-      
-      <div class="summary-stats">
-        <div class="stat-item">
-          <div class="stat-value">₱${formatNumber(totalSales.value)}</div>
-          <div class="stat-label">Total Sales</div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-value">${profitMargin.value}%</div>
-          <div class="stat-label">Profit Margin</div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-value">${totalOrders.value}</div>
-          <div class="stat-label">Total Orders</div>
-        </div>
-      </div>
-      
-      <div class="chart-container">
-        <img src="${chartImageUrl}" alt="Sales Performance Chart" class="chart-image">
-      </div>
-      
-      <div class="export-info">
-        <p>Generated on: ${new Date().toLocaleString()}</p>
-        <p>FarmXpress Analytics Dashboard</p>
-      </div>
-      
-      <script>
-        window.onload = function() { 
-          setTimeout(function() {
-            window.print(); 
-          }, 500);
-        };
-      <\/script>
-    </body>
-    </html>
-  `;
-  
-  printWindow.document.open();
-  printWindow.document.write(pdfContent);
-  printWindow.document.close();
+
+  try {
+    await nextTick();
+    const canvas = salesChart.value;
+    const chartImageUrl = canvas.toDataURL('image/png', 1.0);
+    const rangeLabel = chartTimeRangeLabels[chartTimeRange.value] || 'Current Range';
+    const avgOrderValue = totalOrders.value > 0 ? totalSales.value / totalOrders.value : 0;
+
+    chartPreviewImage.value = chartImageUrl;
+    chartPreviewGeneratedAt.value = new Date();
+    chartPreviewSubtitle.value = `${rangeLabel} • Sales vs Profit`;
+    chartPreviewStats.value = [
+      { label: 'Total Sales', value: `₱${formatNumber(totalSales.value)}` },
+      { label: 'Profit Margin', value: `${profitMargin.value}%` },
+      { label: 'Total Orders', value: (totalOrders.value || 0).toLocaleString() },
+      { label: 'Avg Order Value', value: `₱${formatNumber(avgOrderValue)}` }
+    ];
+    showChartPreview.value = true;
+  } catch (error) {
+    console.error('Failed to prepare chart preview:', error);
+    alert('Unable to prepare the chart preview right now. Please try again.');
+  }
 };
 
 // Inventory export functionality
@@ -951,50 +843,21 @@ const toggleExportMenu = (event) => {
 
 const previewExport = (format) => {
   showExportMenu.value = false;
-  exportFormat.value = format;
-  
   if (format === 'csv') {
-    generateCSVPreview();
-  }
-  
-  showExportPreview.value = true;
-};
-
-const generateCSVPreview = () => {
-  const headers = ['Product Name', 'Category', 'Status', 'Total Stock', 'Available Units'];
-  const rows = [headers.join(',')];
-  
-  filteredProducts.value.slice(0, 5).forEach(product => {
-    const row = [
-      `"${product.productName}"`,
-      `"${product.category}"`,
-      `"${product.status}"`,
-      getTotalStock(product),
-      `"${product.availableUnits?.join(', ') || 'N/A'}"`
-    ];
-    rows.push(row.join(','));
-  });
-  
-  if (filteredProducts.value.length > 5) {
-    rows.push(`... and ${filteredProducts.value.length - 5} more records`);
-  }
-  
-  csvPreview.value = rows.join('\n');
-};
-
-const closeExportPreview = () => {
-  showExportPreview.value = false;
-  exportFormat.value = '';
-  csvPreview.value = '';
-};
-
-const confirmExport = () => {
-  if (exportFormat.value === 'csv') {
     exportToCSV();
-  } else if (exportFormat.value === 'pdf') {
-    exportToPDF();
+    return;
   }
-  closeExportPreview();
+  openInventoryExportPreview();
+};
+
+const openInventoryExportPreview = () => {
+  if (!filteredProducts.value.length) {
+    alert('No products available to export for the current filters.');
+    return;
+  }
+  inventoryExportProducts.value = filteredProducts.value.map(product => ({ ...product }));
+  inventoryExportGeneratedAt.value = new Date();
+  showInventoryExportPreview.value = true;
 };
 
 const exportToCSV = () => {
@@ -1031,108 +894,7 @@ const exportToCSV = () => {
   document.body.removeChild(link);
 };
 
-const exportToPDF = () => {
-  const printWindow = window.open('', '_blank');
-  
-  if (!printWindow) {
-    alert('Please allow pop-ups to export as PDF');
-    return;
-  }
-  
-  const tableRows = filteredProducts.value.map(product => `
-    <tr>
-      <td>${product.productName}</td>
-      <td>${product.category}</td>
-      <td>${product.status}</td>
-      <td>${getTotalStock(product)}</td>
-      <td>${product.availableUnits?.join(', ') || 'N/A'}</td>
-    </tr>
-  `).join('');
-  
-  const pdfContent = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Inventory Report</title>
-      <style>
-        body { 
-          font-family: Arial, sans-serif; 
-          margin: 20px; 
-        }
-        h1 { 
-          color: #2e5c31; 
-          text-align: center;
-          margin-bottom: 20px; 
-        }
-        .report-info {
-          text-align: center;
-          margin-bottom: 30px;
-          color: #666;
-        }
-        table {
-          width: 100%;
-          border-collapse: collapse;
-          margin-bottom: 20px;
-        }
-        th, td {
-          border: 1px solid #ddd;
-          padding: 8px;
-          text-align: left;
-          font-size: 0.8rem;
-        }
-        th {
-          background-color: #f2f2f2;
-          font-weight: bold;
-        }
-        .export-info { 
-          margin-top: 30px; 
-          font-size: 12px; 
-          color: #666; 
-          text-align: center;
-        }
-      </style>
-    </head>
-    <body>
-      <h1>Inventory Report</h1>
-      <div class="report-info">
-        <p>Generated on: ${new Date().toLocaleDateString()}</p>
-        <p>Total Products: ${filteredProducts.value.length}</p>
-      </div>
-      
-      <table>
-        <thead>
-          <tr>
-            <th>Product Name</th>
-            <th>Category</th>
-            <th>Status</th>
-            <th>Total Stock</th>
-            <th>Available Units</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${tableRows}
-        </tbody>
-      </table>
-      
-      <div class="export-info">
-        <p>FarmXpress Analytics Dashboard</p>
-      </div>
-      
-      <script>
-        window.onload = function() { 
-          setTimeout(function() {
-            window.print(); 
-          }, 500);
-        };
-      <\/script>
-    </body>
-    </html>
-  `;
-  
-  printWindow.document.open();
-  printWindow.document.write(pdfContent);
-  printWindow.document.close();
-};
+// PDF export handled by InventoryExportPreview component
 
 // Close export menu when clicking outside
 const closeExportMenu = (event) => {
@@ -1216,11 +978,6 @@ const lowStockProducts = computed(() => {
     return totalStock > 0 && totalStock <= 10;
   });
 });
-
-// Format number with commas and two decimals for currency
-const formatNumber = (num) => {
-  return parseFloat(num).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-};
 
 // Get stock level class
 const getStockLevelClass = (stock) => {
