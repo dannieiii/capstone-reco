@@ -265,30 +265,46 @@ export default {
         return;
       }
 
+      try {
+        await user.getIdToken(true);
+      } catch (tokenError) {
+        console.warn('Unable to refresh auth token before redirect:', tokenError);
+      }
+
       // Only store minimal auth state, not user data
       if (this.rememberMe) {
-        localStorage.setItem("authPersist", "true");
+        localStorage.setItem('authPersist', 'true');
+        sessionStorage.removeItem('authPersist');
       } else {
-        sessionStorage.setItem("authPersist", "true");
+        sessionStorage.setItem('authPersist', 'true');
+        localStorage.removeItem('authPersist');
       }
 
       // Reset login attempts on successful login
       this.resetLoginAttempts();
 
-      // Redirect based on role
-      if (userData.role === 'admin') {
-        this.$router.push('/admin');
-      } else if (userData.role === 'customer') {
-        this.$router.push('/');
-      } else if (userData.role === 'seller') {
-        this.$router.push('/seller-dashboard');
-      } else {
+      const role = (userData.role || '').toLowerCase();
+      const roleRoutes = {
+        admin: '/admin',
+        customer: '/',
+        seller: '/seller-dashboard'
+      };
+      const targetRoute = roleRoutes[role];
+
+      if (!targetRoute) {
         this.showAlert('Invalid role assigned to user.', 'error');
         await auth.signOut();
         return;
       }
 
       this.showAlert('Login Successful!', 'success');
+      try {
+        await this.$router.push(targetRoute);
+      } catch (navError) {
+        if (!navError || navError.name !== 'NavigationDuplicated') {
+          console.error('Navigation error after login:', navError);
+        }
+      }
     },
     
     
@@ -603,9 +619,9 @@ export default {
 }
 
 .success {
-  background: #d4edda;
-  color: #155724;
-  border-left: 5px solid #28a745;
+  background: #e6f2ea;
+  color: #2e5c31;
+  border-left: 5px solid #2e5c31;
 }
 
 .warning {

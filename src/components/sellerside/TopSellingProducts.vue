@@ -72,7 +72,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
-import { collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore'
+import { collection, getDocs, query, where, limit } from 'firebase/firestore'
 import { db, auth } from '@/firebase/firebaseConfig'
 import { normalizeOrdersForSeller, STATUS_WHITELIST, getPriceFromEntry } from '@/helpers/salesUtils'
 
@@ -92,6 +92,9 @@ const selectedPeriod = ref('month')
 const currentSellerId = ref('')
 const sellerDocId = ref('')
 let authUnsubscribe = null
+
+const SELLER_ID_FIELDS = ['sellerId', 'sellerID', 'sellerUid', 'sellerUID']
+const ORDER_QUERY_LIMIT = 150
 
 // Unit display mapping (same as Analytics.vue)
 const unitDisplayMap = {
@@ -154,7 +157,7 @@ const formatNumber = (num) => {
   return parseFloat(num).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")
 }
 
-// Fetch orders using the same normalization logic as SalesRevenueChart.vue
+// Fetch orders using a fast, seller-scoped query set
 const fetchOrders = async () => {
   try {
     if (!currentSellerId.value) {
@@ -162,68 +165,64 @@ const fetchOrders = async () => {
       return
     }
 
-    const ordersRef = collection(db, 'orders')
-
-    const tryQueryByField = async (field, value) => {
-      try {
-        try {
-          const snap = await getDocs(query(ordersRef, where(field, '==', value), orderBy('timestamp', 'desc'), limit(500)))
-          return snap.docs
-        } catch (e1) {
-          try {
-            const snap = await getDocs(query(ordersRef, where(field, '==', value), orderBy('createdAt', 'desc'), limit(500)))
-            return snap.docs
-          } catch (e2) {
-            const snap = await getDocs(query(ordersRef, where(field, '==', value), limit(500)))
-            return snap.docs
-          }
-        }
-      } catch (error) {
-        console.error('Error querying orders by field:', error)
-        return []
-      }
+    const candidateIds = new Set([currentSellerId.value])
+    if (sellerDocId.value && sellerDocId.value !== currentSellerId.value) {
+      candidateIds.add(sellerDocId.value)
     }
+    if (props.sellerId) {
+      candidateIds.add(props.sellerId)
+    }
+    const sellerKeys = Array.from(candidateIds).filter(Boolean)
+    if (!sellerKeys.length) {
+      orders.value = []
+      return
+    }
+
+    const ordersRef = collection(db, 'orders')
+    const docsBySellerKey = new Map()
+    const docIdsBySellerKey = new Map()
+
+    const queryPromises = []
+    sellerKeys.forEach((sellerKey) => {
+      SELLER_ID_FIELDS.forEach((fieldName) => {
+        queryPromises.push(
+          getDocs(query(ordersRef, where(fieldName, '==', sellerKey), limit(ORDER_QUERY_LIMIT)))
+            .then((snapshot) => ({ sellerKey, docs: snapshot.docs }))
+            .catch((error) => {
+              console.warn(`TopSellingProducts: query failed for ${fieldName} == ${sellerKey}`, error)
+              return { sellerKey, docs: [] }
+            })
+        )
+      })
+    })
+
+    const results = await Promise.all(queryPromises)
+
+    results.forEach(({ sellerKey, docs }) => {
+      if (!docs || !docs.length) return
+      const existing = docsBySellerKey.get(sellerKey) || []
+      const seenIds = docIdsBySellerKey.get(sellerKey) || new Set()
+      docs.forEach((docSnap) => {
+        if (seenIds.has(docSnap.id)) return
+        seenIds.add(docSnap.id)
+        existing.push(docSnap)
+      })
+      docsBySellerKey.set(sellerKey, existing)
+      docIdsBySellerKey.set(sellerKey, seenIds)
+    })
 
     const aggregated = []
-    const seen = new Set()
-    const candidates = [currentSellerId.value]
-    if (sellerDocId.value && sellerDocId.value !== currentSellerId.value) {
-      candidates.push(sellerDocId.value)
-    }
+    const seenEntryIds = new Set()
 
-    const addEntries = (entries) => {
-      entries.forEach((entry) => {
-        const key = entry.id || `${entry.productName}-${entry.saleDate?.toISOString?.()}`
-        if (seen.has(key)) return
-        seen.add(key)
+    docsBySellerKey.forEach((docs, sellerKey) => {
+      const normalized = normalizeOrdersForSeller(docs, sellerKey, { statusWhitelist: STATUS_WHITELIST })
+      normalized.forEach((entry) => {
+        const entryId = String(entry.id)
+        if (seenEntryIds.has(entryId)) return
+        seenEntryIds.add(entryId)
         aggregated.push(entry)
       })
-    }
-
-    for (const id of candidates) {
-      let docs = await tryQueryByField('sellerId', id)
-      if (!docs.length) docs = await tryQueryByField('sellerID', id)
-      if (!docs.length) docs = await tryQueryByField('sellerUid', id)
-      if (!docs.length) docs = await tryQueryByField('sellerUID', id)
-
-      if (!docs.length) {
-        let recentSnap
-        try {
-          recentSnap = await getDocs(query(ordersRef, orderBy('timestamp', 'desc'), limit(500)))
-        } catch (e3) {
-          try {
-            recentSnap = await getDocs(query(ordersRef, orderBy('createdAt', 'desc'), limit(500)))
-          } catch (e4) {
-            recentSnap = await getDocs(query(ordersRef, limit(500)))
-          }
-        }
-        const normalizedFallback = normalizeOrdersForSeller(recentSnap.docs, id, { statusWhitelist: STATUS_WHITELIST })
-        addEntries(normalizedFallback)
-      } else {
-        const normalized = normalizeOrdersForSeller(docs, id, { statusWhitelist: STATUS_WHITELIST })
-        addEntries(normalized)
-      }
-    }
+    })
 
     orders.value = aggregated
   } catch (error) {

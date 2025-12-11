@@ -53,9 +53,6 @@
       <div class="location-widget">
         <MapPin :size="16" />
         <span class="location-text">{{ sellerLocation.farmName || 'Loading location...' }}</span>
-        <button @click="refreshLocation" class="refresh-location-btn" :disabled="isLoadingLocation">
-          <RotateCcw :size="14" />
-        </button>
       </div>
       
       <div class="month-navigation">
@@ -86,11 +83,6 @@
       </button>
     </div>
 
-    <!-- Weather Status Indicator -->
-    <div v-if="currentWeather && currentWeather.location && currentWeather.location.includes('Demo')" class="weather-status-info">
-      <Info :size="16" />
-      <span>Using demo weather data. Set up OpenWeatherMap API key for live weather.</span>
-    </div>
   </div>
 
   <!-- Upcoming Harvest Alerts -->
@@ -211,12 +203,12 @@
         Add Your First Crop
       </button>
     </div>
-    
+
     <div v-else class="schedule-list">
       <div class="list-filters">
         <div class="filter-tabs">
-          <button 
-            v-for="filter in statusFilters" 
+          <button
+            v-for="filter in statusFilters"
             :key="filter.value"
             @click="selectedFilter = filter.value"
             :class="['filter-tab', { active: selectedFilter === filter.value }]"
@@ -228,16 +220,20 @@
       </div>
 
       <div class="harvest-groups">
-        <div v-for="(group, month) in groupedHarvests" :key="month" class="harvest-month-group">
+        <div
+          v-for="(group, month) in groupedHarvests"
+          :key="month"
+          class="harvest-month-group"
+        >
           <div class="month-header">
             <h3>{{ month }}</h3>
             <span class="month-count">{{ group.length }} crops</span>
           </div>
-          
+
           <div class="harvest-items">
-            <div 
-              v-for="harvest in group" 
-              :key="harvest.id" 
+            <div
+              v-for="harvest in group"
+              :key="harvest.id"
               class="harvest-item"
               :class="[getStatusClass(harvest.status), { 'weather-delayed': harvest.delayed }]"
             >
@@ -248,58 +244,45 @@
                 </div>
                 <div class="timeline-line"></div>
               </div>
-              
+
               <div class="harvest-details">
                 <div class="harvest-header">
                   <div class="crop-badge" :style="{ backgroundColor: getCategoryColor(harvest.category) }">
                     {{ harvest.category }}
                   </div>
                   <div class="harvest-status-badge">{{ harvest.status }}</div>
-                  <div v-if="harvest.delayed" class="delay-badge">
-                    <AlertTriangle :size="12" />
-                    Delayed
-                  </div>
                 </div>
-                
+
                 <h4 class="harvest-name">{{ harvest.name }}</h4>
-                
-                <div class="harvest-info">
-                  <div class="info-item">
-                    <Sprout :size="14" />
-                    <span>Planted: {{ formatDate(harvest.plantingDate) }}</span>
-                  </div>
-                  <div class="info-item">
+                <div class="harvest-period">
+                  {{ formatDate(harvest.harvestStartDate) }} - {{ formatDate(harvest.harvestEndDate) }}
+                </div>
+
+                <div class="harvest-meta">
+                  <div class="meta-item">
                     <CalendarDays :size="14" />
-                    <span>Harvest: {{ formatDate(harvest.harvestStartDate) }} - {{ formatDate(harvest.harvestEndDate) }}</span>
-                  </div>
-                  <div class="info-item">
-                    <Clock :size="14" />
                     <span>{{ getDaysUntilHarvest(harvest.harvestStartDate) }}</span>
                   </div>
-                  <div v-if="harvest.smartEstimate" class="info-item">
-                    <Brain :size="14" />
-                    <span>AI Estimate: {{ harvest.smartEstimate.confidence }}% confidence</span>
+                  <div class="meta-item" v-if="harvest.weatherAdjustment">
+                    <CloudRain :size="14" />
+                    <span>{{ harvest.weatherAdjustment }}</span>
+                  </div>
+                  <div class="meta-item" v-if="harvest.notes">
+                    <MessageSquare :size="14" />
+                    <span>{{ harvest.notes }}</span>
                   </div>
                 </div>
-                
-                <div v-if="harvest.weatherAdjustment" class="weather-adjustment">
-                  <CloudRain :size="14" />
-                  <span>{{ harvest.weatherAdjustment }}</span>
+
+                <div class="harvest-actions">
+                  <button class="action-btn edit-btn" @click="editHarvest(harvest)">
+                    <Edit2 :size="14" />
+                    Edit
+                  </button>
+                  <button class="action-btn delete-btn" @click="deleteHarvest(harvest.id)">
+                    <Trash2 :size="14" />
+                    Delete
+                  </button>
                 </div>
-                
-                <div v-if="harvest.notes" class="harvest-notes">
-                  <MessageSquare :size="14" />
-                  <span>{{ harvest.notes }}</span>
-                </div>
-              </div>
-              
-              <div class="harvest-actions">
-                <button @click="editHarvest(harvest)" class="action-btn edit-btn" title="Edit">
-                  <Edit2 :size="16" />
-                </button>
-                <button @click="deleteHarvest(harvest.id)" class="action-btn delete-btn" title="Delete">
-                  <Trash2 :size="16" />
-                </button>
               </div>
             </div>
           </div>
@@ -312,135 +295,146 @@
   <div v-if="showHarvestModal" class="modal-overlay" @click="closeHarvestModal">
     <div class="harvest-modal" @click.stop>
       <div class="modal-header">
-        <h3>{{ editingHarvest ? 'Edit Crop Schedule' : 'Smart Crop Planner' }}</h3>
+        <h3>{{ editingHarvest ? 'Edit Harvest Schedule' : 'Add Harvest Schedule' }}</h3>
         <button @click="closeHarvestModal" class="close-btn">
           <X :size="20" />
         </button>
       </div>
-      
+
       <div class="modal-content">
-        <form @submit.prevent="saveHarvest" class="harvest-form">
-          <!-- Crop Selection -->
+        <form class="harvest-form" @submit.prevent="saveHarvest">
           <div class="form-section">
-            <h4>Crop Information</h4>
-            <div class="form-group">
-              <label for="cropSelect">Select Crop *</label>
-              <select 
-                id="cropSelect" 
+            <h4>Crop Selection</h4>
+
+            <div class="checkbox-group">
+              <input
+                type="checkbox"
+                id="isCustomCrop"
+                v-model="harvestForm.isCustomCrop"
+                @change="handleCustomCropToggle"
+              />
+              <label for="isCustomCrop">Enter a custom crop</label>
+            </div>
+
+            <div v-if="!harvestForm.isCustomCrop" class="form-group">
+              <label for="cropId">Choose Crop *</label>
+              <select
+                id="cropId"
                 v-model="harvestForm.cropId"
-                @change="onCropSelect"
-                required
                 :disabled="isSubmitting"
+                required
+                @change="onCropSelect"
               >
-                <option value="">Choose a crop...</option>
-                <optgroup 
-                  v-for="category in groupedCrops" 
-                  :key="category.name" 
-                  :label="category.name"
+                <option value="">Select from catalog</option>
+                <optgroup
+                  v-for="group in groupedCrops"
+                  :key="group.name"
+                  :label="group.name"
                 >
-                  <option 
-                    v-for="crop in category.crops" 
-                    :key="crop.id" 
+                  <option
+                    v-for="crop in group.crops"
+                    :key="crop.id"
                     :value="crop.id"
                   >
-                    {{ crop.name }} ({{ crop.daysToHarvest || crop.harvestTime }} days)
+                    {{ crop.name }} ({{ crop.daysToHarvest }} days)
                   </option>
                 </optgroup>
               </select>
             </div>
+
+            <div v-else class="custom-crop-grid">
+              <div class="form-group">
+                <label for="customName">Crop Name *</label>
+                <input
+                  id="customName"
+                  type="text"
+                  v-model="harvestForm.customName"
+                  :disabled="isSubmitting"
+                  required
+                />
+              </div>
+              <div class="form-group">
+                <label for="customCategory">Category *</label>
+                <select
+                  id="customCategory"
+                  v-model="harvestForm.customCategory"
+                  :disabled="isSubmitting"
+                  required
+                >
+                  <option value="Fruits">Fruits</option>
+                  <option value="Vegetables">Vegetables</option>
+                  <option value="Grains">Grains</option>
+                  <option value="Root Crops">Root Crops</option>
+                  <option value="Herbs">Herbs</option>
+                  <option value="Custom">Custom</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="customDaysToHarvest">Days to Harvest *</label>
+                <input
+                  id="customDaysToHarvest"
+                  type="number"
+                  min="1"
+                  v-model.number="harvestForm.customDaysToHarvest"
+                  :disabled="isSubmitting"
+                  required
+                />
+              </div>
+              <div class="form-group">
+                <label for="customHarvestWindow">Harvest Window (days)</label>
+                <input
+                  id="customHarvestWindow"
+                  type="number"
+                  min="1"
+                  v-model.number="harvestForm.customHarvestWindow"
+                  :disabled="isSubmitting"
+                />
+              </div>
+            </div>
           </div>
 
-          <!-- Planting Information -->
           <div class="form-section">
-            <h4>Planting Schedule</h4>
+            <h4>Planting & Smart Estimate</h4>
             <div class="form-group">
               <label for="plantingDate">Planting Date *</label>
-              <input 
-                type="date" 
-                id="plantingDate" 
+              <input
+                id="plantingDate"
+                type="date"
                 v-model="harvestForm.plantingDate"
-                @change="updateSmartHarvestDates"
-                required
                 :disabled="isSubmitting"
+                required
+                @change="updateSmartHarvestDates"
               />
             </div>
-          </div>
-
-          <!-- Smart Harvest Estimation -->
-          <div v-if="harvestForm.cropId && smartEstimation" class="form-section">
-            <h4>Smart Harvest Estimation</h4>
-            <div class="smart-estimation-card">
-              <div class="estimation-header">
-                <Brain :size="18" />
-                <span>AI-Powered Prediction</span>
-                <div class="confidence-badge">{{ smartEstimation.confidence }}% Confidence</div>
-              </div>
-              <div class="estimation-details">
-                <div class="detail-row">
-                  <span>Base Growth Period:</span>
-                  <span>{{ smartEstimation.baseDays }} days</span>
-                </div>
-                <div class="detail-row">
-                  <span>Weather Adjustment:</span>
-                  <span :class="{ 'positive': smartEstimation.weatherAdjustment >= 0, 'negative': smartEstimation.weatherAdjustment < 0 }">
-                    {{ smartEstimation.weatherAdjustment >= 0 ? '+' : '' }}{{ smartEstimation.weatherAdjustment }} days
-                  </span>
-                </div>
-                <div class="detail-row">
-                  <span>Final Estimate:</span>
-                  <span class="final-estimate">{{ smartEstimation.finalDays }} days</span>
-                </div>
-              </div>
+            <div class="estimated-info" v-if="smartEstimation">
+              <Brain :size="16" />
+              <span>
+                Smart estimate: {{ smartEstimation.baseDays }} base days •
+                Adjustment {{ smartEstimation.weatherAdjustment >= 0 ? '+' : '-' }}{{ Math.abs(smartEstimation.weatherAdjustment) }} days •
+                Final {{ smartEstimation.finalDays }} days
+              </span>
             </div>
           </div>
 
-          <!-- Weather Impact Display -->
-          <div v-if="currentWeather && harvestForm.cropId" class="form-section">
-            <h4>Current Growing Conditions</h4>
-            <div class="weather-conditions">
-              <div class="weather-item">
-                <Thermometer :size="16" />
-                <span>{{ Math.round(currentWeather.temp) }}°C</span>
-                <span class="weather-status" :class="getTemperatureStatus(currentWeather.temp)">
-                  {{ getTemperatureLabel(currentWeather.temp) }}
-                </span>
-              </div>
-              <div class="weather-item">
-                <CloudRain :size="16" />
-                <span>{{ currentWeather.humidity }}% humidity</span>
-              </div>
-              <div class="weather-item">
-                <Eye :size="16" />
-                <span>{{ currentWeather.description }}</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Harvest Information -->
           <div class="form-section">
             <h4>Harvest Schedule</h4>
-            <div class="estimated-info" v-if="harvestForm.cropId && estimatedDays">
-              <Info :size="16" />
-              <span>Smart estimate: {{ estimatedDays }} days from planting to harvest</span>
-            </div>
-            
             <div class="form-row">
               <div class="form-group">
                 <label for="harvestStartDate">Harvest Start Date *</label>
-                <input 
-                  type="date" 
-                  id="harvestStartDate" 
+                <input
+                  type="date"
+                  id="harvestStartDate"
                   v-model="harvestForm.harvestStartDate"
                   required
                   :disabled="isSubmitting"
                 />
               </div>
-              
+
               <div class="form-group">
                 <label for="harvestEndDate">Harvest End Date *</label>
-                <input 
-                  type="date" 
-                  id="harvestEndDate" 
+                <input
+                  type="date"
+                  id="harvestEndDate"
                   v-model="harvestForm.harvestEndDate"
                   required
                   :disabled="isSubmitting"
@@ -449,14 +443,13 @@
             </div>
           </div>
 
-          <!-- Additional Information -->
           <div class="form-section">
             <h4>Additional Details</h4>
             <div class="form-group">
               <label for="status">Current Status</label>
-              <select 
-                id="status" 
-                v-model="harvestForm.status" 
+              <select
+                id="status"
+                v-model="harvestForm.status"
                 required
                 :disabled="isSubmitting"
               >
@@ -468,24 +461,26 @@
                 <option value="sold">Sold</option>
               </select>
             </div>
-            
+
             <div class="form-group">
               <label for="notes">Notes (Optional)</label>
-              <textarea 
-                id="notes" 
-                v-model="harvestForm.notes" 
+              <textarea
+                id="notes"
+                v-model="harvestForm.notes"
                 placeholder="Add any notes about this crop, variety, expected yield, etc."
                 rows="3"
                 :disabled="isSubmitting"
               ></textarea>
             </div>
+          </div>
 
-            <!-- Notification Settings -->
+          <div class="form-section">
+            <h4>Notifications</h4>
             <div class="form-group">
               <div class="checkbox-group">
-                <input 
-                  type="checkbox" 
-                  id="enableNotifications" 
+                <input
+                  type="checkbox"
+                  id="enableNotifications"
                   v-model="harvestForm.enableNotifications"
                 />
                 <label for="enableNotifications">Enable harvest notifications</label>
@@ -502,7 +497,7 @@
               </div>
             </div>
           </div>
-          
+
           <div class="form-actions">
             <button type="button" @click="closeHarvestModal" class="cancel-btn" :disabled="isSubmitting">
               Cancel
@@ -579,7 +574,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { 
   Calendar, 
   ChevronLeft, 
@@ -603,7 +598,6 @@ import {
   CloudRain,
   Thermometer,
   Eye,
-  RotateCcw,
   Sun,
   Cloud,
   CloudSun,
@@ -620,38 +614,15 @@ import {
   updateDoc, 
   deleteDoc,
   addDoc,
-  serverTimestamp,
-  getDoc,
-  setDoc  // Add this import
+  serverTimestamp
 } from 'firebase/firestore'
 
-// Enhanced environment variable handling with runtime overrides
-const WEATHER_API_KEY = (
-  (typeof window !== 'undefined' && (window.OWM_API_KEY || localStorage.getItem('WEATHER_API_KEY'))) ||
-  process.env.VUE_APP_WEATHER_API_KEY ||
-  process.env.VITE_WEATHER_API_KEY ||
-  ''
-).trim()
-
-// Env/runtime switch to disable One Call and avoid 401s on plans without access
-const DISABLE_ONE_CALL = (
-  (typeof window !== 'undefined' && (window.OWM_DISABLE_ONECALL || localStorage.getItem('OWM_DISABLE_ONECALL'))) ||
-  process.env.VUE_APP_OWM_DISABLE_ONECALL ||
-  process.env.VITE_OWM_DISABLE_ONECALL ||
-  false
-)
-
-console.log('Weather API Configuration:', {
-  nodeEnv: process.env.NODE_ENV,
-  hasApiKey: !!WEATHER_API_KEY,
-  keyLength: WEATHER_API_KEY.length,
-  keyPreview: WEATHER_API_KEY ? WEATHER_API_KEY.substring(0, 8) + '...' : 'Not found'
-})
+// Weather data now relies solely on FarmXpress' built-in offline climate model
+console.log('Weather service: using offline FarmXpress climate model – no external API required.')
 
 // State variables
 const isLoading = ref(true)
 const isSubmitting = ref(false)
-const isLoadingLocation = ref(false)
 const harvests = ref([])
 const availableCrops = ref([])
 const currentDate = ref(new Date())
@@ -668,7 +639,7 @@ const upcomingHarvests = ref([])
 const sellerLocation = ref({})
 const currentSellerId = ref('')
 
-// Weather forecast data (populated from API; fallback to generated demo)
+// Weather forecast data generated entirely by the offline model
 const weatherForecast = ref([])
 
 // Oriental Mindoro coordinates (Calapan City as default)
@@ -767,8 +738,39 @@ const harvestForm = ref({
   status: 'planned',
   notes: '',
   enableNotifications: true,
-  notificationDays: '7'
+  notificationDays: '7',
+  isCustomCrop: false,
+  customName: '',
+  customCategory: 'Fruits',
+  customDaysToHarvest: 90,
+  customHarvestWindow: 14
 })
+
+watch(() => harvestForm.value.customName, (newName) => {
+  if (harvestForm.value.isCustomCrop) {
+    harvestForm.value.name = newName || ''
+  }
+})
+
+watch(() => harvestForm.value.customCategory, (newCategory) => {
+  if (harvestForm.value.isCustomCrop) {
+    harvestForm.value.category = newCategory || ''
+  }
+})
+
+watch(
+  () => [
+    harvestForm.value.isCustomCrop,
+    harvestForm.value.customDaysToHarvest,
+    harvestForm.value.customHarvestWindow,
+    harvestForm.value.plantingDate
+  ],
+  () => {
+    if (harvestForm.value.plantingDate) {
+      updateSmartHarvestDates()
+    }
+  }
+)
 
 // Computed properties
 const currentYear = computed(() => currentDate.value.getFullYear())
@@ -875,68 +877,14 @@ const getWeatherIcon = (condition) => {
   return iconMap[condition] || CloudSun
 }
 
-// Enhanced Weather API Functions
+// Offline weather model helpers
 const fetchWeatherData = async (lat, lon) => {
-  // Validate API key first
-  if (!WEATHER_API_KEY || WEATHER_API_KEY.trim() === '' || WEATHER_API_KEY === 'demo_mode') {
-    console.warn('Weather API key not configured. Using demo weather data.')
-  setDemoWeatherData()
-    return
-  }
-
-  console.log('Fetching weather data for coordinates:', { lat, lon })
-
-  try {
-    const response = await fetch(
-      `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${WEATHER_API_KEY}&units=metric`
-    )
-    
-    if (!response.ok) {
-      if (response.status === 401) {
-        console.error('Weather API: Invalid API key')
-        throw new Error('Invalid or inactive API key')
-      } else if (response.status === 429) {
-        console.error('Weather API: Rate limit exceeded')
-        throw new Error('API rate limit exceeded')
-      } else {
-        console.error(`Weather API: HTTP ${response.status}`)
-        throw new Error(`Weather API request failed: ${response.status}`)
-      }
-    }
-    
-    const data = await response.json()
-    
-    currentWeather.value = {
-      temp: data.main.temp,
-      humidity: data.main.humidity,
-      description: data.weather[0].description,
-      windSpeed: data.wind?.speed || 0,
-      location: data.name || 'Unknown Location',
-      condition: mapWeatherCondition(data.weather[0].main, data.weather[0].description)
-    }
-    
-    console.log('Weather data fetched successfully:', currentWeather.value)
-
-    // Fetch 7-day forecast after current weather
-    await fetchForecastData(lat, lon)
-  } catch (error) {
-    console.error('Error fetching weather data:', error)
-    
-    // Enhanced fallback with location-specific mock data
-    const locationName = lat === ORIENTAL_MINDORO_COORDS.lat ? 'Oriental Mindoro' : 'Philippines'
-    
-    setDemoWeatherData(locationName, error.message)
-    
-    // Show user-friendly message for specific errors
-    if (error.message.includes('Invalid or inactive API key')) {
-      console.warn('Weather API key issue. Please check your OpenWeatherMap API key configuration.')
-    } else if (error.message.includes('rate limit')) {
-      console.warn('Weather API rate limit reached. Using demo data temporarily.')
-    }
-  }
+  console.log('Weather service: generating offline forecast for', { lat, lon })
+  setDemoWeatherData('Oriental Mindoro', 'FarmXpress climate model')
+  await fetchForecastData(lat, lon)
 }
 
-const setDemoWeatherData = (locationName = 'Oriental Mindoro', errorReason = 'API key not configured') => {
+const setDemoWeatherData = (locationName = 'Oriental Mindoro', errorReason = 'FarmXpress climate model') => {
   // Generate realistic weather data for Oriental Mindoro climate
   const baseTemp = 28 // Typical temperature for Oriental Mindoro
   const baseHumidity = 75 // Typical humidity
@@ -1003,71 +951,8 @@ const mapWeatherCondition = (main, description = '') => {
 
 // Fetch 7-day forecast with fallback to 5-day/3-hour aggregation
 const fetchForecastData = async (lat, lon) => {
-  try {
-    if (!DISABLE_ONE_CALL) {
-      // Prefer One Call 2.5 (available for some plans)
-      const oc2 = `https://api.openweathermap.org/data/2.5/onecall?lat=${lat}&lon=${lon}&exclude=minutely,hourly,alerts&units=metric&appid=${WEATHER_API_KEY}`
-      const res = await fetch(oc2)
-      if (res.ok) {
-        const data = await res.json()
-        if (data.daily && Array.isArray(data.daily)) {
-          weatherForecast.value = data.daily.slice(1, 8).map(d => ({
-            date: formatShortDate(new Date(d.dt * 1000)),
-            condition: mapWeatherCondition(d.weather?.[0]?.main || '', d.weather?.[0]?.description || ''),
-            high: Math.round(d.temp?.max ?? d.temp?.day ?? currentWeather.value?.temp ?? 0),
-            low: Math.round(d.temp?.min ?? (currentWeather.value?.temp ?? 0) - 3),
-            rain: Math.round(((d.pop ?? 0) * 100)),
-            humidity: Math.round(d.humidity ?? currentWeather.value?.humidity ?? 0)
-          }))
-          return
-        }
-      }
-    }
-    // Fallback to 5-day/3-hour forecast and aggregate by day
-    const forecastUrl = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${WEATHER_API_KEY}&units=metric`
-    const r2 = await fetch(forecastUrl)
-    if (!r2.ok) throw new Error(`Forecast API HTTP ${r2.status}`)
-    const fdata = await r2.json()
-    const byDay = {}
-    for (const item of fdata.list) {
-      const date = new Date(item.dt * 1000)
-      const key = date.toISOString().split('T')[0]
-  byDay[key] = byDay[key] || { highs: [], lows: [], pops: [], mains: [], descs: [], hums: [], any: date }
-      byDay[key].highs.push(item.main.temp_max)
-      byDay[key].lows.push(item.main.temp_min)
-      byDay[key].pops.push(item.pop ?? 0)
-      byDay[key].mains.push(item.weather?.[0]?.main || '')
-      byDay[key].descs.push(item.weather?.[0]?.description || '')
-  if (typeof item.main.humidity === 'number') byDay[key].hums.push(item.main.humidity)
-      if (!byDay[key].any || date < byDay[key].any) byDay[key].any = date
-    }
-    const days = Object.keys(byDay).sort().slice(1, 8)
-    weatherForecast.value = days.map(k => {
-      const d = byDay[k]
-      const high = Math.round(Math.max(...d.highs))
-      const low = Math.round(Math.min(...d.lows))
-      const rain = Math.round((d.pops.reduce((a, b) => a + b, 0) / d.pops.length) * 100)
-      const hum = d.hums.length ? Math.round(d.hums.reduce((a,b)=>a+b,0)/d.hums.length) : (currentWeather.value?.humidity ?? 0)
-      // Pick most frequent main
-      const main = d.mains.sort((a, b) => d.mains.filter(x => x === b).length - d.mains.filter(x => x === a).length)[0]
-      const desc = d.descs[0] || ''
-      return {
-        date: formatShortDate(d.any),
-        condition: mapWeatherCondition(main, desc),
-        high,
-        low,
-        rain,
-        humidity: hum
-      }
-    })
-  } catch (e) {
-    console.warn('Forecast fetch failed, using demo forecast:', e)
-    // Keep demo forecast if setDemoWeatherData ran; otherwise generate now
-    if (!weatherForecast.value || weatherForecast.value.length === 0) {
-  // Only set forecast, do not overwrite currentWeather
+  console.log('Weather service: generating 7-day offline forecast for', { lat, lon })
   setDemoForecastData(currentWeather.value?.temp ?? 28)
-    }
-  }
 }
 
 const formatShortDate = (date) => {
@@ -1080,217 +965,64 @@ const fetchSellerLocation = async () => {
   try {
     const auth = getAuth()
     const currentUser = auth.currentUser
-    
+
     if (!currentUser) {
-      console.error('No authenticated user found')
+      console.warn('No authenticated user found; using default location context.')
       sellerLocation.value = {
         farmName: 'Please log in',
-        farmAddress: 'Authentication required',
+        farmAddress: ORIENTAL_MINDORO_COORDS.name,
         personalInfo: {},
         farmDetails: {},
-        coordinates: null
+        coordinates: ORIENTAL_MINDORO_COORDS
       }
-      // Still provide weather data for demo
       await fetchWeatherData(ORIENTAL_MINDORO_COORDS.lat, ORIENTAL_MINDORO_COORDS.lng)
       return
     }
 
     currentSellerId.value = currentUser.uid
-    console.log('Fetching seller data for user ID:', currentUser.uid)
-    
-    // Fetch seller details from Firebase
-    const sellerDoc = await getDoc(doc(db, 'sellers', currentUser.uid))
-    
-    if (sellerDoc.exists()) {
-      const sellerData = sellerDoc.data()
-      console.log('Seller document found:', sellerData)
-      
-      sellerLocation.value = {
-        farmName: sellerData.farmDetails?.farmName || 
-                 (sellerData.personalInfo?.firstName ? `${sellerData.personalInfo.firstName}'s Farm` : 'My Farm'),
-        farmAddress: sellerData.farmDetails?.farmAddress || 
-                     sellerData.personalInfo?.address || 
-                     'Oriental Mindoro, Philippines',
-        personalInfo: sellerData.personalInfo || {},
-        farmDetails: sellerData.farmDetails || {},
-        paymentInfo: sellerData.paymentInfo || {},
-        deliveryInfo: sellerData.deliveryInfo || {},
-        additionalDetails: sellerData.additionalDetails || {},
-        termsAgreement: sellerData.termsAgreement || {},
-        documents: sellerData.documents || {},
-        status: sellerData.status || 'Active',
-        isVerified: sellerData.isVerified || false,
-        isOnline: sellerData.farmDetails?.isOnline || false,
-        userId: currentUser.uid,
-        coordinates: sellerData.coordinates || null,
-        createdAt: sellerData.createdAt
-      }
 
-      console.log('Seller location data loaded:', {
-        farmName: sellerLocation.value.farmName,
-        farmAddress: sellerLocation.value.farmAddress,
-        hasCoordinates: !!sellerLocation.value.coordinates
-      })
-      
-      // Determine coordinates for weather data
-      let weatherLat = ORIENTAL_MINDORO_COORDS.lat
-      let weatherLng = ORIENTAL_MINDORO_COORDS.lng
-      
-      if (sellerLocation.value.coordinates) {
-        weatherLat = sellerLocation.value.coordinates.lat
-        weatherLng = sellerLocation.value.coordinates.lng
-        console.log('Using stored coordinates for weather:', { weatherLat, weatherLng })
-      } else if (sellerLocation.value.farmAddress && 
-                 sellerLocation.value.farmAddress !== 'Oriental Mindoro, Philippines' &&
-                 sellerLocation.value.farmAddress.trim() !== '') {
-        console.log('Geocoding farm address for weather:', sellerLocation.value.farmAddress)
-        // Try to geocode the address
-        await geocodeAndFetchWeather(sellerLocation.value.farmAddress)
-        return // geocodeAndFetchWeather will handle the weather fetch
-      }
-      
-      // Fetch weather data with determined coordinates
-      await fetchWeatherData(weatherLat, weatherLng)
+    const farmLabel = currentUser.displayName
+      ? `${currentUser.displayName}'s Farm`
+      : 'My Farm'
 
-      // Improve address: if generic/missing, reverse-geocode and persist
-      const addr = sellerLocation.value.farmAddress || ''
-      const isGeneric = addr === 'Oriental Mindoro, Philippines' || addr.trim() === ''
-      if (isGeneric && weatherLat && weatherLng) {
-        const friendly = await reverseGeocodeAddress(weatherLat, weatherLng)
-        if (friendly) {
-          sellerLocation.value.farmAddress = friendly
-          try {
-            await updateDoc(doc(db, 'sellers', currentUser.uid), {
-              'farmDetails.farmAddress': friendly,
-              updatedAt: serverTimestamp()
-            })
-            console.log('Updated seller address from reverse geocoding')
-          } catch (addrErr) {
-            console.warn('Could not update seller address:', addrErr)
-          }
-        }
-      }
-      
-      // Update seller document with coordinates if not present
-      if (!sellerLocation.value.coordinates) {
-        try {
-          await updateDoc(doc(db, 'sellers', currentUser.uid), {
-            coordinates: { lat: weatherLat, lng: weatherLng },
-            updatedAt: serverTimestamp()
-          })
-          console.log('Saved default coordinates to seller profile')
-        } catch (updateError) {
-          console.warn('Could not update seller coordinates:', updateError)
-        }
-      }
-    } else {
-      console.warn('Seller document not found for user:', currentUser.uid)
-      console.log('Creating default seller profile...')
-      
-      // Create a basic seller document for users who don't have one yet
-      const defaultSellerData = {
-        personalInfo: {
-          email: currentUser.email || '',
-          firstName: currentUser.displayName?.split(' ')[0] || 'User',
-          lastName: currentUser.displayName?.split(' ')[1] || '',
-          address: 'Oriental Mindoro, Philippines'
-        },
-        farmDetails: {
-          farmName: (currentUser.displayName || 'User') + "'s Farm",
-          farmAddress: 'Oriental Mindoro, Philippines',
-          isOnline: false
-        },
-        paymentInfo: {},
-        deliveryInfo: {},
-        additionalDetails: {},
-        termsAgreement: {},
-        documents: {},
-        status: 'Active',
-        isVerified: false,
-        coordinates: ORIENTAL_MINDORO_COORDS,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      }
-      
-      try {
-        // Create the seller document
-        await setDoc(doc(db, 'sellers', currentUser.uid), defaultSellerData)
-        console.log('Created default seller document')
-        
-        // Set the location data
-        sellerLocation.value = {
-          farmName: defaultSellerData.farmDetails.farmName,
-          farmAddress: defaultSellerData.farmDetails.farmAddress,
-          personalInfo: defaultSellerData.personalInfo,
-          farmDetails: defaultSellerData.farmDetails,
-          paymentInfo: defaultSellerData.paymentInfo,
-          deliveryInfo: defaultSellerData.deliveryInfo,
-          additionalDetails: defaultSellerData.additionalDetails,
-          termsAgreement: defaultSellerData.termsAgreement,
-          documents: defaultSellerData.documents,
-          status: defaultSellerData.status,
-          isVerified: defaultSellerData.isVerified,
-          isOnline: defaultSellerData.farmDetails.isOnline,
-          userId: currentUser.uid,
-          coordinates: defaultSellerData.coordinates,
-          createdAt: defaultSellerData.createdAt
-        }
-      } catch (createError) {
-        console.error('Error creating seller document:', createError)
-        
-        // Fallback to basic location data
-        sellerLocation.value = {
-          farmName: (currentUser.displayName || 'User') + "'s Farm",
-          farmAddress: 'Oriental Mindoro, Philippines',
-          personalInfo: {
-            email: currentUser.email || '',
-            firstName: currentUser.displayName?.split(' ')[0] || 'User',
-            lastName: currentUser.displayName?.split(' ')[1] || ''
-          },
-          farmDetails: {
-            farmName: (currentUser.displayName || 'User') + "'s Farm",
-            farmAddress: 'Oriental Mindoro, Philippines'
-          },
-          coordinates: ORIENTAL_MINDORO_COORDS
-        }
-      }
-      
-      // Use Oriental Mindoro coordinates for new users
-      await fetchWeatherData(ORIENTAL_MINDORO_COORDS.lat, ORIENTAL_MINDORO_COORDS.lng)
+    sellerLocation.value = {
+      farmName: farmLabel,
+      farmAddress: ORIENTAL_MINDORO_COORDS.name,
+      personalInfo: {
+        email: currentUser.email || '',
+        firstName: currentUser.displayName || 'Farmer'
+      },
+      farmDetails: {
+        farmName: farmLabel,
+        farmAddress: ORIENTAL_MINDORO_COORDS.name,
+        isOnline: false
+      },
+      paymentInfo: {},
+      deliveryInfo: {},
+      additionalDetails: {},
+      termsAgreement: {},
+      documents: {},
+      status: 'Active',
+      isVerified: false,
+      isOnline: false,
+      userId: currentUser.uid,
+      coordinates: ORIENTAL_MINDORO_COORDS
     }
+
+    await fetchWeatherData(ORIENTAL_MINDORO_COORDS.lat, ORIENTAL_MINDORO_COORDS.lng)
   } catch (error) {
-    console.error('Error fetching seller location:', error)
-    
-    // Fallback location data
+    console.error('Error initializing seller context:', error)
     sellerLocation.value = {
       farmName: 'FarmXpress User',
-      farmAddress: 'Oriental Mindoro, Philippines',
+      farmAddress: ORIENTAL_MINDORO_COORDS.name,
       personalInfo: {},
       farmDetails: {},
       coordinates: ORIENTAL_MINDORO_COORDS
     }
-    
-    // Always provide weather data, even on error
     await fetchWeatherData(ORIENTAL_MINDORO_COORDS.lat, ORIENTAL_MINDORO_COORDS.lng)
-  } finally {
-    isLoadingLocation.value = false
   }
-}
-
-const refreshLocation = async () => {
-  console.log('Refreshing location and weather data...')
-  await fetchSellerLocation()
-}
-
-// Reverse geocode coordinates to a friendly address when missing
-const reverseGeocodeAddress = async (lat, lon) => {
-  try {
-    const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=jsonv2`)
-    if (!resp.ok) return null
-    const data = await resp.json()
-    return data.display_name || null
-  } catch {
-    return null
+  finally {
+    isLoadingLocation.value = false
   }
 }
 
@@ -1342,7 +1074,29 @@ const calculateSmartEstimation = (cropId, plantingDate) => {
 }
 
 const updateSmartHarvestDates = () => {
-  if (!harvestForm.value.cropId || !harvestForm.value.plantingDate) return
+  if (!harvestForm.value.plantingDate) return
+
+  if (harvestForm.value.isCustomCrop) {
+    const baseDays = Number(harvestForm.value.customDaysToHarvest) || 90
+    const harvestWindow = Number(harvestForm.value.customHarvestWindow) || 14
+    smartEstimation.value = {
+      baseDays,
+      weatherAdjustment: 0,
+      finalDays: baseDays,
+      confidence: 72
+    }
+
+    const plantingDate = new Date(harvestForm.value.plantingDate)
+    const harvestStartDate = new Date(plantingDate)
+    harvestStartDate.setDate(plantingDate.getDate() + baseDays)
+    const harvestEndDate = new Date(harvestStartDate)
+    harvestEndDate.setDate(harvestStartDate.getDate() + harvestWindow)
+    harvestForm.value.harvestStartDate = formatDateForInput(harvestStartDate)
+    harvestForm.value.harvestEndDate = formatDateForInput(harvestEndDate)
+    return
+  }
+
+  if (!harvestForm.value.cropId) return
 
   smartEstimation.value = calculateSmartEstimation(
     harvestForm.value.cropId, 
@@ -1567,7 +1321,12 @@ const addHarvestForDay = (day) => {
     status: 'planned',
     notes: '',
     enableNotifications: true,
-    notificationDays: '7'
+    notificationDays: '7',
+    isCustomCrop: false,
+    customName: '',
+    customCategory: 'Fruits',
+    customDaysToHarvest: 90,
+    customHarvestWindow: 14
   }
 
   showDayModal.value = false
@@ -1577,8 +1336,11 @@ const addHarvestForDay = (day) => {
 const editHarvest = (harvest) => {
   editingHarvest.value = harvest
 
+  const isCustom = !!harvest.customCropDetails || harvest.isCustomCrop
+  const customDetails = harvest.customCropDetails || {}
+
   harvestForm.value = {
-    cropId: harvest.cropId || '',
+    cropId: isCustom ? '' : (harvest.cropId || ''),
     name: harvest.name,
     category: harvest.category,
     plantingDate: formatDateForInput(harvest.plantingDate),
@@ -1587,10 +1349,22 @@ const editHarvest = (harvest) => {
     status: harvest.status,
     notes: harvest.notes || '',
     enableNotifications: harvest.enableNotifications || false,
-    notificationDays: harvest.notificationDays?.toString() || '7'
+    notificationDays: harvest.notificationDays?.toString() || '7',
+    isCustomCrop: isCustom,
+    customName: isCustom ? (customDetails.name || harvest.name) : '',
+    customCategory: isCustom ? (customDetails.category || harvest.category || 'Custom') : 'Fruits',
+    customDaysToHarvest: isCustom ? (customDetails.daysToHarvest || 90) : 90,
+    customHarvestWindow: isCustom ? (customDetails.harvestWindow || 14) : 14
   }
 
-  if (harvestForm.value.cropId) {
+  if (isCustom) {
+    smartEstimation.value = {
+      baseDays: harvestForm.value.customDaysToHarvest,
+      weatherAdjustment: 0,
+      finalDays: harvestForm.value.customDaysToHarvest,
+      confidence: 72
+    }
+  } else if (harvestForm.value.cropId) {
     smartEstimation.value = calculateSmartEstimation(
       harvestForm.value.cropId, 
       harvestForm.value.plantingDate
@@ -1615,8 +1389,26 @@ const deleteHarvest = async (harvestId) => {
   }
 }
 
+const handleCustomCropToggle = () => {
+  if (harvestForm.value.isCustomCrop) {
+    harvestForm.value.cropId = ''
+    harvestForm.value.name = harvestForm.value.customName
+    harvestForm.value.category = harvestForm.value.customCategory
+    smartEstimation.value = null
+    updateSmartHarvestDates()
+  } else {
+    harvestForm.value.customName = ''
+    harvestForm.value.customCategory = 'Fruits'
+    harvestForm.value.customDaysToHarvest = 90
+    harvestForm.value.customHarvestWindow = 14
+    harvestForm.value.name = ''
+    harvestForm.value.category = ''
+    smartEstimation.value = null
+  }
+}
+
 const onCropSelect = () => {
-  if (!harvestForm.value.cropId) return
+  if (harvestForm.value.isCustomCrop || !harvestForm.value.cropId) return
 
   const selectedCrop = availableCrops.value.find(crop => crop.id === harvestForm.value.cropId)
   if (selectedCrop) {
@@ -1633,11 +1425,42 @@ const saveHarvest = async () => {
   isSubmitting.value = true
 
   try {
+    const isCustomCrop = harvestForm.value.isCustomCrop
+    const cropName = (isCustomCrop ? harvestForm.value.customName : harvestForm.value.name)?.trim()
+    if (!cropName) {
+      alert('Please provide a crop name before saving.')
+      isSubmitting.value = false
+      return
+    }
+
+    const cropCategory = (isCustomCrop ? harvestForm.value.customCategory : harvestForm.value.category) || 'Custom'
+    const customDetails = isCustomCrop
+      ? {
+          name: cropName,
+          category: cropCategory,
+          daysToHarvest: Number(harvestForm.value.customDaysToHarvest) || 90,
+          harvestWindow: Number(harvestForm.value.customHarvestWindow) || 14
+        }
+      : null
+
+    const estimatePayload = isCustomCrop
+      ? {
+          baseDays: Number(harvestForm.value.customDaysToHarvest) || 90,
+          weatherAdjustment: 0,
+          finalDays: Number(harvestForm.value.customDaysToHarvest) || 90,
+          confidence: 72
+        }
+      : smartEstimation.value
+
+    const weatherNote = estimatePayload && estimatePayload.weatherAdjustment
+      ? `Weather conditions may ${estimatePayload.weatherAdjustment >= 0 ? 'delay' : 'accelerate'} harvest by ${Math.abs(estimatePayload.weatherAdjustment)} days`
+      : (isCustomCrop ? 'Custom crop timeline provided by farmer' : null)
+
     const harvestData = {
       sellerId: currentSellerId.value,
-      cropId: harvestForm.value.cropId,
-      name: harvestForm.value.name,
-      category: harvestForm.value.category,
+      cropId: isCustomCrop ? null : harvestForm.value.cropId,
+      name: cropName,
+      category: cropCategory,
       plantingDate: new Date(harvestForm.value.plantingDate),
       harvestStartDate: new Date(harvestForm.value.harvestStartDate),
       harvestEndDate: new Date(harvestForm.value.harvestEndDate),
@@ -1645,10 +1468,11 @@ const saveHarvest = async () => {
       notes: harvestForm.value.notes,
       enableNotifications: harvestForm.value.enableNotifications,
       notificationDays: parseInt(harvestForm.value.notificationDays),
-      smartEstimate: smartEstimation.value,
-      weatherAdjustment: smartEstimation.value ? 
-        `Weather conditions may ${smartEstimation.value.weatherAdjustment >= 0 ? 'delay' : 'accelerate'} harvest by ${Math.abs(smartEstimation.value.weatherAdjustment)} days` : null,
-      delayed: smartEstimation.value ? smartEstimation.value.weatherAdjustment > 3 : false,
+      smartEstimate: estimatePayload,
+      weatherAdjustment: weatherNote,
+      delayed: estimatePayload ? estimatePayload.weatherAdjustment > 3 : false,
+      customCropDetails: customDetails,
+      isCustomCrop,
       updatedAt: serverTimestamp()
     }
     
@@ -1682,7 +1506,12 @@ const resetForm = () => {
     status: 'planned',
     notes: '',
     enableNotifications: true,
-    notificationDays: '7'
+    notificationDays: '7',
+    isCustomCrop: false,
+    customName: '',
+    customCategory: 'Fruits',
+    customDaysToHarvest: 90,
+    customHarvestWindow: 14
   }
 }
 
@@ -1756,51 +1585,6 @@ const getDaysUntilHarvest = (harvestDate) => {
     return `${Math.floor(diffDays / 7)} weeks until harvest`
   }
 }
-
-// Geocoding function
-const geocodeAndFetchWeather = async (address) => {
-  try {
-    const geocodingResponse = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=jsonv2`
-    );
-
-    if (!geocodingResponse.ok) {
-      console.error('Geocoding API: HTTP', geocodingResponse.status);
-      throw new Error(`Geocoding API request failed: ${geocodingResponse.status}`);
-    }
-
-    const geocodingData = await geocodingResponse.json();
-
-    if (geocodingData && geocodingData.length > 0) {
-      const lat = parseFloat(geocodingData[0].lat);
-      const lng = parseFloat(geocodingData[0].lon);
-
-      console.log('Geocoding successful. Coordinates:', { lat, lng });
-
-      // Update seller document with geocoded coordinates
-      try {
-        await updateDoc(doc(db, 'sellers', currentSellerId.value), {
-          coordinates: { lat, lng },
-          updatedAt: serverTimestamp()
-        });
-        console.log('Saved geocoded coordinates to seller profile');
-      } catch (updateError) {
-        console.warn('Could not update seller coordinates:', updateError);
-      }
-
-      // Fetch weather data with geocoded coordinates
-      await fetchWeatherData(lat, lng);
-    } else {
-      console.warn('Geocoding: No results found for address:', address);
-      // Fallback to default coordinates
-      await fetchWeatherData(ORIENTAL_MINDORO_COORDS.lat, ORIENTAL_MINDORO_COORDS.lng);
-    }
-  } catch (geocodingError) {
-    console.error('Geocoding error:', geocodingError);
-    // Fallback to default coordinates
-    await fetchWeatherData(ORIENTAL_MINDORO_COORDS.lat, ORIENTAL_MINDORO_COORDS.lng);
-  }
-};
 
 // Initialize data
 onMounted(async () => {
@@ -1965,25 +1749,6 @@ onMounted(async () => {
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
-}
-
-.refresh-location-btn {
-  background: none;
-  border: none;
-  color: white;
-  cursor: pointer;
-  padding: 4px;
-  border-radius: 4px;
-  transition: background-color 0.2s;
-}
-
-.refresh-location-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.refresh-location-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .month-navigation {
@@ -2744,6 +2509,24 @@ onMounted(async () => {
   outline: none;
   border-color: #16a34a;
   box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.1);
+}
+
+.custom-crop-toggle {
+  margin-top: 12px;
+}
+
+.custom-crop-fields {
+  margin-top: 12px;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.custom-helper-text {
+  font-size: 0.85rem;
+  color: #64748b;
+  margin-top: 8px;
 }
 
 .checkbox-group {

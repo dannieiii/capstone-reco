@@ -250,6 +250,7 @@ import AdminSidebar from '@/components/AdminSidebar.vue';
 import SellerExportPreview from '@/components/previewpdf/SellerExportPreview.vue';
 import { db } from '@/firebase/firebaseConfig';
 import { collection, getDocs, doc, deleteDoc, updateDoc, query, where } from "firebase/firestore";
+import { normalizeOrdersForSeller, STATUS_WHITELIST, getPriceFromEntry } from '@/helpers/salesUtils';
 import { Eye, Trash2 } from 'lucide-vue-next';
 import emailService from '@/services/emailService';
 
@@ -383,6 +384,24 @@ const pdfGeneratedAt = ref(new Date().toISOString());
 const isExportMenuOpen = ref(false);
 const exportDropdownRef = ref(null);
 
+const SELLER_ID_FIELDS = ['sellerId', 'sellerID', 'sellerUid', 'sellerUID'];
+
+const getSellerIdentifiers = (seller) => {
+  const ids = new Set();
+  const push = (value) => {
+    if (!value) return;
+    const normalized = typeof value === 'string' ? value.trim() : value;
+    if (normalized) ids.add(normalized);
+  };
+
+  push(seller.userId);
+  push(seller.id);
+  push(seller.sellerId);
+  push(seller.userID);
+
+  return Array.from(ids);
+};
+
 // Methods
 const fetchSellers = async () => {
   isLoading.value = true;
@@ -402,7 +421,7 @@ const fetchSellers = async () => {
       };
       
       // Fetch sales data for this seller
-      const salesData = await fetchSellerSalesData(seller.userId || docSnapshot.id);
+      const salesData = await fetchSellerSalesData(seller);
       seller.totalSales = salesData.totalSales;
       seller.totalOrders = salesData.totalOrders;
       
@@ -431,27 +450,66 @@ const fetchSellers = async () => {
   }
 };
 
-const fetchSellerSalesData = async (sellerId) => {
+const aggregateOrdersSnapshot = (docs, sellerKey, seenEntryIds) => {
+  const normalized = normalizeOrdersForSeller(docs, sellerKey, { statusWhitelist: STATUS_WHITELIST });
+  let totalSales = 0;
+  let totalOrders = 0;
+
+  if (normalized.length) {
+    normalized.forEach((entry) => {
+      const entryId = String(entry.id);
+      if (seenEntryIds.has(entryId)) return;
+      seenEntryIds.add(entryId);
+      const price = Number(entry.price ?? entry.itemPrice ?? 0);
+      totalSales += price;
+      totalOrders += 1;
+    });
+    return { totalSales, totalOrders };
+  }
+
+  docs.forEach((docSnap) => {
+    const entryId = docSnap.id;
+    if (seenEntryIds.has(entryId)) return;
+    seenEntryIds.add(entryId);
+    const price = Number(getPriceFromEntry(docSnap.data()) || 0);
+    totalSales += price;
+    totalOrders += 1;
+  });
+
+  return { totalSales, totalOrders };
+};
+
+const fetchSellerSalesData = async (seller) => {
   try {
-    const ordersQuery = query(
-      collection(db, "orders"),
-      where("sellerId", "==", sellerId)
-    );
-    
-    const ordersSnapshot = await getDocs(ordersQuery);
+    const identifiers = getSellerIdentifiers(seller);
+    if (!identifiers.length) {
+      return { totalSales: 0, totalOrders: 0 };
+    }
+
+    const ordersRef = collection(db, 'orders');
+    const seenEntryIds = new Set();
     let totalSales = 0;
     let totalOrders = 0;
-    
-    ordersSnapshot.forEach((doc) => {
-      const orderData = doc.data();
-      const itemPrice = orderData.itemPrice || (orderData.unitPrice * orderData.quantity) || orderData.totalPrice || 0;
-      totalSales += itemPrice;
-      totalOrders++;
-    });
-    
+
+    for (const sellerKey of identifiers) {
+      for (const fieldName of SELLER_ID_FIELDS) {
+        try {
+          const snapshot = await getDocs(query(ordersRef, where(fieldName, '==', sellerKey)));
+          if (snapshot.empty) continue;
+
+          const { totalSales: subtotal, totalOrders: orderCount } = aggregateOrdersSnapshot(snapshot.docs, sellerKey, seenEntryIds);
+          totalSales += subtotal;
+          totalOrders += orderCount;
+          break; // Stop checking other field names once we find data for this identifier
+        } catch (error) {
+          console.warn(`Orders query failed for ${fieldName} == ${sellerKey}`, error);
+        }
+      }
+    }
+
     return { totalSales, totalOrders };
   } catch (error) {
-    console.error("Error fetching seller sales data:", error);
+    console.error('Error fetching seller sales data:', error);
     return { totalSales: 0, totalOrders: 0 };
   }
 };

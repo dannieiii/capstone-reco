@@ -887,9 +887,17 @@ import {
 } from 'lucide-vue-next';
 import { onMounted, onUnmounted, ref, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { signOut, onAuthStateChanged } from 'firebase/auth';
-import { auth, db } from '@/firebase/firebaseConfig';
-import { collection, getDocs, doc, getDoc, query, orderBy, limit, where, addDoc, updateDoc } from 'firebase/firestore';
+import { 
+  signOut,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  setPersistence,
+  browserLocalPersistence,
+  browserSessionPersistence
+} from 'firebase/auth';
+import { auth, db, googleProvider } from '@/firebase/firebaseConfig';
+import { collection, getDocs, doc, getDoc, query, orderBy, limit, where, addDoc, updateDoc, setDoc } from 'firebase/firestore';
 
 export default {
   components: {
@@ -1638,8 +1646,153 @@ const fetchProducts = async () => {
       }, 6000);
     },
     closeLoginModal() { this.showLoginModal = false; },
-    async handleInlineEmailLogin() { this.$router.push('/login'); },
-    async loginWithGoogleInline() { this.$router.push('/login'); },
+    async handleInlineEmailLogin() {
+      if (this.isLoggingIn) return;
+
+      const email = (this.loginEmail || '').trim();
+      const password = (this.loginPassword || '').trim();
+
+      if (!email || !password) {
+        this.notificationMessage = 'Please enter both email and password.';
+        this.notificationType = 'warning';
+        this.showNotification = true;
+        return;
+      }
+
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        this.notificationMessage = 'Please enter a valid email address.';
+        this.notificationType = 'warning';
+        this.showNotification = true;
+        return;
+      }
+
+      this.isLoggingIn = true;
+      try {
+        const persistence = this.rememberMe ? browserLocalPersistence : browserSessionPersistence;
+        try {
+          await setPersistence(auth, persistence);
+        } catch (persistError) {
+          console.warn('Unable to set auth persistence:', persistError);
+        }
+
+        const credential = await signInWithEmailAndPassword(auth, email, password);
+        const user = credential.user;
+        const loggedWithPassword = user?.providerData?.some(provider => provider.providerId === 'password');
+        if (loggedWithPassword && !user.emailVerified) {
+          await signOut(auth);
+          this.notificationMessage = 'Please verify your email before logging in.';
+          this.notificationType = 'warning';
+          this.showNotification = true;
+          return;
+        }
+
+        if (this.rememberMe) {
+          localStorage.setItem('authPersist', 'true');
+          sessionStorage.removeItem('authPersist');
+        } else {
+          sessionStorage.setItem('authPersist', 'true');
+          localStorage.removeItem('authPersist');
+        }
+
+        this.showLoginModal = false;
+        this.loginPassword = '';
+        this.isLoggedIn = true;
+        this.notificationMessage = 'Welcome back!';
+        this.notificationType = 'success';
+        this.showNotification = true;
+        await this.fetchUserInfo();
+      } catch (error) {
+        console.error('Inline login failed:', error);
+        let message = 'Login failed. Please try again.';
+        if (error.code === 'auth/user-not-found') {
+          message = 'Email not found. Please create an account first.';
+        } else if (error.code === 'auth/wrong-password') {
+          message = 'Incorrect password. Please try again.';
+        } else if (error.code === 'auth/too-many-requests') {
+          message = 'Too many attempts. Please try again later.';
+        } else if (error.code === 'auth/invalid-email') {
+          message = 'Invalid email format. Please fix and retry.';
+        } else if (error.code === 'auth/invalid-credential') {
+          message = 'Invalid email and password combination.';
+        }
+        this.notificationMessage = message;
+        this.notificationType = 'error';
+        this.showNotification = true;
+      } finally {
+        this.isLoggingIn = false;
+      }
+    },
+    async loginWithGoogleInline() {
+      if (this.isLoggingIn) return;
+      this.isLoggingIn = true;
+      try {
+        const persistence = this.rememberMe ? browserLocalPersistence : browserSessionPersistence;
+        try {
+          await setPersistence(auth, persistence);
+        } catch (persistError) {
+          console.warn('Unable to set auth persistence:', persistError);
+        }
+
+        const result = await signInWithPopup(auth, googleProvider);
+        const user = result.user;
+        this.loginEmail = user.email || this.loginEmail;
+
+        const userRef = doc(db, 'users', user.uid);
+        const userDoc = await getDoc(userRef);
+        if (!userDoc.exists()) {
+          const [firstName = '', ...rest] = (user.displayName || '').split(' ');
+          await setDoc(userRef, {
+            userId: user.uid,
+            firstName,
+            lastName: rest.join(' ') || '',
+            username: user.email ? user.email.split('@')[0] : '',
+            email: user.email || '',
+            contactNumber: user.phoneNumber || '',
+            photoURL: user.photoURL || '',
+            address: '',
+            province: 'Oriental Mindoro',
+            municipality: '',
+            barangay: '',
+            role: 'customer',
+            isVerified: true,
+            isSeller: false,
+            createdAt: new Date(),
+            authProvider: 'google'
+          });
+        }
+
+        if (this.rememberMe) {
+          localStorage.setItem('authPersist', 'true');
+          sessionStorage.removeItem('authPersist');
+        } else {
+          sessionStorage.setItem('authPersist', 'true');
+          localStorage.removeItem('authPersist');
+        }
+
+        this.showLoginModal = false;
+        this.isLoggedIn = true;
+        this.notificationMessage = 'Logged in with Google.';
+        this.notificationType = 'success';
+        this.showNotification = true;
+        await this.fetchUserInfo();
+      } catch (error) {
+        console.error('Google inline login failed:', error);
+        let message = 'Google login failed. Please try again.';
+        if (error.code === 'auth/popup-closed-by-user') {
+          message = 'Login popup was closed. Please try again.';
+        } else if (error.code === 'auth/cancelled-popup-request') {
+          message = 'Another login request is already in progress.';
+        } else if (error.code === 'auth/operation-not-supported-in-this-environment') {
+          message = 'Google login is not supported in this environment.';
+        }
+        this.notificationMessage = message;
+        this.notificationType = 'error';
+        this.showNotification = true;
+      } finally {
+        this.isLoggingIn = false;
+      }
+    },
     goToForgotPassword() { this.$router.push('/resetpassword'); },
     goToSignup() {
       this.showLoginModal = false;

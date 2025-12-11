@@ -33,7 +33,12 @@
           <div class="control-group">
             <label>Model</label>
             <select v-model="selectedModelType" class="model-select">
-              <option v-for="model in modelOptions" :key="model.value" :value="model.value">
+              <option
+                v-for="model in modelOptions"
+                :key="model.value"
+                :value="model.value"
+                :disabled="model.disabled"
+              >
                 {{ model.label }}
               </option>
             </select>
@@ -443,7 +448,7 @@
             </div>
           </div>
 
-          <div class="training-history-section">
+          <div class="training-history-section" v-if="trainingHistoryEnabled">
             <div class="training-history-header">
               <h2>Training History</h2>
               <div class="training-history-actions">
@@ -666,6 +671,20 @@
         <button @click="generateForecast" class="generate-btn">Generate Forecast</button>
       </div>
     </div>
+
+    <ForecastExportPreview
+      v-model="exportPreviewVisible"
+      :title="exportPreviewTitle"
+      :subtitle="exportPreviewSubtitle"
+      :generated-at="exportPreviewGeneratedAt"
+      :meta-items="exportPreviewMeta"
+      :sections="exportPreviewSections"
+      :insights="exportPreviewInsights"
+      :footnote="exportPreviewFootnote"
+      :document-html="exportPreviewDocument"
+      :filename="exportPreviewFilename"
+      @notify="handlePreviewNotification"
+    />
   </div>
 </template>
 
@@ -676,6 +695,7 @@ import { db, auth } from '@/firebase/firebaseConfig';
 import * as tf from '@tensorflow/tfjs';
 import Chart from 'chart.js/auto';
 import Sidebar from '@/components/Sidebar.vue';
+import ForecastExportPreview from '@/components/previewpdf/ForecastExportPreview.vue';
 import { 
   BarChart2, 
   TrendingUp, 
@@ -703,10 +723,9 @@ const mainContentStyles = computed(() => ({
 }));
 
 const modelOptions = [
-  { value: 'lstm', label: 'LSTM Sequence Forecaster' },
-  { value: 'gru', label: 'GRU Sequence Forecaster' },
-  { value: 'simpleRnn', label: 'Simple RNN Forecaster' },
-  
+  { value: 'lstm', label: 'LSTM Sequence Forecaster', disabled: false },
+  { value: 'gru', label: 'GRU Sequence Forecaster (coming soon)', disabled: true },
+  { value: 'simpleRnn', label: 'Simple RNN Forecaster (coming soon)', disabled: true }
 ];
 
 // Enhanced data properties with performance tracking
@@ -760,6 +779,17 @@ const forecastTableExportDropdown = ref(null);
 const productTableExportDropdown = ref(null);
 const exporting = ref(false);
 const exportStatus = ref(null);
+const exportPreviewVisible = ref(false);
+const exportPreviewTitle = ref('');
+const exportPreviewSubtitle = ref('');
+const exportPreviewFilename = ref('report.pdf');
+const exportPreviewDocument = ref('');
+const exportPreviewGeneratedAt = ref(new Date());
+const exportPreviewMeta = ref([]);
+const exportPreviewSections = ref([]);
+const exportPreviewInsights = ref([]);
+const exportPreviewFootnote = ref('');
+const trainingHistoryEnabled = ref(false);
 let cacheDelayTimeout = null;
 let awaitingCacheWarmup = false;
 
@@ -870,6 +900,13 @@ const formatCurrency = (value, digits = 2) => {
     minimumFractionDigits: 0,
     maximumFractionDigits: digits
   })}`;
+};
+
+const formatPercentage = (value, digits = 1) => {
+  if (value === null || value === undefined) return 'N/A';
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 'N/A';
+  return `${numeric.toFixed(digits)}%`;
 };
 
 const selectedTrainingRun = computed(() => {
@@ -1440,6 +1477,7 @@ const renderActualPredChart = () => {
 };
 
 const toggleTrainingHistorySection = () => {
+  if (!trainingHistoryEnabled.value) return;
   showTrainingHistory.value = !showTrainingHistory.value;
 };
 
@@ -1482,12 +1520,173 @@ const showStatus = (type, message) => {
   }, 3000);
 };
 
+const getSharedReportStyles = () => `
+  <style>
+    .report-wrapper { font-family: Arial, sans-serif; color: #111827; padding: 20px; line-height: 1.6; }
+    h1 { color: #2e5c31; margin-bottom: 10px; }
+    h2 { color: #374151; margin-top: 30px; }
+    h3 { color: #4b5563; margin-top: 20px; }
+    table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 0.95rem; }
+    th, td { border: 1px solid #e5e7eb; padding: 10px; text-align: left; }
+    th { background-color: #f9fafb; font-weight: 600; }
+    .positive { color: #10b981; font-weight: 600; }
+    .negative { color: #ef4444; font-weight: 600; }
+    .neutral { color: #6b7280; }
+    .meta-info { background-color: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0; }
+    .insight-card { background-color: #f8fafc; padding: 15px; margin: 10px 0; border-left: 4px solid #2e5c31; }
+    .summary-stats { display: flex; flex-wrap: wrap; gap: 15px; margin: 20px 0; }
+    .stat-box { flex: 1; min-width: 160px; background-color: #f9fafb; padding: 15px; border-radius: 8px; text-align: center; }
+    .stat-box h4 { margin-bottom: 6px; color: #374151; font-size: 0.95rem; }
+    .report-list { padding-left: 18px; }
+    .report-list li { margin-bottom: 6px; }
+  </style>
+`;
+
+const wrapReportBody = (content) => `
+  ${getSharedReportStyles()}
+  <div class="report-wrapper">
+    ${content}
+  </div>
+`;
+
+const buildHtmlDocument = (title, body) => `
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <meta charset="utf-8" />
+      <title>${title}</title>
+    </head>
+    <body>${body}</body>
+  </html>
+`;
+
+const openExportPreview = ({
+  title,
+  body,
+  filename,
+  subtitle = '',
+  meta = [],
+  sections = [],
+  insightsList = [],
+  footnote = '',
+  generatedAt = new Date()
+}) => {
+  exportPreviewTitle.value = title;
+  exportPreviewSubtitle.value = subtitle;
+  exportPreviewMeta.value = meta;
+  exportPreviewSections.value = sections;
+  exportPreviewInsights.value = insightsList;
+  exportPreviewFootnote.value = footnote;
+  exportPreviewGeneratedAt.value = generatedAt;
+  exportPreviewFilename.value = filename;
+  exportPreviewDocument.value = buildHtmlDocument(title, body);
+  exportPreviewVisible.value = true;
+};
+
+const handlePreviewNotification = (payload) => {
+  if (!payload || !payload.message) return;
+  showStatus(payload.type || 'info', payload.message);
+};
+
 // Computed properties
 const forecastTitle = computed(() => {
   return selectedCategory.value === 'all' 
     ? `All Products (Next ${forecastPeriod.value} Days)` 
     : `${selectedCategory.value} (Next ${forecastPeriod.value} Days)`;
 });
+
+const getTotalProjectedRevenue = () => {
+  return displayedProducts.value.reduce((sum, product) => sum + (product.projectedRevenue || 0), 0);
+};
+
+const buildForecastMetaItems = () => {
+  return [
+    { label: 'Time Period', value: `Next ${forecastPeriod.value} days` },
+    { label: 'Category', value: selectedCategory.value === 'all' ? 'All Categories' : selectedCategory.value },
+    { label: 'Model Used', value: trainingStats.value.modelUsed || getModelLabel('lstm') },
+    { label: 'Data Points', value: (trainingStats.value.dataPoints || forecastData.value.length || 0).toLocaleString() },
+    { label: 'Accuracy', value: formatPercentage(trainingStats.value.accuracy, 1) },
+    { label: 'sMAPE', value: formatPercentage(trainingStats.value.smape, 1) }
+  ];
+};
+
+const buildProductMetaItems = () => {
+  const count = displayedProducts.value.length;
+  const avgGrowth = count
+    ? displayedProducts.value.reduce((sum, product) => sum + (product.growth || 0), 0) / count
+    : 0;
+  const topProduct = displayedProducts.value[0];
+  return [
+    { label: 'Products Evaluated', value: count ? `${count} items` : '0 items' },
+    { label: 'Top Product', value: topProduct ? topProduct.name : 'N/A' },
+    { label: 'Avg Growth', value: `${avgGrowth >= 0 ? '+' : ''}${avgGrowth.toFixed(1)}%` },
+    { label: 'Projected Revenue', value: formatCurrency(getTotalProjectedRevenue(), 0) }
+  ];
+};
+
+const buildCompleteMetaItems = () => {
+  const combined = [...buildForecastMetaItems(), ...buildProductMetaItems()];
+  const seen = new Set();
+  return combined.filter((item) => {
+    if (seen.has(item.label)) return false;
+    seen.add(item.label);
+    return true;
+  });
+};
+
+const buildForecastPreviewSection = () => {
+  const limit = 14;
+  const rows = forecastData.value.slice(0, limit).map((day, index) => {
+    const roundedValue = Math.round(day.value ?? 0);
+    const growth = calculateDayGrowth(index);
+    return [
+      formatDate(day.date),
+      formatCurrency(roundedValue, 0),
+      `${growth > 0 ? '+' : ''}${growth}%`,
+      `${calculateConfidence(index)}%`
+    ];
+  });
+  return {
+    title: 'Forecast Timeline',
+    description: `Projected sales outlook for ${forecastTitle.value}`,
+    columns: ['Date', 'Projected Sales', 'Growth', 'Confidence'],
+    rows,
+    note: forecastData.value.length > limit ? `Showing first ${limit} days. Export CSV for full details.` : '',
+    emptyMessage: 'Generate a forecast to populate this table.'
+  };
+};
+
+const buildProductPreviewSection = () => {
+  const limit = 10;
+  const rows = displayedProducts.value.slice(0, limit).map((product) => {
+    const units = Object.entries(product.projectedSales || {})
+      .map(([unit, qty]) => `${qty} ${getUnitDisplay(unit)}`)
+      .join(', ');
+    return [
+      product.name,
+      product.category || 'Uncategorized',
+      units || '—',
+      formatCurrency(product.projectedRevenue, 0),
+      `${product.growth > 0 ? '+' : ''}${product.growth}%`
+    ];
+  });
+  return {
+    title: 'Product Performance Outlook',
+    description: 'Top products ranked by projected revenue contribution.',
+    columns: ['Product', 'Category', 'Projected Units', 'Projected Revenue', 'Growth'],
+    rows,
+    note: displayedProducts.value.length > limit ? `Showing top ${limit} products. Export for the full list.` : '',
+    emptyMessage: 'No product performance data available for this range.'
+  };
+};
+
+const buildPreviewInsights = (limit = 4) => {
+  return insights.value.slice(0, limit).map((insight) => ({
+    title: insight.title,
+    description: insight.description,
+    type: insight.type || 'info'
+  }));
+};
 
 const getGrowthClass = (growth) => {
   if (growth > 0) return 'positive';
@@ -2179,6 +2378,177 @@ const renderChart = (forecastData, productForecasts) => {
   });
 };
 
+const buildForecastReportBody = () => wrapReportBody(`
+  <h1>Sales Forecast Report</h1>
+  <div class="meta-info">
+    <p><strong>Forecast Period:</strong> Next ${forecastPeriod.value} Days</p>
+    <p><strong>Category:</strong> ${selectedCategory.value === 'all' ? 'All Categories' : selectedCategory.value}</p>
+    <p><strong>Generated:</strong> ${new Date().toLocaleDateString()}</p>
+    <p><strong>Model Accuracy:</strong> ${trainingStats.value.accuracy}% (sMAPE-based)</p>
+    <p><strong>MAPE / MAE / RMSE:</strong> ${Math.round(trainingStats.value.mape || 0)}% / ₱${Math.round(trainingStats.value.mae || 0).toLocaleString()} / ₱${Math.round(trainingStats.value.rmse || 0).toLocaleString()}</p>
+    <p><strong>Training Data:</strong> ${trainingStats.value.dataPoints} data points (${trainingStats.value.startDate} to ${trainingStats.value.endDate})</p>
+  </div>
+  <h2>Forecast Data</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Projected Sales (₱)</th>
+        <th>Growth Rate (%)</th>
+        <th>Confidence Level (%)</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${forecastData.value.map((day, index) => `
+        <tr>
+          <td>${formatDate(day.date)}</td>
+          <td>₱${Math.round(day.value).toLocaleString()}</td>
+          <td class="${calculateDayGrowth(index) > 0 ? 'positive' : calculateDayGrowth(index) < 0 ? 'negative' : 'neutral'}">
+            ${calculateDayGrowth(index) > 0 ? '+' : ''}${calculateDayGrowth(index)}%
+          </td>
+          <td>${calculateConfidence(index)}%</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+`);
+
+const buildProductReportBody = () => wrapReportBody(`
+  <h1>Product Forecasts Report</h1>
+  <div class="meta-info">
+    <p><strong>Forecast Period:</strong> Next ${forecastPeriod.value} Days</p>
+    <p><strong>Category:</strong> ${selectedCategory.value === 'all' ? 'All Categories' : selectedCategory.value}</p>
+    <p><strong>Generated:</strong> ${new Date().toLocaleDateString()}</p>
+    <p><strong>Total Products:</strong> ${displayedProducts.value.length}</p>
+  </div>
+  <h2>Product Forecasts</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Product</th>
+        <th>Category</th>
+        <th>Projected Sales</th>
+        <th>Projected Revenue (₱)</th>
+        <th>Growth (%)</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${displayedProducts.value.map(product => `
+        <tr>
+          <td>${product.name}</td>
+          <td>${product.category || 'Uncategorized'}</td>
+          <td>${Object.entries(product.projectedSales).map(([unit, value]) => `${value} ${unit}`).join(', ')}</td>
+          <td>₱${product.projectedRevenue.toLocaleString()}</td>
+          <td class="${product.growth > 0 ? 'positive' : product.growth < 0 ? 'negative' : 'neutral'}">
+            ${product.growth > 0 ? '+' : ''}${product.growth}%
+          </td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+  <h2>Insights & Recommendations</h2>
+  <ul class="report-list">
+    ${insights.value.map(insight => `
+      <li><strong>${insight.title}:</strong> ${insight.description}</li>
+    `).join('')}
+  </ul>
+`);
+
+const buildCompleteReportBody = () => wrapReportBody(`
+  <h1>Complete Sales Forecast Report</h1>
+  <div class="meta-info">
+    <h3>Report Information</h3>
+    <p><strong>Forecast Period:</strong> Next ${forecastPeriod.value} Days</p>
+    <p><strong>Category Filter:</strong> ${selectedCategory.value === 'all' ? 'All Categories' : selectedCategory.value}</p>
+    <p><strong>Generated:</strong> ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}</p>
+    <p><strong>Report Type:</strong> Historical Sales Analysis & ML-Based Forecasting</p>
+    <p><strong>Cache Performance:</strong> ${cacheHits.value} hits, ${cacheMisses.value} misses</p>
+  </div>
+  <h2>Executive Summary</h2>
+  <div class="summary-stats">
+    <div class="stat-box">
+      <h4>Total Forecast Revenue</h4>
+      <p><strong>₱${forecastData.value.reduce((sum, day) => sum + day.value, 0).toLocaleString()}</strong></p>
+    </div>
+    <div class="stat-box">
+      <h4>Products Analyzed</h4>
+      <p><strong>${displayedProducts.value.length}</strong></p>
+    </div>
+    <div class="stat-box">
+      <h4>Model Accuracy</h4>
+      <p><strong>${trainingStats.value.accuracy}%</strong></p>
+    </div>
+  </div>
+  <h2>Model Information</h2>
+  <div class="meta-info">
+    <p><strong>Model:</strong> ${trainingStats.value.modelUsed}</p>
+    <p><strong>Training Data Points:</strong> ${trainingStats.value.dataPoints}</p>
+    <p><strong>Data Range:</strong> ${trainingStats.value.startDate} to ${trainingStats.value.endDate}</p>
+    <p><strong>Accuracy:</strong> ${trainingStats.value.accuracy}% (sMAPE-based)</p>
+    <p><strong>MAPE / MAE / RMSE:</strong> ${Math.round(trainingStats.value.mape || 0)}% / ₱${Math.round(trainingStats.value.mae || 0).toLocaleString()} / ₱${Math.round(trainingStats.value.rmse || 0).toLocaleString()}</p>
+    <p><strong>Factors Considered:</strong> Historical sales patterns, product categories, price points, and seasonal trends</p>
+  </div>
+  <h2>Daily Forecast Data</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Projected Sales (₱)</th>
+        <th>Growth Rate (%)</th>
+        <th>Confidence Level (%)</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${forecastData.value.map((day, index) => `
+        <tr>
+          <td>${formatDate(day.date)}</td>
+          <td>₱${Math.round(day.value).toLocaleString()}</td>
+          <td class="${calculateDayGrowth(index) > 0 ? 'positive' : calculateDayGrowth(index) < 0 ? 'negative' : 'neutral'}">
+            ${calculateDayGrowth(index) > 0 ? '+' : ''}${calculateDayGrowth(index)}%
+          </td>
+          <td>${calculateConfidence(index)}%</td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+  <h2>Product Analysis</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Product</th>
+        <th>Category</th>
+        <th>Projected Sales</th>
+        <th>Projected Revenue (₱)</th>
+        <th>Growth (%)</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${displayedProducts.value.map(product => `
+        <tr>
+          <td>${product.name}</td>
+          <td>${product.category || 'Uncategorized'}</td>
+          <td>${Object.entries(product.projectedSales).map(([unit, value]) => `${value} ${unit}`).join(', ')}</td>
+          <td>₱${product.projectedRevenue.toLocaleString()}</td>
+          <td class="${product.growth > 0 ? 'positive' : product.growth < 0 ? 'negative' : 'neutral'}">
+            ${product.growth > 0 ? '+' : ''}${product.growth}%
+          </td>
+        </tr>
+      `).join('')}
+    </tbody>
+  </table>
+  <h2>AI-Generated Insights & Recommendations</h2>
+  ${insights.value.map(insight => `
+    <div class="insight-card">
+      <h4>${insight.title}</h4>
+      <p>${insight.description}</p>
+    </div>
+  `).join('')}
+  <div style="margin-top: 40px; text-align: center; color: #6b7280; font-size: 0.9em;">
+    <p>Generated by Enhanced Powered Sales Forecasting System</p>
+    <p>Report Date: ${new Date().toLocaleDateString()} | Time: ${new Date().toLocaleTimeString()}</p>
+  </div>
+`);
+
 // Export functions (keeping existing implementations)
 const exportForecastToCSV = async () => {
   exporting.value = true;
@@ -2258,79 +2628,21 @@ const exportProductsToCSV = async () => {
 const exportForecastToPDF = async () => {
   exporting.value = true;
   showForecastTableExportDropdown.value = false;
-  
   try {
-    const printWindow = window.open('', '_blank');
-    
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Sales Forecast Report</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 20px; }
-          h1 { color: #2e5c31; }
-          h2 { color: #374151; margin-top: 30px; }
-          table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-          th { background-color: #f9fafb; font-weight: 600; }
-          .positive { color: #10b981; }
-          .negative { color: #ef4444; }
-          .neutral { color: #6b7280; }
-          .meta-info { background-color: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0; }
-        </style>
-      </head>
-      <body>
-        <h1>Sales Forecast Report</h1>
-        
-        <div class="meta-info">
-          <p><strong>Forecast Period:</strong> Next ${forecastPeriod.value} Days</p>
-          <p><strong>Category:</strong> ${selectedCategory.value === 'all' ? 'All Categories' : selectedCategory.value}</p>
-          <p><strong>Generated:</strong> ${new Date().toLocaleDateString()}</p>
-          <p><strong>Model Accuracy:</strong> ${trainingStats.value.accuracy}% (sMAPE-based)</p>
-          <p><strong>MAPE / MAE / RMSE:</strong> ${Math.round(trainingStats.value.mape || 0)}% / ₱${Math.round(trainingStats.value.mae || 0).toLocaleString()} / ₱${Math.round(trainingStats.value.rmse || 0).toLocaleString()}</p>
-          <p><strong>Training Data:</strong> ${trainingStats.value.dataPoints} data points (${trainingStats.value.startDate} to ${trainingStats.value.endDate})</p>
-        </div>
-        
-        <h2>Forecast Data</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Projected Sales (₱)</th>
-              <th>Growth Rate (%)</th>
-              <th>Confidence Level (%)</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${forecastData.value.map((day, index) => `
-              <tr>
-                <td>${formatDate(day.date)}</td>
-                <td>₱${Math.round(day.value).toLocaleString()}</td>
-                <td class="${calculateDayGrowth(index) > 0 ? 'positive' : calculateDayGrowth(index) < 0 ? 'negative' : 'neutral'}">
-                  ${calculateDayGrowth(index) > 0 ? '+' : ''}${calculateDayGrowth(index)}%
-                </td>
-                <td>${calculateConfidence(index)}%</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </body>
-      </html>
-    `;
-    
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
-    
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 500);
-    
-    showStatus('success', 'Forecast PDF opened for printing/saving!');
+    openExportPreview({
+      title: 'Sales Forecast Report',
+      subtitle: `Forecast horizon: ${forecastTitle.value}`,
+      body: buildForecastReportBody(),
+      filename: `forecast-report-${forecastPeriod.value}-days.pdf`,
+      meta: buildForecastMetaItems(),
+      sections: [buildForecastPreviewSection()],
+      insightsList: buildPreviewInsights(),
+      footnote: 'Tip: Export the CSV for the full forecast timeline.'
+    });
+    showStatus('success', 'Preview ready. Use Print or Save PDF.');
   } catch (error) {
     console.error('Error exporting forecast to PDF:', error);
-    showStatus('error', 'Failed to export forecast data to PDF.');
+    showStatus('error', 'Failed to prepare forecast PDF.');
   } finally {
     exporting.value = false;
   }
@@ -2339,86 +2651,21 @@ const exportForecastToPDF = async () => {
 const exportProductsToPDF = async () => {
   exporting.value = true;
   showProductTableExportDropdown.value = false;
-  
   try {
-    const printWindow = window.open('', '_blank');
-    
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Product Forecasts Report</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 20px; }
-          h1 { color: #2e5c31; }
-          h2 { color: #374151; margin-top: 30px; }
-          table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-          th { background-color: #f9fafb; font-weight: 600; }
-          .positive { color: #10b981; }
-          .negative { color: #ef4444; }
-          .neutral { color: #6b7280; }
-          .meta-info { background-color: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0; }
-        </style>
-      </head>
-      <body>
-        <h1>Product Forecasts Report</h1>
-        
-        <div class="meta-info">
-          <p><strong>Forecast Period:</strong> Next ${forecastPeriod.value} Days</p>
-          <p><strong>Category:</strong> ${selectedCategory.value === 'all' ? 'All Categories' : selectedCategory.value}</p>
-          <p><strong>Generated:</strong> ${new Date().toLocaleDateString()}</p>
-          <p><strong>Total Products:</strong> ${displayedProducts.value.length}</p>
-        </div>
-        
-        <h2>Product Forecasts</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Product</th>
-              <th>Category</th>
-              <th>Projected Sales</th>
-              <th>Projected Revenue (₱)</th>
-              <th>Growth (%)</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${displayedProducts.value.map(product => `
-              <tr>
-                <td>${product.name}</td>
-                <td>${product.category}</td>
-                <td>${Object.entries(product.projectedSales).map(([unit, value]) => `${value} ${unit}`).join(', ')}</td>
-                <td>₱${product.projectedRevenue.toLocaleString()}</td>
-                <td class="${product.growth > 0 ? 'positive' : product.growth < 0 ? 'negative' : 'neutral'}">
-                  ${product.growth > 0 ? '+' : ''}${product.growth}%
-                </td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-        
-        <h2>Insights & Recommendations</h2>
-        <ul>
-          ${insights.value.map(insight => `
-            <li><strong>${insight.title}:</strong> ${insight.description}</li>
-          `).join('')}
-        </ul>
-      </body>
-      </html>
-    `;
-    
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
-    
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 500);
-    
-    showStatus('success', 'Product forecasts PDF opened for printing/saving!');
+    openExportPreview({
+      title: 'Product Forecasts Report',
+      subtitle: `Category focus: ${selectedCategory.value === 'all' ? 'All' : selectedCategory.value}`,
+      body: buildProductReportBody(),
+      filename: `product-forecasts-${forecastPeriod.value}-days.pdf`,
+      meta: buildProductMetaItems(),
+      sections: [buildProductPreviewSection()],
+      insightsList: [],
+      footnote: 'Tip: Re-run the forecast with different filters for more tailored insights.'
+    });
+    showStatus('success', 'Preview ready. Use Print or Save PDF.');
   } catch (error) {
     console.error('Error exporting products to PDF:', error);
-    showStatus('error', 'Failed to export product forecasts to PDF.');
+    showStatus('error', 'Failed to prepare product PDF.');
   } finally {
     exporting.value = false;
   }
@@ -2427,148 +2674,21 @@ const exportProductsToPDF = async () => {
 const exportCompleteReport = async () => {
   exporting.value = true;
   showChartExportDropdown.value = false;
-  
   try {
-    const printWindow = window.open('', '_blank');
-    
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Complete Sales Forecast Report</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
-          h1 { color: #2e5c31; border-bottom: 3px solid #2e5c31; padding-bottom: 10px; }
-          h2 { color: #374151; margin-top: 30px; border-bottom: 1px solid #e5e7eb; padding-bottom: 5px; }
-          h3 { color: #4b5563; }
-          table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-          th { background-color: #f9fafb; font-weight: 600; }
-          .positive { color: #10b981; font-weight: 600; }
-          .negative { color: #ef4444; font-weight: 600; }
-          .neutral { color: #6b7280; }
-          .meta-info { background-color: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0; }
-          .insight-card { background-color: #f8fafc; padding: 15px; margin: 10px 0; border-left: 4px solid #2e5c31; }
-          .summary-stats { display: flex; justify-content: space-between; margin: 20px 0; }
-          .stat-box { background-color: #f9fafb; padding: 15px; border-radius: 8px; text-align: center; flex: 1; margin: 0 10px; }
-        </style>
-      </head>
-      <body>
-        <h1>Complete Sales Forecast Report</h1>
-        
-        <div class="meta-info">
-          <h3>Report Information</h3>
-          <p><strong>Forecast Period:</strong> Next ${forecastPeriod.value} Days</p>
-          <p><strong>Category Filter:</strong> ${selectedCategory.value === 'all' ? 'All Categories' : selectedCategory.value}</p>
-          <p><strong>Generated:</strong> ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}</p>
-          <p><strong>Report Type:</strong> Historical Sales Analysis & ML-Based Forecasting</p>
-          <p><strong>Cache Performance:</strong> ${cacheHits.value} hits, ${cacheMisses.value} misses</p>
-        </div>
-        
-        <h2>Executive Summary</h2>
-        <div class="summary-stats">
-          <div class="stat-box">
-            <h4>Total Forecast Revenue</h4>
-            <p><strong>₱${forecastData.value.reduce((sum, day) => sum + day.value, 0).toLocaleString()}</strong></p>
-          </div>
-          <div class="stat-box">
-            <h4>Products Analyzed</h4>
-            <p><strong>${displayedProducts.value.length}</strong></p>
-          </div>
-          <div class="stat-box">
-            <h4>Model Accuracy</h4>
-            <p><strong>${trainingStats.value.accuracy}%</strong></p>
-          </div>
-        </div>
-        
-        <h2>Model Information</h2>
-        <div class="meta-info">
-          <p><strong>Model:</strong> ${trainingStats.value.modelUsed}</p>
-          <p><strong>Training Data Points:</strong> ${trainingStats.value.dataPoints}</p>
-          <p><strong>Data Range:</strong> ${trainingStats.value.startDate} to ${trainingStats.value.endDate}</p>
-          <p><strong>Accuracy:</strong> ${trainingStats.value.accuracy}% (sMAPE-based)</p>
-          <p><strong>MAPE / MAE / RMSE:</strong> ${Math.round(trainingStats.value.mape || 0)}% / ₱${Math.round(trainingStats.value.mae || 0).toLocaleString()} / ₱${Math.round(trainingStats.value.rmse || 0).toLocaleString()}</p>
-          <p><strong>Factors Considered:</strong> Historical sales patterns, product categories, price points, and seasonal trends</p>
-        </div>
-        
-        <h2>Daily Forecast Data</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Projected Sales (₱)</th>
-              <th>Growth Rate (%)</th>
-              <th>Confidence Level (%)</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${forecastData.value.map((day, index) => `
-              <tr>
-                <td>${formatDate(day.date)}</td>
-                <td>₱${Math.round(day.value).toLocaleString()}</td>
-                <td class="${calculateDayGrowth(index) > 0 ? 'positive' : calculateDayGrowth(index) < 0 ? 'negative' : 'neutral'}">
-                  ${calculateDayGrowth(index) > 0 ? '+' : ''}${calculateDayGrowth(index)}%
-                </td>
-                <td>${calculateConfidence(index)}%</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-        
-        <h2>Product Analysis</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>Product</th>
-              <th>Category</th>
-              <th>Projected Sales</th>
-              <th>Projected Revenue (₱)</th>
-              <th>Growth (%)</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${displayedProducts.value.map(product => `
-              <tr>
-                <td>${product.name}</td>
-                <td>${product.category}</td>
-                <td>${Object.entries(product.projectedSales).map(([unit, value]) => `${value} ${unit}`).join(', ')}</td>
-                <td>₱${product.projectedRevenue.toLocaleString()}</td>
-                <td class="${product.growth > 0 ? 'positive' : product.growth < 0 ? 'negative' : 'neutral'}">
-                  ${product.growth > 0 ? '+' : ''}${product.growth}%
-                </td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-        
-        <h2>AI-Generated Insights & Recommendations</h2>
-        ${insights.value.map(insight => `
-          <div class="insight-card">
-            <h4>${insight.title}</h4>
-            <p>${insight.description}</p>
-          </div>
-        `).join('')}
-        
-        <div style="margin-top: 50px; text-align: center; color: #6b7280; font-size: 0.9em;">
-          <p>Generated by Enhanced Powered Sales Forecasting System</p>
-          <p>Report Date: ${new Date().toLocaleDateString()} | Time: ${new Date().toLocaleTimeString()}</p>
-        </div>
-      </body>
-      </html>
-    `;
-    
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
-    
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 500);
-    
-    showStatus('success', 'Complete report PDF opened for printing/saving!');
+    openExportPreview({
+      title: 'Complete Sales Forecast Report',
+      subtitle: `Comprehensive view for ${forecastTitle.value}`,
+      body: buildCompleteReportBody(),
+      filename: `complete-forecast-report-${forecastPeriod.value}-days.pdf`,
+      meta: buildCompleteMetaItems(),
+      sections: [buildForecastPreviewSection(), buildProductPreviewSection()],
+      insightsList: buildPreviewInsights(),
+      footnote: 'Save or print this PDF to share the forecast with your team.'
+    });
+    showStatus('success', 'Preview ready. Use Print or Save PDF.');
   } catch (error) {
     console.error('Error exporting complete report:', error);
-    showStatus('error', 'Failed to export complete report.');
+    showStatus('error', 'Failed to prepare complete report.');
   } finally {
     exporting.value = false;
   }
@@ -2923,7 +3043,15 @@ watch([selectedCategory, forecastPeriod, selectedModelType], () => {
   }
 });
 
+watch(selectedModelType, (value) => {
+  if (value !== 'lstm') {
+    // Force selection back to LSTM when users try other disabled options
+    selectedModelType.value = 'lstm';
+  }
+});
+
 watch(showTrainingHistory, (visible) => {
+  if (!trainingHistoryEnabled.value) return;
   if (visible) {
     nextTick(() => {
       renderTrainingHistoryChart();
@@ -2938,6 +3066,7 @@ watch(showTrainingHistory, (visible) => {
 });
 
 watch(selectedTrainingRunId, () => {
+  if (!trainingHistoryEnabled.value) return;
   epochTablePage.value = 1;
   accuracyTablePage.value = 1;
   actualPredTablePage.value = 1;
